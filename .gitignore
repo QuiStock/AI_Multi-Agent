@@ -1,0 +1,8 @@
+# Cache dirs
+.pytest_cache
+.ruff_cache
+**/__pycache__
+
+.coverage
+.venv
+.vscode/

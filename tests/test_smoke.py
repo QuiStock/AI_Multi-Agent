@@ -1,2 +1,5 @@
+from src.main import main
+
+
 def test_smoke():
-    assert True
+    main()
