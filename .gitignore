@@ -6,3 +6,9 @@
 .coverage
 .venv
 .vscode/
+
+# Secrets
+.env
+
+# Generated vector store (rebuilt automatically when docs/ changes)
+src/data/vectorstore/
