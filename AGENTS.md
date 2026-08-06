@@ -43,6 +43,22 @@ Arquivos relevantes:
 6. `src/data/vectorstore/` é artefato gerado (não versionado); é recriado
    automaticamente na primeira execução após mudanças.
 
+### Recuperação e qualidade
+
+- São aceitos apenas documentos `.txt`, `.md` e `.pdf`, inclusive em subpastas
+  de `src/data/docs/`.
+- O fingerprint considera o caminho relativo e o conteúdo de cada documento
+  suportado, usando a mesma regra de varredura do carregamento.
+- A busca retorna resultados estruturados com `arquivo`, `conteudo`,
+  `relevancia` e, para PDFs, `pagina`.
+- Resultados abaixo de `FAQ_RETRIEVAL_MIN_RELEVANCE` são descartados. O valor
+  padrão é `0.30` e deve ser calibrado com casos reais antes de alterações em
+  produção.
+- Casos de regressão da qualidade de recuperação ficam em
+  `tests/test_rag_evaluation.py`. Inclua perguntas respondíveis, a fonte/página
+  esperada e perguntas que devem ser recusadas sempre que a base ou a busca
+  forem alteradas.
+
 ## Ferramentas
 
 ### `faq_search(query: str) -> str`
