@@ -17,6 +17,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from src import config
 from src.models import get_embeddings
 
+SUPPORTED_EXTENSIONS = frozenset({".md", ".pdf", ".txt"})
+
 
 def _build_loader(path: Path) -> BaseLoader:
     if path.suffix.lower() == ".pdf":
@@ -26,17 +28,21 @@ def _build_loader(path: Path) -> BaseLoader:
 
 def load_documents(docs_dir: Path = config.FAQ_DOCS_DIR) -> list[Document]:
     documents: list[Document] = []
-    for path in sorted(docs_dir.iterdir()):
-        if path.is_file():
-            documents.extend(_build_loader(path).load())
+    for path in sorted(docs_dir.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in SUPPORTED_EXTENSIONS:
+            continue
+        relative_source = path.relative_to(docs_dir).as_posix()
+        for document in _build_loader(path).load():
+            document.metadata["source"] = relative_source
+            documents.append(document)
     return documents
 
 
 def fingerprint_documents(docs_dir: Path = config.FAQ_DOCS_DIR) -> str:
     digest = hashlib.sha256()
     for path in sorted(docs_dir.rglob("*")):
-        if path.is_file():
-            digest.update(path.name.encode())
+        if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS:
+            digest.update(path.relative_to(docs_dir).as_posix().encode())
             digest.update(path.read_bytes())
     return digest.hexdigest()
 
@@ -94,14 +100,35 @@ def ensure_index(
     return vectorstore
 
 
+def _relevance_from_distance(distance: float) -> float:
+    """Converte a distância L2 do FAISS em uma escala de relevância (0 a 1)."""
+    return 1 / (1 + distance)
+
+
 def _format_sources(
-    vectorstore: FAISS, query: str, k: int = config.FAQ_RETRIEVAL_K
+    vectorstore: FAISS,
+    query: str,
+    k: int = config.FAQ_RETRIEVAL_K,
+    min_relevance: float = config.FAQ_RETRIEVAL_MIN_RELEVANCE,
 ) -> str:
-    documents = vectorstore.similarity_search(query, k=k)
-    return "\n\n".join(
-        f"[{document.metadata.get('source', 'desconhecido')}]\n{document.page_content}"
-        for document in documents
-    )
+    matches = vectorstore.similarity_search_with_score(query, k=k)
+    results = []
+    for document, distance in matches:
+        relevance = _relevance_from_distance(float(distance))
+        if relevance < min_relevance:
+            continue
+        result: dict[str, Any] = {
+            "arquivo": document.metadata.get("source", "desconhecido"),
+            "relevancia": round(relevance, 4),
+            "conteudo": document.page_content,
+        }
+        if "page" in document.metadata:
+            result["pagina"] = int(document.metadata["page"]) + 1
+        results.append(result)
+
+    if not results:
+        return "Nenhuma evidência relevante encontrada na base de conhecimento."
+    return json.dumps({"resultados": results}, ensure_ascii=False)
 
 
 @tool

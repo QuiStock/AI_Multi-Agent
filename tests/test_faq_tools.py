@@ -11,6 +11,7 @@ from src.agents.faq.tools.faq_tools import (
     ensure_index,
     faq_search,
     fingerprint_documents,
+    load_documents,
 )
 from src.models import get_embeddings
 
@@ -24,11 +25,16 @@ class FakeEmbeddings:
 
 
 class FakeVectorStore:
-    def similarity_search(self, query: str, k: int = 4) -> list[Document]:
+    def similarity_search_with_score(
+        self, query: str, k: int = 4
+    ) -> list[tuple[Document, float]]:
         return [
-            Document(
-                page_content="regra de negócio do FAQ",
-                metadata={"source": "doc.txt"},
+            (
+                Document(
+                    page_content="regra de negócio do FAQ",
+                    metadata={"source": "doc.txt"},
+                ),
+                0.1,
             )
         ]
 
@@ -118,8 +124,36 @@ def test_ensure_index_returns_none_without_documents(tmp_path: Path) -> None:
 
 def test_format_sources_includes_source() -> None:
     formatted = _format_sources(FakeVectorStore(), "qual a regra?")
-    assert "[doc.txt]" in formatted
+    result = json.loads(formatted)
+    assert result["resultados"][0]["arquivo"] == "doc.txt"
+    assert result["resultados"][0]["relevancia"] > 0
     assert "regra de negócio do FAQ" in formatted
+
+
+def test_format_sources_discards_low_relevance_results() -> None:
+    class DistantVectorStore:
+        def similarity_search_with_score(
+            self, query: str, k: int = 4
+        ) -> list[tuple[Document, float]]:
+            return [(Document(page_content="irrelevante"), 100.0)]
+
+    result = _format_sources(DistantVectorStore(), "qual a regra?")
+    assert result == "Nenhuma evidência relevante encontrada na base de conhecimento."
+
+
+def test_load_documents_loads_supported_files_recursively(tmp_path: Path) -> None:
+    docs_dir = _make_docs(tmp_path)
+    nested_dir = docs_dir / "subpasta"
+    nested_dir.mkdir()
+    (nested_dir / "manual.md").write_text("Conteúdo do manual.", encoding="utf-8")
+    (docs_dir / "ignorar.csv").write_text("coluna", encoding="utf-8")
+
+    documents = load_documents(docs_dir)
+
+    assert {document.metadata["source"] for document in documents} == {
+        "doc.txt",
+        "subpasta/manual.md",
+    }
 
 
 def test_faq_search_returns_message_when_no_documents(
@@ -141,7 +175,7 @@ def test_faq_search_returns_formatted_sources(
         lambda *args: FakeVectorStore(),
     )
     result = faq_search.invoke({"query": "qual a regra?"})
-    assert "[doc.txt]" in result
+    assert json.loads(result)["resultados"][0]["arquivo"] == "doc.txt"
 
 
 def test_faq_agent_is_created(monkeypatch: pytest.MonkeyPatch) -> None:
