@@ -6,7 +6,7 @@ import json
 
 from langchain_core.documents import Document
 
-from src.agents.faq.tools.faq_tools import _format_sources
+from src.agents.faq.tools.faq_tool import _format_sources
 
 
 class EvaluationVectorStore:

@@ -58,9 +58,9 @@ def make_pdf(path: Path) -> None:
 
 class PipelineHarness:
     def __init__(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        from src.agents.faq.tools import faq_tools
+        from src.agents.faq.tools import faq_tool
 
-        self._faq_tools = faq_tools
+        self._faq_tool = faq_tool
         self._monkeypatch = monkeypatch
         self._vectorstore_dir = tmp_path / "vectorstore"
         self._metadata_file = tmp_path / "metadata.json"
@@ -68,7 +68,7 @@ class PipelineHarness:
     def ensure(self, docs: Path, embeddings: Any | None = None) -> Any:
         if embeddings is None:
             embeddings = FakeEmbeddings()
-        return self._faq_tools.ensure_index(
+        return self._faq_tool.ensure_index(
             embeddings,
             docs_dir=docs,
             vectorstore_dir=self._vectorstore_dir,
@@ -76,7 +76,7 @@ class PipelineHarness:
         )
 
     def point_to(self, docs: Path) -> None:
-        original = self._faq_tools.ensure_index
+        original = self._faq_tool.ensure_index
 
         def wrapped(*args: Any, **kwargs: Any) -> Any:
             kwargs.setdefault("docs_dir", docs)
@@ -84,14 +84,14 @@ class PipelineHarness:
             kwargs.setdefault("metadata_file", self._metadata_file)
             return original(*args, **kwargs)
 
-        self._monkeypatch.setattr(self._faq_tools, "ensure_index", wrapped)
+        self._monkeypatch.setattr(self._faq_tool, "ensure_index", wrapped)
 
     def search(self, query: str, docs: Path) -> str:
         self._monkeypatch.setattr(
-            self._faq_tools, "get_embeddings", lambda: FakeEmbeddings()
+            self._faq_tool, "get_embeddings", lambda: FakeEmbeddings()
         )
         self.point_to(docs)
-        return self._faq_tools.faq_search.invoke({"query": query})
+        return self._faq_tool.faq_search.invoke({"query": query})
 
 
 @pytest.fixture
