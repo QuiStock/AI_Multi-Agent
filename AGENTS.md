@@ -27,7 +27,7 @@ armazenado em documentos sob `src/data/docs/` e indexado via RAG.
 Arquivos relevantes:
 
 - `src/agents/faq/agent_card.py` — cria o agente com `create_agent` e o system prompt
-- `src/agents/faq/tools/faq_tools.py` — pipeline RAG completo + ferramenta `faq_search`
+- `src/agents/faq/tools/faq_tool.py` — pipeline RAG completo + ferramenta `faq_search`
 
 ## Regras de negócio do agente FAQ
 

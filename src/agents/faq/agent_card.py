@@ -5,7 +5,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from src.models import get_chat_model
 
-from .tools.faq_tools import faq_search
+from .tools.faq_tool import faq_search
 
 SYSTEM_PROMPT = """Você é o assistente de FAQ da instituição.
 Sua única fonte de informação é a ferramenta faq_search, que consulta a base

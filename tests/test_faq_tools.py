@@ -6,7 +6,7 @@ import pytest
 from langchain_core.documents import Document
 
 from src.agents.faq.agent_card import create_faq_agent, faq_app
-from src.agents.faq.tools.faq_tools import (
+from src.agents.faq.tools.faq_tool import (
     _format_sources,
     ensure_index,
     faq_search,
@@ -74,7 +74,7 @@ def test_ensure_index_builds_and_skips_rebuild_when_unchanged(
     def fail_load(*args: Any, **kwargs: Any) -> Any:
         raise AssertionError("não deveria recarregar documentos")
 
-    monkeypatch.setattr("src.agents.faq.tools.faq_tools.load_documents", fail_load)
+        monkeypatch.setattr("src.agents.faq.tools.faq_tool.load_documents", fail_load)
 
     second = ensure_index(
         FakeEmbeddings(),
@@ -160,7 +160,7 @@ def test_faq_search_returns_message_when_no_documents(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "src.agents.faq.tools.faq_tools.ensure_index",
+        "src.agents.faq.tools.faq_tool.ensure_index",
         lambda *args: None,
     )
     result = faq_search.invoke({"query": "pergunta qualquer"})
@@ -171,7 +171,7 @@ def test_faq_search_returns_formatted_sources(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "src.agents.faq.tools.faq_tools.ensure_index",
+        "src.agents.faq.tools.faq_tool.ensure_index",
         lambda *args: FakeVectorStore(),
     )
     result = faq_search.invoke({"query": "qual a regra?"})

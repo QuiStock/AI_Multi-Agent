@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from src.agents.faq.tools.faq_tools import (
+from src.agents.faq.tools.faq_tool import (
     _read_metadata,
     fingerprint_documents,
     load_documents,
@@ -42,7 +42,7 @@ def test_index_reuses_existing_when_unchanged(
     def fail_load(*args: Any, **kwargs: Any) -> Any:
         raise AssertionError("nao deveria recarregar documentos")
 
-    monkeypatch.setattr("src.agents.faq.tools.faq_tools.load_documents", fail_load)
+    monkeypatch.setattr("src.agents.faq.tools.faq_tool.load_documents", fail_load)
 
     second = pipeline.ensure(docs_dir)
     assert second is not None
