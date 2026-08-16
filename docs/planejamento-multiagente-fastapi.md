@@ -1,8 +1,8 @@
 # Planejamento do sistema multiagente e da API FastAPI
 
-**Status:** planejamento, sem implementação
+**Status:** MVP do roteador e do grafo FAQ implementado; Product Flow Advisor ainda não implementado
 
-**Última atualização:** 2026-08-13
+**Última atualização:** 2026-08-16
 
 ## Objetivo
 
@@ -463,9 +463,9 @@ Métricas futuras podem incluir precisão de roteamento, taxa de respostas sem e
 
 ## Primeiro fluxo implementável: FAQ/RAG
 
-O inventário atual mostra que o projeto já possui o agente FAQ/RAG e a ferramenta de busca, mas ainda não possui um grafo orquestrador, estado compartilhado, roteador, compilador ou API FastAPI.
+O projeto possui o agente FAQ/RAG, a ferramenta de busca, o estado compartilhado inicial, o guardrail de entrada, o roteador e o grafo MVP. Ainda não possui o Product Flow Advisor, a API FastAPI, persistência operacional ou o conjunto completo de validação e observabilidade.
 
-O primeiro fluxo deve conter apenas o caminho de FAQ/RAG. O Product Flow Advisor ficará para a etapa seguinte.
+O primeiro fluxo contém apenas o caminho de FAQ/RAG. O Product Flow Advisor ficará para a etapa seguinte e não aparece como rota ativa enquanto não for implementado.
 
 ### Decisão sobre roteador e compilador
 
@@ -505,17 +505,22 @@ Guardrail de entrada
 
 Mesmo quando o resultado vier de um único agente, o fluxo deve passar pelo compilador no primeiro desenho. No início ele poderá apenas normalizar ou repassar a resposta, mas manterá um ponto único para futuras respostas compostas.
 
-### Intenções iniciais do roteador
+### Decisões atuais do roteador
 
-O roteador deve trabalhar com um conjunto pequeno e fechado:
+O guardrail de entrada é executado antes do roteador. Mensagens bloqueadas não
+chegam ao roteador nem a um agente especializado.
 
-- `faq`: pergunta respondível pela base documental;
-- `fora_do_escopo`: não pertence ao FAQ/RAG nem ao escopo atual;
-- `ambigua`: não há informação suficiente para escolher a rota;
-- `insegura`: bloqueada pelo guardrail;
-- `indisponivel`: rota válida, mas uma dependência necessária não está disponível.
+O roteador trabalha somente com as capacidades ativas:
 
-As intenções de produto e fluxo podem ser reservadas no contrato, mas não devem ser encaminhadas para um agente inexistente. Enquanto o Product Flow Advisor não existir, essas perguntas devem resultar em resposta controlada de indisponibilidade ou de funcionalidade ainda não disponível.
+- `faq`: pergunta respondível pela base documental e encaminhada ao FAQ/RAG;
+- `clarification_required`: não há informação suficiente para entender a
+  solicitação;
+- `out_of_scope`: a solicitação não pertence a uma capacidade ativa.
+
+Não existe a categoria `unsupported` no contrato atual. Perguntas sobre
+capacidades ainda não implementadas resultam em `out_of_scope`, sem orientação
+ou divulgação de fluxos futuros. `unavailable` permanece apenas como status
+técnico de uma capacidade ativa cuja dependência esteja indisponível.
 
 ### Estado compartilhado inicial
 
@@ -667,13 +672,15 @@ Se o projeto preferir manter uma pasta chamada `models` para todos os schemas, e
 
 ### Estado inicial sem guardrails
 
-O primeiro `GraphState` deve conter apenas o necessário para o caminho normal:
+O `GraphState` inicial contém o necessário para o caminho normal e para o
+guardrail de entrada:
 
 - `session_id`;
 - `turn_id`;
 - `messages`, com reducer de mensagens;
-- `route`;
-- `route_reason`, limitado a uma justificativa curta de classificação;
+- `input_guardrail`;
+- `route` e resultado do roteamento;
+- justificativa curta de classificação;
 - `agent_name`;
 - `agent_output`;
 - `evidence`;
@@ -682,7 +689,10 @@ O primeiro `GraphState` deve conter apenas o necessário para o caminho normal:
 - `error`;
 - `trace_id` ou `correlation_id`.
 
-Não incluir ainda campos de guardrail, decisão de produto, execução comercial ou paralelismo. Campos futuros podem ser adicionados de forma aditiva, sem renomear os campos centrais.
+Não incluir ainda campos de decisão de produto, execução comercial ou
+paralelismo. Campos de negócio de novos agentes devem ser adicionados junto
+com a implementação desses agentes, de forma aditiva e sem renomear os campos
+centrais.
 
 ### Reducers no fluxo atual
 
@@ -692,7 +702,10 @@ Como o fluxo inicial será sequencial, a maioria dos campos usará o comportamen
 
 ### Schemas estruturados
 
-O roteador deve produzir um `RouteDecision` fechado, contendo uma intenção entre as rotas permitidas, por exemplo `faq`, `ambiguous`, `out_of_scope` e `unavailable`.
+O roteador produz um `RouteDecision` fechado, limitado às rotas ativas `faq`,
+`clarification_required` e `out_of_scope`. O resultado de roteamento é uma
+decisão interna; a resposta ao usuário é produzida pelo agente FAQ ou por um
+node de resposta controlada.
 
 O compilador deve receber um resultado estruturado do agente, preservar as evidências e produzir um `CompiledResponse`. O texto final deve ser consequência do contrato validado, não um novo raciocínio livre sobre a pergunta.
 
