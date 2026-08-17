@@ -55,7 +55,7 @@ jobs:
         run: uv sync --locked
 
       - name: Run integration tests
-        run: uv run pytest -m integration
+        run: uv run pytest -m integration --cov=src --cov-fail-under=80
 
   type-checks:
     runs-on: ubuntu-latest
