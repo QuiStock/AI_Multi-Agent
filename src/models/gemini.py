@@ -1,15 +1,15 @@
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from typing import Any
 
-from src import config
-
-
-def get_chat_model() -> ChatGoogleGenerativeAI:
-    return ChatGoogleGenerativeAI(
-        model=config.GEMINI_CHAT_MODEL,
-        temperature=0.0,
-        google_api_key=config.GEMINI_API_KEY,
-    )
+from src.llm_factory import embeddings, llm_gemini
 
 
-def get_embeddings() -> GoogleGenerativeAIEmbeddings:
-    return GoogleGenerativeAIEmbeddings(model=config.GEMINI_EMBEDDING_MODEL)
+def get_chat_model() -> Any:
+    """Compatibility accessor for the primary Gemini model."""
+
+    return llm_gemini
+
+
+def get_embeddings() -> Any:
+    """Compatibility accessor for the centralized embedding model."""
+
+    return embeddings

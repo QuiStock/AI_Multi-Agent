@@ -5,16 +5,18 @@ negócio, ferramentas e convenções adotadas no projeto.
 
 ## Visão geral do projeto
 
-Sistema **multi-agente**: cada agente tem um `agent_card.py` (criação do agente)
-e uma pasta `tools/` (ferramentas expostas ao agente). O conhecimento é
+Sistema **multi-agente**: cada agente tem um `<agent>_node.py`, um
+`<agent>_prompt.py` e, quando necessário, uma pasta `tools/` (ferramentas
+expostas ao agente). O conhecimento é
 armazenado em documentos sob `src/data/docs/` e indexado via RAG.
 
 ## Stack
 
-- **LLM / embeddings**: Google Gemini (gratuitos)
-  - Chat: `gemini-2.5-flash` (definido em `GEMINI_CHAT_MODEL` no `src/config.py`)
-  - Embeddings: `models/gemini-embedding-001` (definido em `GEMINI_EMBEDDING_MODEL`)
-- **Modelos**: `src/models/` — `get_chat_model()` e `get_embeddings()`
+- **LLM / embeddings**: Gemini com fallback Groq
+  - Roteador: `GEMINI_CHAT_MODEL` com fallback `GROQ_CHAT_MODEL`
+  - Agentes rápidos: `GROQ_FAST_MODEL`
+  - Embeddings: `GEMINI_EMBEDDING_MODEL`
+- **Modelos**: `src/llm_factory.py` — `llm`, `llm_fast` e `embeddings`; `src/models/` mantém acessores de compatibilidade
 - **Framework**: LangChain + LangGraph (`langchain.agents.create_agent`)
 - **Carregamento**: `PyPDFLoader` (PDF) e `TextLoader` (texto), via `langchain-community`
 - **Vector store**: FAISS, persistido em `src/data/vectorstore/`
@@ -26,8 +28,10 @@ armazenado em documentos sob `src/data/docs/` e indexado via RAG.
 
 Arquivos relevantes:
 
-- `src/agents/faq/agent_card.py` — cria o agente com `create_agent` e o system prompt
+- `src/agents/faq/faq_node.py` — cria o agente com `create_agent`
+- `src/agents/faq/faq_prompt.py` — system prompt do agente FAQ
 - `src/agents/faq/tools/faq_tool.py` — pipeline RAG completo + ferramenta `faq_search`
+- `src/llm_factory.py` — modelos Gemini, fallback Groq, modelo rápido e embeddings
 
 ## Regras de negócio do agente FAQ
 

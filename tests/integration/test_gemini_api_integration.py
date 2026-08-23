@@ -3,7 +3,7 @@ from typing import Any
 
 import pytest
 
-from src.agents.faq.agent_card import create_faq_agent
+from src.agents.faq.faq_node import create_faq_agent
 from src.models import get_embeddings
 
 pytestmark = pytest.mark.integration

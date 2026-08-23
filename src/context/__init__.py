@@ -2,10 +2,11 @@
 
 from .state import (
     AgentOutput,
-    Evidence,
+    AgentValidation,
     GraphState,
     GuardrailStatus,
     InputGuardrail,
+    OutputGuardrail,
     Response,
     ResponseStatus,
     RouteName,
@@ -16,10 +17,11 @@ from .state import (
 
 __all__ = [
     "AgentOutput",
-    "Evidence",
+    "AgentValidation",
     "GuardrailStatus",
     "GraphState",
     "InputGuardrail",
+    "OutputGuardrail",
     "Response",
     "ResponseStatus",
     "RouteName",

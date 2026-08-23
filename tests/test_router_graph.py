@@ -63,7 +63,7 @@ def test_graph_returns_clarification_without_calling_faq() -> None:
 
     result = graph.invoke(_state("Pode me ajudar?"))
 
-    assert result["response"]["status"] == "clarification_required"
+    assert result["final_response"]["status"] == "clarification_required"
     assert result["status"] == "completed"
 
 
@@ -80,7 +80,7 @@ def test_graph_treats_non_active_capability_as_out_of_scope() -> None:
 
     result = graph.invoke(_state("Quais produtos devo promover?"))
 
-    assert result["response"] == {
+    assert result["final_response"] == {
         "content": "Essa solicitação está fora do escopo atual.",
         "status": "out_of_scope",
     }
@@ -98,7 +98,7 @@ def test_invalid_router_output_falls_back_to_clarification() -> None:
 
     result = graph.invoke(_state("Pode verificar isso?"))
 
-    assert result["response"]["status"] == "clarification_required"
+    assert result["final_response"]["status"] == "clarification_required"
 
 
 def test_blocked_input_never_reaches_router() -> None:
@@ -113,4 +113,4 @@ def test_blocked_input_never_reaches_router() -> None:
 
     result = graph.invoke({"messages": [], "status": "pending"})
 
-    assert result["response"]["status"] == "rejected"
+    assert result["final_response"]["status"] == "rejected"

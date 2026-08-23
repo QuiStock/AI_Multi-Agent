@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from pathlib import Path
+from functools import partial
 from typing import Any
 
 from langchain_core.messages import AnyMessage, SystemMessage
@@ -11,12 +11,9 @@ from pydantic import ValidationError
 
 from src.context.schemas import RouteDecision
 from src.context.state import GraphState, RoutingDecision
-from src.models import get_chat_model
+from src.llm_factory import get_structured_model
 
-ROUTER_PROMPT_PATH = (
-    Path(__file__).resolve().parents[3] / "prompts" / "router_system.md"
-)
-ROUTER_SYSTEM_PROMPT = ROUTER_PROMPT_PATH.read_text(encoding="utf-8")
+from .router_prompt import ROUTER_SYSTEM_PROMPT
 
 
 def _normalize_decision(decision: RouteDecision) -> RoutingDecision:
@@ -46,33 +43,39 @@ def _normalize_decision(decision: RouteDecision) -> RoutingDecision:
     }
 
 
+def route_router_state(
+    state: GraphState,
+    *,
+    structured_model: Any,
+) -> dict[str, Any]:
+    """Route the current graph state using a structured router model."""
+
+    messages: list[AnyMessage] = state.get("messages", [])
+    try:
+        decision = structured_model.invoke(
+            [SystemMessage(content=ROUTER_SYSTEM_PROMPT), *messages]
+        )
+        if not isinstance(decision, RouteDecision):
+            decision = RouteDecision.model_validate(decision)
+    except ValidationError:
+        decision = RouteDecision(
+            route="clarification_required",
+            reason="Nao foi possivel classificar a solicitacao com seguranca.",
+        )
+
+    return {
+        "routing_decision": _normalize_decision(decision),
+        "status": "in_progress",
+    }
+
+
 def create_router_node(
     model: Any | None = None,
 ) -> Callable[[GraphState], dict[str, Any]]:
     """Create a router node with optional model injection for tests."""
 
-    structured_model = model or get_chat_model().with_structured_output(RouteDecision)
-
-    def route(state: GraphState) -> dict[str, Any]:
-        messages: list[AnyMessage] = state.get("messages", [])
-        try:
-            decision = structured_model.invoke(
-                [SystemMessage(content=ROUTER_SYSTEM_PROMPT), *messages]
-            )
-            if not isinstance(decision, RouteDecision):
-                decision = RouteDecision.model_validate(decision)
-        except ValidationError:
-            decision = RouteDecision(
-                route="clarification_required",
-                reason="Não foi possível classificar a solicitação com segurança.",
-            )
-
-        return {
-            "routing_decision": _normalize_decision(decision),
-            "status": "in_progress",
-        }
-
-    return route
+    structured_model = model or get_structured_model(RouteDecision)
+    return partial(route_router_state, structured_model=structured_model)
 
 
 router_node = create_router_node

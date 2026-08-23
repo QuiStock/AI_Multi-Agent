@@ -17,21 +17,20 @@ def test_messages_use_langgraph_message_reducer() -> None:
     assert merged[1].content == "A regra está no documento."
 
 
-def test_evidence_is_accumulated_by_the_state_reducer() -> None:
+def test_agent_outputs_are_accumulated_by_the_state_reducer() -> None:
     def retrieve_node(state: GraphState) -> dict[str, object]:
         return {
-            "evidence": [
+            "agent_outputs": [
                 {
-                    "arquivo": "manual.txt",
-                    "conteudo": "A regra está no manual.",
-                    "relevancia": 0.91,
+                    "content": "A regra está no manual.",
+                    "status": "success",
                 }
             ]
         }
 
     def compile_node(state: GraphState) -> dict[str, object]:
         return {
-            "response": {
+            "final_response": {
                 "content": "A regra está no manual.",
                 "status": "success",
             },
@@ -54,13 +53,13 @@ def test_evidence_is_accumulated_by_the_state_reducer() -> None:
             "turn_id": "turn-1",
             "correlation_id": "correlation-1",
             "messages": [HumanMessage(content="Qual é a regra?")],
-            "evidence": [],
+            "agent_outputs": [],
             "status": "pending",
         }
     )
 
-    assert result["evidence"][0]["arquivo"] == "manual.txt"
-    assert result["response"]["content"] == "A regra está no manual."
+    assert result["agent_outputs"][0]["content"] == "A regra está no manual."
+    assert result["final_response"]["content"] == "A regra está no manual."
     assert result["status"] == "completed"
 
 
