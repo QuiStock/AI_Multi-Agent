@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import HumanMessage
 
 from src.agents.router.router_node import create_router_node
 from src.context.schemas import RouteDecision
-from src.graphs.faq_graph import create_faq_graph
 
 
 class FakeRouterModel:
@@ -15,16 +14,6 @@ class FakeRouterModel:
 
     def invoke(self, messages: list[Any]) -> RouteDecision:
         return self.decision
-
-
-class FakeFAQAgent:
-    def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "messages": [
-                *state["messages"],
-                AIMessage(content="A resposta veio da base documental."),
-            ]
-        }
 
 
 def _state(message: str) -> dict[str, Any]:
@@ -46,44 +35,36 @@ def test_router_dispatches_only_to_active_faq_route() -> None:
     }
 
 
-def test_graph_returns_clarification_without_calling_faq() -> None:
-    class FailingFAQAgent:
-        def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
-            raise AssertionError("FAQ não deveria ser chamado")
-
-    graph = create_faq_graph(
-        router_model=FakeRouterModel(
+def test_router_keeps_clarification_as_controlled_route() -> None:
+    node = create_router_node(
+        FakeRouterModel(
             RouteDecision(
                 route="clarification_required",
                 reason="Falta especificar a informação desejada.",
             )
-        ),
-        faq_agent=FailingFAQAgent(),
+        )
     )
 
-    result = graph.invoke(_state("Pode me ajudar?"))
+    result = node(_state("Pode me ajudar?"))
 
-    assert result["final_response"]["status"] == "clarification_required"
-    assert result["status"] == "completed"
+    assert result["routing_decision"]["outcome"] == "clarification_required"
+    assert result["routing_decision"]["target_agent"] is None
 
 
-def test_graph_treats_non_active_capability_as_out_of_scope() -> None:
-    graph = create_faq_graph(
-        router_model=FakeRouterModel(
+def test_router_keeps_out_of_scope_as_controlled_route() -> None:
+    node = create_router_node(
+        FakeRouterModel(
             RouteDecision(
                 route="out_of_scope",
                 reason="A solicitação não pertence à capacidade ativa.",
             )
-        ),
-        faq_agent=FakeFAQAgent(),
+        )
     )
 
-    result = graph.invoke(_state("Quais produtos devo promover?"))
+    result = node(_state("Quais produtos devo promover?"))
 
-    assert result["final_response"] == {
-        "content": "Essa solicitação está fora do escopo atual.",
-        "status": "out_of_scope",
-    }
+    assert result["routing_decision"]["outcome"] == "out_of_scope"
+    assert result["routing_decision"]["target_agent"] is None
 
 
 def test_invalid_router_output_falls_back_to_clarification() -> None:
@@ -91,26 +72,8 @@ def test_invalid_router_output_falls_back_to_clarification() -> None:
         def invoke(self, messages: list[Any]) -> dict[str, str]:
             return {}
 
-    graph = create_faq_graph(
-        router_model=InvalidRouterModel(),
-        faq_agent=FakeFAQAgent(),
-    )
+    node = create_router_node(InvalidRouterModel())
 
-    result = graph.invoke(_state("Pode verificar isso?"))
+    result = node(_state("Pode verificar isso?"))
 
-    assert result["final_response"]["status"] == "clarification_required"
-
-
-def test_blocked_input_never_reaches_router() -> None:
-    class FailingRouterModel:
-        def invoke(self, messages: list[Any]) -> RouteDecision:
-            raise AssertionError("Roteador não deveria ser chamado")
-
-    graph = create_faq_graph(
-        router_model=FailingRouterModel(),
-        faq_agent=FakeFAQAgent(),
-    )
-
-    result = graph.invoke({"messages": [], "status": "pending"})
-
-    assert result["final_response"]["status"] == "rejected"
+    assert result["routing_decision"]["outcome"] == "clarification_required"

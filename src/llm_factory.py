@@ -12,22 +12,24 @@ from pydantic import BaseModel, SecretStr
 from src import config
 
 
-def _secret(value: str | None) -> SecretStr | None:
-    return SecretStr(value) if value else None
+def _secret(value: str | None, provider: str) -> SecretStr:
+    """Keep model construction import-safe when credentials are absent."""
+
+    return SecretStr(value or f"missing-{provider}-api-key")
 
 
 llm_gemini = ChatGoogleGenerativeAI(
     model=config.GEMINI_CHAT_MODEL,
     temperature=config.LLM_TEMPERATURE,
     top_p=config.LLM_TOP_P,
-    google_api_key=config.GEMINI_API_KEY,
+    google_api_key=config.GEMINI_API_KEY or "missing-gemini-api-key",
 )
 
 llm_groq = ChatGroq(
     model=config.GROQ_CHAT_MODEL,
     temperature=config.LLM_TEMPERATURE,
     model_kwargs={"top_p": config.LLM_TOP_P},
-    api_key=_secret(config.GROQ_API_KEY),
+    api_key=_secret(config.GROQ_API_KEY, "groq"),
 )
 
 # Gemini is the primary model. Groq is used when the primary invocation fails.
@@ -36,12 +38,12 @@ llm = llm_gemini.with_fallbacks([llm_groq])
 llm_fast = ChatGroq(
     model=config.GROQ_FAST_MODEL,
     temperature=0.0,
-    api_key=_secret(config.GROQ_API_KEY),
+    api_key=_secret(config.GROQ_API_KEY, "groq"),
 )
 
 embeddings = GoogleGenerativeAIEmbeddings(
     model=config.GEMINI_EMBEDDING_MODEL,
-    api_key=_secret(config.GEMINI_API_KEY),
+    api_key=_secret(config.GEMINI_API_KEY, "gemini"),
 )
 
 
