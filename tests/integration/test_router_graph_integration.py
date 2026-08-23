@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage
 
 from src.context.schemas import Route, RouteDecision
 from src.graphs.faq_graph import create_faq_graph
@@ -22,24 +21,9 @@ class FakeRouterModel:
 
 class FakeFAQAgent:
     def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
-        evidence = {
-            "resultados": [
-                {
-                    "arquivo": "manual.txt",
-                    "conteudo": "Regra documentada.",
-                    "relevancia": 0.92,
-                },
-                {"arquivo": "incompleto.txt"},
-            ]
-        }
         return {
             "messages": [
                 *state["messages"],
-                ToolMessage(
-                    content=json.dumps(evidence),
-                    tool_call_id="call-1",
-                ),
-                ToolMessage(content="conteudo invalido", tool_call_id="call-2"),
                 AIMessage(content="A resposta veio da base documental."),
             ]
         }
@@ -54,7 +38,7 @@ def _state(message: str) -> dict[str, Any]:
     return {"messages": [HumanMessage(content=message)], "status": "pending"}
 
 
-def test_faq_graph_dispatches_and_preserves_evidence() -> None:
+def test_faq_graph_dispatches_directly_to_final_response() -> None:
     graph = create_faq_graph(
         router_model=FakeRouterModel(
             RouteDecision(route="faq", reason="Pergunta documental.")
@@ -64,17 +48,10 @@ def test_faq_graph_dispatches_and_preserves_evidence() -> None:
 
     result = graph.invoke(_state("Qual é a regra documentada?"))
 
-    assert result["response"] == {
+    assert result["final_response"] == {
         "content": "A resposta veio da base documental.",
         "status": "success",
     }
-    assert result["evidence"] == [
-        {
-            "arquivo": "manual.txt",
-            "conteudo": "Regra documentada.",
-            "relevancia": 0.92,
-        }
-    ]
 
 
 @pytest.mark.parametrize(
@@ -94,7 +71,7 @@ def test_graph_returns_controlled_response(route: Route, expected_status: str) -
 
     result = graph.invoke(_state("Solicitação controlada."))
 
-    assert result["response"]["status"] == expected_status
+    assert result["final_response"]["status"] == expected_status
     assert result["status"] == "completed"
 
 
@@ -106,7 +83,7 @@ def test_graph_rejects_empty_input_before_routing() -> None:
 
     result = graph.invoke({"messages": [], "status": "pending"})
 
-    assert result["response"] == {
+    assert result["final_response"] == {
         "content": "Não foi possível processar essa mensagem.",
         "status": "rejected",
     }

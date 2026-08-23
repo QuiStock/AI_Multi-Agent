@@ -649,7 +649,7 @@ O `BaseModel` ainda é a melhor escolha para `RouteDecision`, `AgentAnswer` e `C
 
 ### Organização de pastas
 
-Não é recomendável misturar o estado compartilhado com `src/models/`, pois essa pasta já representa os provedores de modelos Gemini (`get_chat_model` e `get_embeddings`). A organização sugerida é:
+Não é recomendável misturar o estado compartilhado com os provedores de modelos. A factory fica em `src/llm_factory.py`, enquanto `src/models/` mantém acessores de compatibilidade. A organização sugerida é:
 
 ```text
 src/
@@ -663,8 +663,9 @@ src/
 │   └── reducers.py    # reducers nomeados, quando necessários
 ├── graphs/
 │   └── faq_graph.py   # montagem do StateGraph
-└── models/
-    ├── gemini.py      # provedores LLM e embeddings existentes
+├── llm_factory.py     # provedores LLM, fallback e embeddings
+└── models/            # acessores de compatibilidade
+    ├── gemini.py
     └── __init__.py
 ```
 

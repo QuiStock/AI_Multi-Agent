@@ -5,7 +5,8 @@ from typing import Any
 import pytest
 from langchain_core.documents import Document
 
-from src.agents.faq.agent_card import create_faq_agent, faq_app
+from src import config
+from src.agents.faq.faq_node import create_faq_agent, faq_app
 from src.agents.faq.tools.faq_tool import (
     _format_sources,
     ensure_index,
@@ -187,7 +188,7 @@ def test_faq_agent_is_created(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_get_embeddings(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GEMINI_API_KEY", "fake-key-for-test")
     embeddings = get_embeddings()
-    assert embeddings.model == "models/gemini-embedding-001"
+    assert embeddings.model == config.GEMINI_EMBEDDING_MODEL
 
 
 def test_faq_app_is_callable() -> None:

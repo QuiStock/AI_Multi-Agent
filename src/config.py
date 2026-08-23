@@ -22,7 +22,13 @@ FAQ_RETRIEVAL_K = int(os.getenv("FAQ_RETRIEVAL_K", "4"))
 FAQ_RETRIEVAL_MIN_RELEVANCE = float(os.getenv("FAQ_RETRIEVAL_MIN_RELEVANCE", "0.30"))
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_CHAT_MODEL = os.getenv("GEMINI_CHAT_MODEL", "gemini-2.5-flash")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
+GEMINI_CHAT_MODEL = os.getenv("GEMINI_CHAT_MODEL", "gemini-3.6-flash")
 GEMINI_EMBEDDING_MODEL = os.getenv(
-    "GEMINI_EMBEDDING_MODEL", "models/gemini-embedding-001"
+    "GEMINI_EMBEDDING_MODEL", "gemini-embedding-2-preview"
 )
+GROQ_CHAT_MODEL = os.getenv("GROQ_CHAT_MODEL", "llama-3.3-70b-versatile")
+GROQ_FAST_MODEL = os.getenv("GROQ_FAST_MODEL", "llama-3.3-70b-versatile")
+LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.7"))
+LLM_TOP_P = float(os.getenv("LLM_TOP_P", "0.95"))

@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import operator
-from typing import Annotated, Literal, NotRequired, TypedDict
+from typing import Annotated, Literal, TypedDict
 
 from langchain_core.messages import AnyMessage
 from langgraph.graph import add_messages
@@ -27,20 +26,19 @@ ResponseStatus = Literal[
 ]
 
 
-class Evidence(TypedDict):
-    """Document evidence returned by the FAQ retrieval tool."""
-
-    arquivo: str
-    conteudo: str
-    relevancia: float
-    pagina: NotRequired[int]
-
-
 class AgentOutput(TypedDict):
     """Normalized output produced by a specialized agent."""
 
     content: str
     status: AgentStatus
+
+
+def merge_agent_outputs(
+    current: list[AgentOutput], update: list[AgentOutput]
+) -> list[AgentOutput]:
+    """Accumulate outputs from specialized agents in the shared state."""
+
+    return [*current, *update]
 
 
 class RoutingDecision(TypedDict):
@@ -59,6 +57,21 @@ class InputGuardrail(TypedDict):
     reason: str
 
 
+class AgentValidation(TypedDict):
+    """Validation summary produced by the compiler for agent outputs."""
+
+    status: Literal["passed", "blocked", "needs_revision"]
+    reason: str
+
+
+class OutputGuardrail(TypedDict):
+    """Reserved contract for the output guardrail phase."""
+
+    status: GuardrailStatus
+    reason: str
+    violations: list[str]
+
+
 class Response(TypedDict):
     """User-facing result produced after routing and agent execution."""
 
@@ -70,8 +83,8 @@ class GraphState(TypedDict, total=False):
     """State shared by nodes in the initial sequential routing graph.
 
     Nodes should return partial updates instead of rebuilding the complete
-    state. ``messages`` and ``evidence`` are append-only channels; the other
-    fields use LangGraph's default overwrite behavior.
+    state. ``messages`` and ``agent_outputs`` are append-only channels; the
+    other fields use LangGraph's default overwrite behavior.
     """
 
     session_id: str
@@ -80,11 +93,9 @@ class GraphState(TypedDict, total=False):
     messages: Annotated[list[AnyMessage], add_messages]
     input_guardrail: InputGuardrail
     routing_decision: RoutingDecision
-    agent_name: str
-    agent_output: AgentOutput
-    evidence: Annotated[list[Evidence], operator.add]
-    compiled_response: Response
-    response: Response
+    agent_outputs: Annotated[list[AgentOutput], merge_agent_outputs]
+    validation: AgentValidation
+    output_guardrail: OutputGuardrail
+    final_response: Response
     status: TurnStatus
     error: str
-    trace_id: NotRequired[str]
