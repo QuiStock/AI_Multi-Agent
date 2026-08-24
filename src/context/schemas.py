@@ -33,8 +33,14 @@ class AgentValidationResult(BaseModel):
 
 
 class OutputGuardrailResult(BaseModel):
-    """Reserved structured contract for the future output guardrail."""
+    """Structured result produced by the output guardrail."""
 
     status: Literal["passed", "blocked"]
     reason: str
     violations: list[str] = Field(default_factory=list)
+
+
+class SupportValidationResult(BaseModel):
+    """Structured semantic support check for compiled responses."""
+
+    status: Literal["supported", "unsupported"]

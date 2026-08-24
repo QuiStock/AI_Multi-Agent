@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal, TypedDict
+from typing import Annotated, Literal, NotRequired, TypedDict
 
 from langchain_core.messages import AnyMessage
 from langgraph.graph import add_messages
@@ -14,6 +14,26 @@ RoutingOutcome = Literal[
 ]
 RouteName = Literal["faq", "clarification_required", "out_of_scope"]
 GuardrailStatus = Literal["passed", "blocked"]
+GuardrailReasonCode = Literal[
+    "approved",
+    "empty_message",
+    "message_too_long",
+    "sensitive_data",
+    "prompt_injection",
+    "access_internal_data",
+    "government_politics",
+    "offensive_content",
+    "dangerous_request",
+    "illegal_request",
+    "classifier_unavailable",
+]
+OutputGuardrailReasonCode = Literal[
+    "approved",
+    "empty_response",
+    "invalid_markdown",
+    "unsupported_content",
+    "validator_unavailable",
+]
 TurnStatus = Literal["pending", "in_progress", "completed", "failed"]
 AgentStatus = Literal["success", "unavailable", "error"]
 ResponseStatus = Literal[
@@ -54,7 +74,11 @@ class InputGuardrail(TypedDict):
     """Result produced before the router is allowed to run."""
 
     status: GuardrailStatus
+    reason_code: GuardrailReasonCode
     reason: str
+    redactions: list[str]
+    sanitized_message: NotRequired[str]
+    history_marker: NotRequired[str]
 
 
 class AgentValidation(TypedDict):
@@ -65,11 +89,13 @@ class AgentValidation(TypedDict):
 
 
 class OutputGuardrail(TypedDict):
-    """Reserved contract for the output guardrail phase."""
+    """Result produced before a response is released to the user."""
 
     status: GuardrailStatus
+    reason_code: OutputGuardrailReasonCode
     reason: str
     violations: list[str]
+    sanitized_content: NotRequired[str]
 
 
 class Response(TypedDict):
