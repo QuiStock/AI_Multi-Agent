@@ -18,6 +18,7 @@ dependencies = [
     { name = "langchain-groq" },
     { name = "langchain-text-splitters" },
     { name = "langgraph" },
+    { name = "pydantic-settings" },
     { name = "pypdf" },
     { name = "python-dotenv" },
 ]
@@ -42,6 +43,7 @@ requires-dist = [
     { name = "langchain-groq", specifier = ">=1.1.0" },
     { name = "langchain-text-splitters", specifier = ">=0.3.0" },
     { name = "langgraph", specifier = ">=1.0.0" },
+    { name = "pydantic-settings", specifier = ">=2.0.0" },
     { name = "pypdf", specifier = ">=5.0.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
 ]
