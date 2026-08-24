@@ -98,21 +98,6 @@ class OutputGuardrail(TypedDict):
     sanitized_content: NotRequired[str]
 
 
-class AgentValidation(TypedDict):
-    """Validation summary produced by the compiler for agent outputs."""
-
-    status: Literal["passed", "blocked", "needs_revision"]
-    reason: str
-
-
-class OutputGuardrail(TypedDict):
-    """Reserved contract for the output guardrail phase."""
-
-    status: GuardrailStatus
-    reason: str
-    violations: list[str]
-
-
 class Response(TypedDict):
     """User-facing result produced after routing and agent execution."""
 
