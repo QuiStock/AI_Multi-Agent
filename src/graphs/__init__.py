@@ -1,3 +1,5 @@
-"""Graph assembly modules reserved for a later implementation phase."""
+"""Graph assembly modules."""
 
-__all__: list[str] = []
+from .agent_graph import create_agent_graph
+
+__all__ = ["create_agent_graph"]
