@@ -1,5 +1,10 @@
-"""Compiler node for combining validated agent outputs."""
+"""Compiler agent, card and compatibility exports."""
 
 from .compiler_node import compiler_node, create_compiler_node
+from .executor import CompilerExecutor
 
-__all__ = ["compiler_node", "create_compiler_node"]
+__all__ = [
+    "CompilerExecutor",
+    "compiler_node",
+    "create_compiler_node",
+]
