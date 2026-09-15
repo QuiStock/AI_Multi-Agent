@@ -3,73 +3,190 @@ name: CI
 on:
   workflow_dispatch:
   pull_request:
-    branches: [main, qa]
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+env:
+  PYTHON_VERSION: "3.14"
+  UV_VERSION: "0.12.13"
 
 jobs:
-  lint:
-    runs-on: ubuntu-latest
+  lint-and-formatting:
+    name: Lint and formatting
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/setup-environment
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-
-      - name: Install dependencies
-        run: uv sync --locked
-
-      - name: Run Ruff
+      - name: Check lint
         run: uv run ruff check .
 
-  unit-tests:
-    runs-on: ubuntu-latest
+      - name: Check formatting
+        run: uv run ruff format --check .
+
+  code-smell:
+    name: Code smell analysis
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/setup-environment
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v6
+      - name: Analyse code smells
+        shell: bash
+        run: |
+          mkdir -p reports/code-smell
+          uv run ruff check src \
+            --select C90,PLR,SIM,PERF \
+            --output-format sarif \
+            --output-file reports/code-smell/ruff.sarif
+
+      - name: Upload code smell report
+        if: always()
+        uses: actions/upload-artifact@v7
         with:
-          enable-cache: true
-
-      - name: Install dependencies
-        run: uv sync --locked
-
-      - name: Run Pytest
-        run: uv run pytest --cov=src --cov-fail-under=80
-
-  integration-tests:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-
-      - name: Install dependencies
-        run: uv sync --locked
-
-      - name: Run integration tests
-        run: uv run pytest -m integration --cov=src --cov-fail-under=80
+          name: code-smell-reports
+          path: reports/code-smell/ruff.sarif
+          if-no-files-found: warn
+          retention-days: 7
 
   type-checks:
-    runs-on: ubuntu-latest
+    name: Type checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v7
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-
-      - name: Install dependencies
-        run: uv sync --locked
+      - uses: ./.github/setup-environment
 
       - name: Run MyPy
         run: uv run mypy .
+
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/setup-environment
+
+      - name: Run unit tests
+        shell: bash
+        env:
+          COVERAGE_FILE: .coverage.unit
+        run: |
+          mkdir -p reports/unit-tests
+          uv run pytest \
+            --junitxml=reports/unit-tests/test-results.xml \
+            --cov=src \
+            --cov-report=
+
+      - name: Upload unit test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-test-reports
+          path: reports/unit-tests/test-results.xml
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload unit coverage
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-unit
+          path: .coverage.unit
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  integration-tests:
+    name: Integration tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/setup-environment
+
+      - name: Run integration tests
+        shell: bash
+        env:
+          COVERAGE_FILE: .coverage.integration
+        run: |
+          mkdir -p reports/integration-tests
+          uv run pytest \
+            -m integration \
+            --junitxml=reports/integration-tests/test-results.xml \
+            --cov=src \
+            --cov-report=
+
+      - name: Upload integration test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-test-reports
+          path: reports/integration-tests/test-results.xml
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Upload integration coverage
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-integration
+          path: .coverage.integration
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+
+  test-coverage-validation:
+    name: Test coverage validation
+    needs:
+      - unit-tests
+      - integration-tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/setup-environment
+
+      - name: Download unit coverage
+        uses: actions/download-artifact@v8
+        with:
+          name: coverage-unit
+          path: coverage-input/unit
+
+      - name: Download integration coverage
+        uses: actions/download-artifact@v8
+        with:
+          name: coverage-integration
+          path: coverage-input/integration
+
+      - name: Combine coverage data
+        run: uv run coverage combine coverage-input/unit coverage-input/integration
+
+      - name: Validate combined coverage
+        run: uv run coverage report --fail-under=80
+
+      - name: Generate combined coverage reports
+        if: always()
+        run: |
+          mkdir -p reports/coverage
+          uv run coverage xml -o reports/coverage/coverage.xml
+          uv run coverage html -d reports/coverage/html
+
+      - name: Upload combined coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: combined-coverage-report
+          path: reports/coverage/
+          if-no-files-found: warn
+          retention-days: 7
