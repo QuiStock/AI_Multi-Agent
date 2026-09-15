@@ -1,0 +1,20 @@
+name: Setup Python environment
+description: Sets up Python, uv, its cache, and the locked project dependencies
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v7
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Set up uv
+      uses: astral-sh/setup-uv@v10
+      with:
+        version: ${{ env.UV_VERSION }}
+        enable-cache: true
+
+    - name: Install dependencies
+      shell: bash
+      run: uv sync --locked
