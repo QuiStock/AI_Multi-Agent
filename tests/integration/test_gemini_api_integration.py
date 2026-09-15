@@ -4,7 +4,7 @@ from typing import Any
 import pytest
 
 from src.agents.faq.faq_node import create_faq_agent
-from src.models import get_embeddings
+from src.models.gemini import get_embeddings
 
 pytestmark = pytest.mark.integration
 

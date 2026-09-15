@@ -5,7 +5,7 @@ from time import perf_counter
 from langchain_core.embeddings import Embeddings
 
 from src.agents.faq.ingestion.processing.models import Chunk
-from src.models import get_embeddings
+from src.models.gemini import get_embeddings
 
 logger = logging.getLogger(__name__)
 

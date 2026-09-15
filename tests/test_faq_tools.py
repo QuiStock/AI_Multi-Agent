@@ -14,7 +14,7 @@ from src.agents.faq.tools.faq_tool import (
     fingerprint_documents,
     load_documents,
 )
-from src.models import get_embeddings
+from src.models.gemini import get_embeddings
 
 
 class FakeEmbeddings:
