@@ -35,6 +35,7 @@ def test_faq_output_only_checks_markdown() -> None:
     result = validate_output(
         "Resposta informativa sem fonte externa.",
         source="faq",
+        references=["manual.md"],
         evaluator=fail_evaluator,
     )
 
@@ -53,7 +54,11 @@ def test_faq_output_blocks_unbalanced_markdown() -> None:
 
 def test_faq_output_removes_emojis_and_passes() -> None:
     content = "Resposta com símbolo proibido " + chr(0x1F642)
-    result = validate_output(content, source="faq")
+    result = validate_output(
+        content,
+        source="faq",
+        references=["manual.md"],
+    )
 
     assert result["status"] == "passed"
     assert result["reason_code"] == "approved"
@@ -151,7 +156,10 @@ def test_output_node_blocks_missing_response() -> None:
 
 def test_output_node_returns_sanitized_final_response() -> None:
     content = "Resposta final " + chr(0x1F642)
-    result = output_guardrail_node(_state(content), source="faq")
+    result = output_guardrail_node(
+        _state(content, agent_contents=["manual.md"]),
+        source="faq",
+    )
 
     assert result["output_guardrail"]["status"] == "passed"
     assert result["final_response"]["content"] == "Resposta final "
