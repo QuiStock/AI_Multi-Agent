@@ -55,7 +55,9 @@ jobs:
         run: uv sync --locked
 
       - name: Run integration tests
-        run: uv run pytest -m integration --cov=src --cov-fail-under=80
+        # The unit-test job enforces the global coverage threshold. Integration
+        # tests run a smaller, focused subset and should not fail on its ratio.
+        run: uv run pytest -m integration --cov=src --cov-fail-under=0
 
   type-checks:
     runs-on: ubuntu-latest

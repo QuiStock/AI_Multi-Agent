@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from functools import partial
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
 from langgraph.graph import END, START, StateGraph
@@ -191,7 +191,8 @@ def create_agent_graph(
     routed_node = partial(run_router_node, router=router_node)
     output = output_node or create_output_guardrail_node(source="faq")
 
-    graph = StateGraph(GraphState)
+    # LangGraph's current stubs reject these valid TypedDict node callbacks.
+    graph: Any = StateGraph(GraphState)
     graph.add_node("input_guardrail", input_node)
     graph.add_node("input_rejected", input_rejected_node)
     graph.add_node("router", routed_node)
@@ -223,7 +224,7 @@ def create_agent_graph(
     graph.add_edge("out_of_scope", END)
     graph.add_edge("finalize_output", END)
 
-    return graph.compile()
+    return cast(CompiledStateGraph, graph.compile())
 
 
 __all__ = [
