@@ -6,7 +6,7 @@ from langchain_core.messages import HumanMessage
 
 from src.agents.compiler.executor import CompilerExecutor
 from src.agents.router.executor import RouterExecutor
-from src.context.schemas import CompilerResult, RouteDecision
+from src.graphs.contracts import CompilerResult, RouteDecision
 
 
 class FakeRouterModel:

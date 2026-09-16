@@ -2,37 +2,19 @@ from __future__ import annotations
 
 from typing import Any
 
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import HumanMessage
 
-from src.graphs.agent_graph import (
-    CLARIFICATION_RESPONSE,
-    OUT_OF_SCOPE_RESPONSE,
-    create_agent_graph,
-    decide_after_input_guardrail,
-    decide_after_router,
-)
-from src.guardrails.input_guardrail import CONTROLLED_INPUT_RESPONSE
-from src.guardrails.output_guardrail import CONTROLLED_OUTPUT_RESPONSE
+from src.graphs.agent_graph import create_agent_graph
+from src.graphs.decisions import decide_after_input_guardrail, decide_after_router
 
 
-class FakeFaqAgent:
-    def __init__(self, answer: str) -> None:
-        self.answer = answer
-        self.received: list[Any] | None = None
-
-    def invoke(self, state: dict[str, list[Any]]) -> dict[str, list[Any]]:
-        self.received = state["messages"]
-        return {"messages": [*state["messages"], AIMessage(content=self.answer)]}
-
-
-def _passed_input(state: dict[str, Any]) -> dict[str, Any]:
+def _passed_input(_: dict[str, Any]) -> dict[str, Any]:
     return {
         "input_guardrail": {
             "status": "passed",
             "reason_code": "approved",
             "reason": "Aprovado.",
             "redactions": [],
-            "sanitized_message": "pergunta sanitizada",
         }
     }
 
@@ -62,6 +44,50 @@ def _router(route: str, outcome: str) -> Any:
     return node
 
 
+def _faq(_: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "agent_results": {
+            "faq": {
+                "status": "success",
+                "answer": "Resposta baseada na documentação.",
+                "citation_ids": ["faq-1"],
+            }
+        },
+        "evidences": [
+            {
+                "evidence_id": "faq-1",
+                "source_type": "faq_document",
+                "source_id": "manual.md",
+                "content": "Resposta baseada na documentação.",
+                "metadata": {},
+            }
+        ],
+    }
+
+
+class FakeJudge:
+    def __init__(self, status: str = "approved") -> None:
+        self.status = status
+
+    def invoke(self, _: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "reason": "Resultado controlado.",
+            "evidence_ids": ["faq-1"] if self.status == "approved" else [],
+        }
+
+
+class FakeCompiler:
+    def invoke(self, _: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "response_draft": {
+                "content": "Resposta compilada.",
+                "citations": ["faq-1"],
+                "status": "draft",
+            }
+        }
+
+
 def _passing_output(_: dict[str, Any]) -> dict[str, Any]:
     return {
         "output_guardrail": {
@@ -73,68 +99,81 @@ def _passing_output(_: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _graph(judge_status: str = "approved") -> Any:
+    return create_agent_graph(
+        input_guardrail=_passed_input,
+        router=_router("faq", "dispatch"),
+        capabilities={"faq": _faq},
+        judge=FakeJudge(judge_status),
+        compiler=FakeCompiler(),
+        output_guardrail=_passing_output,
+    )
+
+
 def test_decision_functions_fail_closed() -> None:
     assert decide_after_input_guardrail({}) == "input_rejected"
-    assert decide_after_router({}) == "out_of_scope"
+    assert decide_after_router({}, active_routes={"faq"}) == "out_of_scope"
     assert (
         decide_after_router(
-            {"routing_decision": {"route": "faq", "outcome": "dispatch"}}
+            {"routing_decision": {"route": "faq", "outcome": "dispatch"}},
+            active_routes={"faq"},
         )
         == "faq"
     )
 
 
-def test_graph_dispatches_sanitized_input_to_faq_and_validates_output() -> None:
-    faq = FakeFaqAgent("Resposta baseada na documentação.")
-    graph = create_agent_graph(
-        input_node=_passed_input,
-        router=_router("faq", "dispatch"),
-        faq_agent=faq,
-        output_node=_passing_output,
+def test_graph_dispatches_to_faq_judge_and_compiler() -> None:
+    result = _graph().invoke(
+        {"messages": [HumanMessage(content="pergunta original")]}
     )
 
-    result = graph.invoke({"messages": [HumanMessage(content="pergunta original")]})
-
-    assert faq.received is not None
-    assert faq.received[-1].content == "pergunta sanitizada"
-    assert result["agent_outputs"] == [
-        {"content": "Resposta baseada na documentação.", "status": "success"}
-    ]
-    assert result["final_response"]["status"] == "success"
+    assert result["agent_results"]["faq"]["status"] == "success"
+    assert result["agent_results"]["judge"]["status"] == "approved"
+    assert result["response_draft"]["content"] == "Resposta compilada."
+    assert result["output_guardrail"]["status"] == "passed"
     assert result["status"] == "completed"
 
 
 def test_graph_returns_controlled_response_for_input_rejection() -> None:
     graph = create_agent_graph(
-        input_node=_blocked_input,
+        input_guardrail=_blocked_input,
         router=_router("faq", "dispatch"),
-        faq_agent=FakeFaqAgent("não deve executar"),
-        output_node=_passing_output,
+        capabilities={"faq": _faq},
+        judge=FakeJudge(),
+        compiler=FakeCompiler(),
+        output_guardrail=_passing_output,
     )
 
-    result = graph.invoke({"messages": [HumanMessage(content="entrada bloqueada")]})
+    result = graph.invoke({"messages": [HumanMessage(content="bloqueada")]})
 
     assert result["final_response"] == {
-        "content": CONTROLLED_INPUT_RESPONSE,
+        "content": "A entrada não pôde ser processada.",
         "status": "rejected",
     }
 
 
-def test_graph_handles_controlled_router_routes() -> None:
+def test_graph_handles_clarification_and_out_of_scope_routes() -> None:
     for route, outcome, expected_content, expected_status in [
         (
             "clarification_required",
             "clarification_required",
-            CLARIFICATION_RESPONSE,
+            "Preciso de mais detalhes para continuar.",
             "clarification_required",
         ),
-        ("out_of_scope", "out_of_scope", OUT_OF_SCOPE_RESPONSE, "out_of_scope"),
+        (
+            "out_of_scope",
+            "out_of_scope",
+            "Essa solicitação está fora do escopo atual.",
+            "out_of_scope",
+        ),
     ]:
         graph = create_agent_graph(
-            input_node=_passed_input,
+            input_guardrail=_passed_input,
             router=_router(route, outcome),
-            faq_agent=FakeFaqAgent("não deve executar"),
-            output_node=_passing_output,
+            capabilities={"faq": _faq},
+            judge=FakeJudge(),
+            compiler=FakeCompiler(),
+            output_guardrail=_passing_output,
         )
 
         result = graph.invoke({"messages": [HumanMessage(content="pergunta")]})
@@ -145,27 +184,14 @@ def test_graph_handles_controlled_router_routes() -> None:
         }
 
 
-def test_graph_replaces_a_blocked_output_with_controlled_response() -> None:
-    def blocked_output(_: dict[str, Any]) -> dict[str, Any]:
-        return {
-            "output_guardrail": {
-                "status": "blocked",
-                "reason_code": "invalid_markdown",
-                "reason": "Formato inválido.",
-                "violations": ["invalid_markdown"],
-            }
-        }
-
-    graph = create_agent_graph(
-        input_node=_passed_input,
-        router=_router("faq", "dispatch"),
-        faq_agent=FakeFaqAgent("Resposta inválida"),
-        output_node=blocked_output,
+def test_graph_returns_controlled_response_when_judge_blocks() -> None:
+    result = _graph(judge_status="insufficient_evidence").invoke(
+        {"messages": [HumanMessage(content="pergunta")]}
     )
 
-    result = graph.invoke({"messages": [HumanMessage(content="pergunta")]})
-
     assert result["final_response"] == {
-        "content": CONTROLLED_OUTPUT_RESPONSE,
-        "status": "rejected",
+        "content": (
+            "Não foi possível confirmar a resposta com evidências suficientes."
+        ),
+        "status": "error",
     }

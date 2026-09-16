@@ -325,7 +325,11 @@ def test_indexer_indexes_new_documents_and_persists_manifest(
 ) -> None:
     docs_dir = _create_docs(tmp_path, "a.txt", "nested/b.md")
     manifest_path = tmp_path / "manifest.json"
-    components = _make_components(docs_dir, manifest_path)
+    components = _make_components(
+        docs_dir,
+        manifest_path,
+        record_manifest_events=True,
+    )
 
     summary = components.indexer.run()
 

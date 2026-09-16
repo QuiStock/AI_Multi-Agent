@@ -5,7 +5,7 @@ from typing import Any, Literal
 import pytest
 from langchain_core.messages import HumanMessage
 
-from src.context.schemas import SupportValidationResult
+from src.guardrails.config import SupportValidationResult
 from src.guardrails.input_guardrail import input_guardrail_node, validate_input
 from src.guardrails.output_guardrail import (
     create_output_guardrail_node,

@@ -4,7 +4,10 @@ import re
 from collections.abc import Callable, Mapping
 from typing import Any, Literal, cast
 
-from .config import GuardrailConfig, GuardrailResult
+from .config import (
+    GuardrailConfig,
+    InputGuardrailResult,
+)
 
 CONTROLLED_INPUT_RESPONSE = (
     "Não posso processar essa solicitação. "
@@ -195,7 +198,7 @@ def _blocked(
     reason_code: str,
     reason: str,
     redactions: list[str] | None = None,
-) -> GuardrailResult:
+) -> InputGuardrailResult:
     return {
         "status": "blocked",
         "reason_code": reason_code,
@@ -226,7 +229,7 @@ def validate_input(
     *,
     config: GuardrailConfig | None = None,
     classifier: Callable[[str], SemanticCategory] | None = None,
-) -> GuardrailResult:
+) -> InputGuardrailResult:
     config = config or GuardrailConfig()
     text = _latest_human_message(state)
 
@@ -334,7 +337,7 @@ def validate_input(
 def input_guardrail_node(
     state: Mapping[str, Any],
     *,
-    validator: Callable[[Mapping[str, Any]], GuardrailResult] | None = None,
+    validator: Callable[[Mapping[str, Any]], InputGuardrailResult] | None = None,
     config: GuardrailConfig | None = None,
     classifier: Callable[[str], SemanticCategory] | None = None,
 ) -> dict[str, Any]:
@@ -348,7 +351,7 @@ def input_guardrail_node(
         )
     )
 
-    return {
+    update: dict[str, Any] = {
         "input_guardrail": result,
         "status": (
             "in_progress"
@@ -356,3 +359,14 @@ def input_guardrail_node(
             else "completed"
         ),
     }
+
+    request = state.get("request")
+    sanitized_message = result.get("sanitized_message")
+
+    if isinstance(request, Mapping) and isinstance(sanitized_message, str):
+        update["request"] = {
+            **request,
+            "sanitized_message": sanitized_message,
+        }
+
+    return update

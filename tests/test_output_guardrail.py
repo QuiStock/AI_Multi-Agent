@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.context.schemas import SupportValidationResult
+from src.guardrails.config import SupportValidationResult
 from src.guardrails.output_guardrail import (
     CONTROLLED_OUTPUT_RESPONSE,
     create_output_guardrail_node,
@@ -163,6 +163,79 @@ def test_output_node_returns_sanitized_final_response() -> None:
 
     assert result["output_guardrail"]["status"] == "passed"
     assert result["final_response"]["content"] == "Resposta final "
+
+
+def test_output_node_supports_response_draft_from_graph_state() -> None:
+    result = output_guardrail_node(
+        {
+            "status": "in_progress",
+            "response_draft": {
+                "content": "Resposta final " + chr(0x1F642),
+                "citations": [],
+                "status": "draft",
+            },
+            "evidences": [
+                {
+                    "content": "Evidência da resposta.",
+                }
+            ],
+        },
+        source="faq",
+    )
+
+    assert result["output_guardrail"]["status"] == "passed"
+    assert result["response_draft"]["content"] == "Resposta final "
+
+
+def test_approved_judge_prevents_duplicate_semantic_validation() -> None:
+    def fail_evaluator(_: str, __: list[str]) -> str:
+        raise AssertionError("o judge já validou o suporte semântico")
+
+    result = output_guardrail_node(
+        {
+            "status": "in_progress",
+            "response_draft": {
+                "content": "Resposta validada pelo judge.",
+                "citations": [],
+                "status": "draft",
+            },
+            "agent_results": {
+                "judge": {
+                    "status": "approved",
+                    "reason": "Evidência suficiente.",
+                    "evidence_ids": ["faq-1"],
+                }
+            },
+        },
+        source="compiled",
+        evaluator=fail_evaluator,
+    )
+
+    assert result["output_guardrail"]["status"] == "passed"
+
+
+def test_output_node_blocks_when_judge_is_not_approved() -> None:
+    result = output_guardrail_node(
+        {
+            "status": "in_progress",
+            "response_draft": {
+                "content": "Resposta sem confirmação.",
+                "citations": [],
+                "status": "draft",
+            },
+            "agent_results": {
+                "judge": {
+                    "status": "insufficient_evidence",
+                    "reason": "Evidência insuficiente.",
+                    "evidence_ids": [],
+                }
+            },
+        },
+        source="compiled",
+    )
+
+    assert result["output_guardrail"]["status"] == "blocked"
+    assert result["output_guardrail"]["reason_code"] == "judge_not_approved"
 
 
 def test_created_compiled_node_passes_injected_model() -> None:

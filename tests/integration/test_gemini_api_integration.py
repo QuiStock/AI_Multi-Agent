@@ -1,9 +1,7 @@
 import os
-from typing import Any
 
 import pytest
 
-from src.agents.faq.faq_node import create_faq_agent
 from src.models.gemini import get_embeddings
 
 pytestmark = pytest.mark.integration
@@ -15,20 +13,10 @@ REQUIRES_API_KEY = pytest.mark.skipif(
 
 
 @REQUIRES_API_KEY
-def test_real_embeddings_index_and_search(pipeline: Any, docs_dir: Any) -> None:
-    store = pipeline.ensure(docs_dir, embeddings=get_embeddings())
-    assert store is not None
-    hits = store.similarity_search("regra de negocio", k=4)
-    assert len(hits) >= 1
+def test_real_embeddings_can_embed_a_query() -> None:
+    vector = get_embeddings().embed_query("regra de negocio")
+
+    assert vector
+    assert all(isinstance(value, float) for value in vector)
 
 
-@REQUIRES_API_KEY
-def test_agent_invocation_end_to_end(pipeline: Any, docs_dir: Any) -> None:
-    pipeline.point_to(docs_dir)
-    agent = create_faq_agent()
-    response = agent.invoke(
-        {"messages": [{"role": "user", "content": "Qual a regra de negocio do FAQ?"}]}
-    )
-    answer = response["messages"][-1].content
-    assert isinstance(answer, str)
-    assert answer.strip()

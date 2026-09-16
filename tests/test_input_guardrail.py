@@ -126,3 +126,23 @@ def test_input_node_writes_guardrail_result_and_processing_status() -> None:
     assert result["input_guardrail"]["status"] == "passed"
     assert result["status"] == "in_progress"
     assert CONTROLLED_INPUT_RESPONSE.startswith("Não posso processar")
+
+
+def test_input_node_propagates_sanitized_message_to_request_context() -> None:
+    original = "Meu e-mail é pessoa@example.com."
+    state = {
+        **_state(original),
+        "request": {
+            "request_id": "request-1",
+            "user_id": "user-1",
+            "conversation_id": "conversation-1",
+        },
+    }
+
+    result = input_guardrail_node(
+        state,
+        validator=lambda current: validate_input(current, classifier=_approved),
+    )
+
+    assert result["request"]["sanitized_message"] != original
+    assert "pessoa@example.com" not in result["request"]["sanitized_message"]

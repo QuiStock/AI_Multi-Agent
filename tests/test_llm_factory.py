@@ -4,7 +4,7 @@ import importlib
 from typing import Any
 
 from src import config, llm_factory
-from src.context.schemas import CompilerResult, RouteDecision
+from src.graphs.contracts import CompilerResult, RouteDecision
 
 compiler_module = importlib.import_module("src.agents.compiler.compiler_node")
 faq_module = importlib.import_module("src.agents.faq.faq_node")

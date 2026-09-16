@@ -10,8 +10,8 @@ from typing import Any
 from langchain_core.messages import AnyMessage, HumanMessage, SystemMessage
 from pydantic import ValidationError
 
-from src.context.schemas import CompilerResult
-from src.context.state import GraphState
+from src.graphs.contracts import CompilerResult
+from src.graphs.state import GraphState
 from src.llm_factory import get_structured_model
 
 from .compiler_prompt import COMPILER_SYSTEM_PROMPT
