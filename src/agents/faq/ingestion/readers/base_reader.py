@@ -23,14 +23,10 @@ class DocumentReader(ABC):
     def validate_path(self, path: Path) -> None:
         """Validate the given file path."""
         if not path.exists():
-            raise DocumentReaderError(
-                f"Arquivo não encontrado: {path}"
-            )   
+            raise DocumentReaderError(f"Arquivo não encontrado: {path}")
 
         if not path.is_file():
-            raise DocumentReaderError(
-                f"O caminho não é um arquivo: {path}"
-            )
+            raise DocumentReaderError(f"O caminho não é um arquivo: {path}")
 
     @abstractmethod
     def read(self, path: Path, *, doc_id: str) -> DocumentLoaded:

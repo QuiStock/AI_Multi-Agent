@@ -23,6 +23,4 @@ class IndexedDocumentState:
 @dataclass
 class Manifest:
     schema_version: int = 1
-    documents: dict[str, IndexedDocumentState] = field(
-        default_factory=dict
-    )       
+    documents: dict[str, IndexedDocumentState] = field(default_factory=dict)

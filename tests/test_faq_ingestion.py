@@ -348,8 +348,7 @@ def test_indexer_indexes_new_documents_and_persists_manifest(
     manifest = ManifestStore(manifest_path).load()
     assert set(manifest.documents) == {"a.txt", "nested/b.md"}
     assert all(
-        state.status == IndexStatus.INDEXED
-        for state in manifest.documents.values()
+        state.status == IndexStatus.INDEXED for state in manifest.documents.values()
     )
 
 
@@ -373,9 +372,7 @@ def test_indexer_reindexes_modified_document(tmp_path: Path) -> None:
 
     first_run = _make_components(docs_dir, manifest_path)
     first_run.indexer.run()
-    first_hash = first_run.manifest_store.load().documents[
-        "faq.txt"
-    ].source_hash
+    first_hash = first_run.manifest_store.load().documents["faq.txt"].source_hash
 
     (docs_dir / "faq.txt").write_text(
         "conteúdo modificado",
@@ -385,9 +382,7 @@ def test_indexer_reindexes_modified_document(tmp_path: Path) -> None:
     second_run = _make_components(docs_dir, manifest_path)
     summary = second_run.indexer.run()
 
-    second_hash = second_run.manifest_store.load().documents[
-        "faq.txt"
-    ].source_hash
+    second_hash = second_run.manifest_store.load().documents["faq.txt"].source_hash
 
     assert summary.indexed == 1
     assert summary.skipped == 0
@@ -429,9 +424,7 @@ def test_indexer_marks_reader_failure_and_continues_with_other_documents(
     assert summary.failed == 1
     assert manifest.documents["ok.txt"].status == IndexStatus.INDEXED
     assert manifest.documents["broken.txt"].status == IndexStatus.FAILED
-    assert "falha ao ler broken.txt" in (
-        manifest.documents["broken.txt"].error or ""
-    )
+    assert "falha ao ler broken.txt" in (manifest.documents["broken.txt"].error or "")
 
 
 def test_indexer_marks_qdrant_failure_without_marking_document_indexed(
@@ -514,14 +507,10 @@ def test_indexer_logs_summary_and_document_metrics(
         components.indexer.run()
 
     finished = next(
-        record
-        for record in caplog.records
-        if record.message == "faq_indexing_finished"
+        record for record in caplog.records if record.message == "faq_indexing_finished"
     )
     indexed = next(
-        record
-        for record in caplog.records
-        if record.message == "faq_document_indexed"
+        record for record in caplog.records if record.message == "faq_document_indexed"
     )
 
     assert finished.files_discovered == 1
@@ -579,10 +568,7 @@ def test_embedding_provider_logs_count_dimension_and_duration(
 
     with caplog.at_level(
         logging.INFO,
-        logger=(
-            "src.agents.faq.ingestion.embedding."
-            "google_embedding_provider"
-        ),
+        logger=("src.agents.faq.ingestion.embedding.google_embedding_provider"),
     ):
         vectors = provider.embed_documents(chunks)
 
@@ -655,10 +641,7 @@ def test_qdrant_store_logs_inserted_and_removed_points(
 
     assert len(replaced) == 2
     assert all(record.points_inserted == 1 for record in replaced)
-    assert [
-        record.points_removed
-        for record in old_versions_deleted
-    ] == [0, 1]
+    assert [record.points_removed for record in old_versions_deleted] == [0, 1]
     assert deleted.points_removed == 1
     assert all(record.duration_ms >= 0 for record in replaced)
     assert deleted.duration_ms >= 0

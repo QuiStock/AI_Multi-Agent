@@ -19,7 +19,6 @@ class DocumentNormalizer:
             parts=normalized_parts,
         )
 
-
     @staticmethod
     def normalize_text(text: str) -> str:
         text = text.replace("\r\n", "\n")
@@ -27,10 +26,7 @@ class DocumentNormalizer:
         text = text.replace("\ufeff", "")
         text = text.replace("\u00a0", " ")
 
-        lines = [
-            line.rstrip()
-            for line in text.split("\n")
-        ]
+        lines = [line.rstrip() for line in text.split("\n")]
 
         text = "\n".join(lines)
 

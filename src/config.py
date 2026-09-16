@@ -73,9 +73,7 @@ class Settings(BaseSettings):
             self.faq_metadata_file = self.faq_data_dir / "metadata.json"
 
         if self.faq_chunk_overlap >= self.faq_chunk_size:
-            raise ValueError(
-                "FAQ_CHUNK_OVERLAP deve ser menor que FAQ_CHUNK_SIZE"
-            )
+            raise ValueError("FAQ_CHUNK_OVERLAP deve ser menor que FAQ_CHUNK_SIZE")
 
         return self
 
@@ -104,9 +102,7 @@ def validate_required_settings(
 
     if missing_variables:
         variables = ", ".join(missing_variables)
-        raise SettingsError(
-            f"Variáveis obrigatórias não preenchidas: {variables}"
-        )
+        raise SettingsError(f"Variáveis obrigatórias não preenchidas: {variables}")
 
     return current_settings
 

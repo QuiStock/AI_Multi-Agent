@@ -20,10 +20,7 @@ def create_faq_search_tool(
         evidences = retriever.search(query)
 
         if not evidences:
-            return (
-                "Nenhuma evidência relevante encontrada "
-                "na base de conhecimento."
-            )
+            return "Nenhuma evidência relevante encontrada na base de conhecimento."
 
         return json.dumps(
             {"resultados": evidences},

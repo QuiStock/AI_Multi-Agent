@@ -30,7 +30,8 @@ def input_rejected_node(_: GraphState) -> GraphState:
         "status": "completed",
     }
 
-def clarification_node(_: GraphState)-> GraphState:
+
+def clarification_node(_: GraphState) -> GraphState:
     return {
         "final_response": {
             "content": "Preciso de mais detalhes para continuar.",
@@ -38,6 +39,7 @@ def clarification_node(_: GraphState)-> GraphState:
         },
         "status": "completed",
     }
+
 
 def out_of_scope_node(_: GraphState) -> GraphState:
     return {
@@ -48,14 +50,12 @@ def out_of_scope_node(_: GraphState) -> GraphState:
         "status": "completed",
     }
 
-def judge_blocked_node(
-        _: GraphState
-)-> GraphState:
+
+def judge_blocked_node(_: GraphState) -> GraphState:
     return {
         "final_response": {
             "content": (
-                "Não foi possível confirmar a resposta "
-                "com evidências suficientes."
+                "Não foi possível confirmar a resposta com evidências suficientes."
             ),
             "status": "error",
         },
@@ -71,9 +71,7 @@ def finalize_output_node(
     if guardrail and guardrail["status"] == "blocked":
         return {
             "final_response": {
-                "content": (
-                    "Não foi possível liberar essa resposta."
-                ),
+                "content": ("Não foi possível liberar essa resposta."),
                 "status": "rejected",
             },
             "status": "completed",
@@ -90,23 +88,21 @@ def _as_runnable(
     return RunnableLambda(node)
 
 
-
-def create_agent_graph(
-        *,
+def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
+    *,
     input_guardrail: GraphNode,
     router: GraphNode,
     capabilities: Mapping[RouteName, GraphNode],
     judge: Any,
     compiler: Any,
     output_guardrail: GraphNode,
-)-> CompiledStateGraph:
+) -> CompiledStateGraph:
     graph: StateGraph[
         GraphState,
         None,
         GraphState,
         GraphState,
     ] = StateGraph(GraphState)
-
 
     graph.add_node(
         "input_guardrail",
@@ -201,16 +197,12 @@ def create_agent_graph(
         },
     )
 
-
     graph.add_edge(
         "context_enrichment",
         "router",
     )
 
-    router_targets: dict[Hashable, str] = {
-        route: route
-        for route in capabilities
-    }
+    router_targets: dict[Hashable, str] = {route: route for route in capabilities}
 
     router_targets.update(
         {
@@ -260,4 +252,3 @@ def create_agent_graph(
         graph.add_edge(terminal_node, END)
 
     return graph.compile()
-
