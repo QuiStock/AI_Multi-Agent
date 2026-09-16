@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 from langchain_core.messages import AIMessage, HumanMessage
-from langgraph.graph import END, START, StateGraph, add_messages
+from langgraph.graph import add_messages
 
-from src.context.state import GraphState, RoutingDecision
+from src.graphs.state import (
+    FAQResult,
+    GraphState,
+    MemoryContext,
+    RoutingDecision,
+    merge_agent_results,
+    merge_evidence,
+)
 
 
 def test_messages_use_langgraph_message_reducer() -> None:
@@ -17,64 +24,66 @@ def test_messages_use_langgraph_message_reducer() -> None:
     assert merged[1].content == "A regra está no documento."
 
 
-def test_agent_outputs_are_accumulated_by_the_state_reducer() -> None:
-    def retrieve_node(state: GraphState) -> dict[str, object]:
-        return {
-            "agent_outputs": [
-                {
-                    "content": "A regra está no manual.",
-                    "status": "success",
-                }
-            ]
-        }
-
-    def compile_node(state: GraphState) -> dict[str, object]:
-        return {
-            "final_response": {
-                "content": "A regra está no manual.",
-                "status": "success",
-            },
-            "status": "completed",
-        }
-
-    graph = (
-        StateGraph(GraphState)
-        .add_node("retrieve", retrieve_node)
-        .add_node("compile", compile_node)
-        .add_edge(START, "retrieve")
-        .add_edge("retrieve", "compile")
-        .add_edge("compile", END)
-        .compile()
-    )
-
-    result = graph.invoke(
-        {
-            "session_id": "session-1",
-            "turn_id": "turn-1",
-            "correlation_id": "correlation-1",
-            "messages": [HumanMessage(content="Qual é a regra?")],
-            "agent_outputs": [],
-            "status": "pending",
-        }
-    )
-
-    assert result["agent_outputs"][0]["content"] == "A regra está no manual."
-    assert result["final_response"]["content"] == "A regra está no manual."
-    assert result["status"] == "completed"
-
-
-def test_state_keeps_execution_identifiers() -> None:
-    state: GraphState = {
-        "session_id": "session-1",
-        "turn_id": "turn-1",
-        "correlation_id": "correlation-1",
-        "messages": [HumanMessage(content="Olá")],
-        "status": "pending",
+def test_agent_results_are_merged_by_agent_name() -> None:
+    faq_result: FAQResult = {
+        "status": "success",
+        "answer": "A regra está no manual.",
+        "citation_ids": ["faq-1"],
     }
 
-    assert state["session_id"] == "session-1"
-    assert state["turn_id"] == "turn-1"
-    assert state["correlation_id"] == "correlation-1"
+    merged = merge_agent_results(
+        {"faq": faq_result},
+        {
+            "judge": {
+                "status": "approved",
+                "reason": "Evidência suficiente.",
+                "evidence_ids": ["faq-1"],
+            }
+        },
+    )
+
+    assert merged["faq"] == faq_result
+    assert merged["judge"]["status"] == "approved"
+
+
+def test_evidence_reducer_replaces_duplicate_ids_instead_of_appending() -> None:
+    first = {
+        "evidence_id": "faq-1",
+        "source_type": "faq_document",
+        "source_id": "manual.md",
+        "content": "Versão inicial.",
+        "metadata": {},
+    }
+    retry = {
+        **first,
+        "content": "Versão confirmada.",
+    }
+
+    merged = merge_evidence([first], [retry])
+
+    assert merged == [retry]
+
+
+def test_memory_is_optional_in_shared_state() -> None:
+    memory: MemoryContext = {
+        "recent_messages": [],
+        "previous_conversation_summaries": [],
+    }
+    state_without_memory: GraphState = {
+        "request": {
+            "request_id": "request-1",
+            "user_id": "user-1",
+            "conversation_id": "conversation-1",
+        },
+        "messages": [HumanMessage(content="Olá")],
+    }
+    state_with_memory: GraphState = {
+        **state_without_memory,
+        "memory": memory,
+    }
+
+    assert "memory" not in state_without_memory
+    assert state_with_memory["memory"] == memory
 
 
 def test_routing_decision_is_separate_from_turn_status() -> None:

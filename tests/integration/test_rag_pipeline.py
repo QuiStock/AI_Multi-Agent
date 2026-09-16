@@ -1,91 +1,42 @@
-import json
-from pathlib import Path
-from typing import Any
+from __future__ import annotations
+
+from types import SimpleNamespace
 
 import pytest
 
-from src.agents.faq.tools.faq_tool import (
-    _read_metadata,
-    fingerprint_documents,
-    load_documents,
-)
+from src.agents.faq.retrieval.qdrant_retriever import QdrantRetriever
+from src.agents.faq.tools.faq_tool import create_faq_search_tool
 
 pytestmark = pytest.mark.integration
 
 
-def test_build_index_end_to_end(pipeline: Any, docs_dir: Path) -> None:
-    documents = load_documents(docs_dir)
-    assert len(documents) >= 2
-
-    store = pipeline.ensure(docs_dir)
-    assert store is not None
-    assert (docs_dir.parent / "vectorstore" / "index.faiss").exists()
-    assert (docs_dir.parent / "metadata.json").exists()
-
-    metadata_path = docs_dir.parent / "metadata.json"
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    assert metadata["docs_fingerprint"] == fingerprint_documents(docs_dir)
-
-    hits = store.similarity_search("regra de negocio", k=4)
-    assert len(hits) >= 1
-    assert hits[0].page_content.strip()
+class IntegrationEmbeddings:
+    def embed_query(self, query: str) -> list[float]:
+        return [float(len(query)), 0.1, 0.2]
 
 
-def test_index_reuses_existing_when_unchanged(
-    pipeline: Any, docs_dir: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    first = pipeline.ensure(docs_dir)
-    assert first is not None
-    metadata_path = docs_dir.parent / "metadata.json"
-    metadata_before = metadata_path.read_text(encoding="utf-8")
-
-    def fail_load(*args: Any, **kwargs: Any) -> Any:
-        raise AssertionError("nao deveria recarregar documentos")
-
-    monkeypatch.setattr("src.agents.faq.tools.faq_tool.load_documents", fail_load)
-
-    second = pipeline.ensure(docs_dir)
-    assert second is not None
-    metadata_after = metadata_path.read_text(encoding="utf-8")
-    assert metadata_before == metadata_after
+class IntegrationVectorStore:
+    def search(self, *, query_vector: list[float], limit: int) -> list[SimpleNamespace]:
+        return [
+            SimpleNamespace(
+                score=0.88,
+                payload={
+                    "source_name": "manual.md",
+                    "text": "A regra está no manual.",
+                    "page_number": None,
+                },
+            )
+        ][:limit]
 
 
-def test_index_rebuilds_when_docs_change(pipeline: Any, docs_dir: Path) -> None:
-    pipeline.ensure(docs_dir)
-
-    (docs_dir / "doc.txt").write_text(
-        "Conteudo alterado do documento.", encoding="utf-8"
+def test_faq_tool_connects_retriever_to_serialized_evidence() -> None:
+    retriever = QdrantRetriever(
+        embedding_provider=IntegrationEmbeddings(),
+        vector_store=IntegrationVectorStore(),
     )
-    store = pipeline.ensure(docs_dir)
-    assert store is not None
+    search_tool = create_faq_search_tool(retriever)
 
-    metadata_path = docs_dir.parent / "metadata.json"
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    assert metadata["docs_fingerprint"] == fingerprint_documents(docs_dir)
+    result = search_tool.invoke({"query": "Qual é a regra?"})
 
-
-def test_index_returns_none_without_documents(pipeline: Any, tmp_path: Path) -> None:
-    empty_dir = tmp_path / "vazio"
-    empty_dir.mkdir()
-    assert pipeline.ensure(empty_dir) is None
-
-
-def test_read_metadata_ignores_malformed_content(tmp_path: Path) -> None:
-    metadata_file = tmp_path / "metadata.json"
-    metadata_file.write_text("[]", encoding="utf-8")
-    assert _read_metadata(metadata_file) == {}
-
-
-def test_faq_search_end_to_end(pipeline: Any, docs_dir: Path) -> None:
-    result = pipeline.search("qual a regra de negocio do FAQ?", docs_dir)
-    assert "doc.txt" in result
-    assert "manual.pdf" in result
-    assert "Regra de negocio" in result
-    assert "Regra em PDF." in result
-
-
-def test_faq_search_no_documents(pipeline: Any, tmp_path: Path) -> None:
-    empty_dir = tmp_path / "vazio"
-    empty_dir.mkdir()
-    result = pipeline.search("qual a regra?", empty_dir)
-    assert result == "Nenhum documento disponível na base de conhecimento."
+    assert "manual.md" in result
+    assert "A regra está no manual." in result

@@ -276,7 +276,7 @@ class QdrantStore:
         self,
         query_vector: Sequence[float],
         limit: int = 4,
-    ):
+    ) -> list[models.ScoredPoint]:
         result = self.qdrant_client.query_points(
             collection_name=self.collection_name,
             query=list(query_vector),

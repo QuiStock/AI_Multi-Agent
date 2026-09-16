@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import Literal, TypedDict
 
+from pydantic import BaseModel, ConfigDict
+
 GuardrailStatus = Literal["passed", "blocked"]
 
 
@@ -13,6 +15,29 @@ class GuardrailResult(TypedDict, total=False):
     history_marker: str
     sanitized_message: str
     sanitized_content: str
+
+
+class InputGuardrailResult(TypedDict, total=False):
+    status: GuardrailStatus
+    reason_code: str
+    reason: str
+    redactions: list[str]
+    history_marker: str
+    sanitized_message: str
+
+
+class OutputGuardrailResult(TypedDict, total=False):
+    status: GuardrailStatus
+    reason_code: str
+    reason: str
+    violations: list[str]
+    sanitized_content: str
+
+
+class SupportValidationResult(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    status: Literal["supported", "unsupported"]
 
 
 @dataclass(frozen=True)

@@ -5,7 +5,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage
 
 from src.agents.router.router_node import create_router_node
-from src.context.schemas import RouteDecision
+from src.graphs.contracts import RouteDecision
 
 
 class FakeRouterModel:

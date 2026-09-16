@@ -5,7 +5,7 @@ from time import perf_counter
 from langchain_core.embeddings import Embeddings
 
 from src.agents.faq.ingestion.processing.models import Chunk
-from src.models.gemini import get_embeddings
+from src.llm_factory import embeddings
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ class GoogleEmbeddingProvider:
         embedding_model: Embeddings | None = None,
     ):
         self._embedding_model = (
-            embedding_model or get_embeddings()
+            embedding_model or embeddings
         )
 
     @property
