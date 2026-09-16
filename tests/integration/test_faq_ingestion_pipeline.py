@@ -218,9 +218,7 @@ def test_ingestion_components_cover_validation_and_persistence_edges(
     manifest_path = tmp_path / "manifest.json"
     store = ManifestStore(manifest_path)
     assert store.load().documents == {}
-    store.save(
-        store.load()
-    )
+    store.save(store.load())
     assert json.loads(manifest_path.read_text(encoding="utf-8"))["documents"] == {}
 
     manifest_path.write_text("{invalid", encoding="utf-8")

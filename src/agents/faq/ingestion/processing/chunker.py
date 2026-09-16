@@ -21,38 +21,30 @@ class RecursiveCharacterChunker(Chunker):
         self.config = config or ChunkingConfig()
 
         if self.config.max_chars <= 0:
-            raise ValueError(
-                "max_chars deve ser maior que zero"
-            )
+            raise ValueError("max_chars deve ser maior que zero")
 
         if self.config.overlap_chars < 0:
-            raise ValueError(
-                "overlap_chars não pode ser negativo"
-            )
+            raise ValueError("overlap_chars não pode ser negativo")
 
         if self.config.overlap_chars >= self.config.max_chars:
-            raise ValueError(
-                "overlap_chars deve ser menor que max_chars"
-            )
+            raise ValueError("overlap_chars deve ser menor que max_chars")
 
-        self.text_splitter = (
-            RecursiveCharacterTextSplitter(
-                chunk_size=self.config.max_chars,
-                chunk_overlap=self.config.overlap_chars,
-                separators=[
-                    "\n\n",
-                    "\n",
-                    " ",
-                    "",
-                ],
-                length_function=len,
-                is_separator_regex=False,
-            )
+        self.text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=self.config.max_chars,
+            chunk_overlap=self.config.overlap_chars,
+            separators=[
+                "\n\n",
+                "\n",
+                " ",
+                "",
+            ],
+            length_function=len,
+            is_separator_regex=False,
         )
 
     def chunk(self, document: DocumentLoaded) -> tuple[Chunk, ...]:
         chunks: list[Chunk] = []
-        chunk_index = 0 
+        chunk_index = 0
 
         for part in document.parts:
             text = part.text.strip()
@@ -60,9 +52,7 @@ class RecursiveCharacterChunker(Chunker):
             if not text:
                 continue
 
-            part_chunks = self.text_splitter.split_text(
-                text
-            )
+            part_chunks = self.text_splitter.split_text(text)
 
             for chunk_text in part_chunks:
                 chunks.append(
@@ -73,21 +63,14 @@ class RecursiveCharacterChunker(Chunker):
                         page_number=part.page_number,
                         heading=part.heading,
                         metadata={
-                            "source_name": (
-                                document.source_name
-                            ),
+                            "source_name": (document.source_name),
                             "file_type": document.file_type,
                             "part_index": part.index,
-                            "chunk_size": (
-                                self.config.max_chars
-                            ),
-                            "chunk_overlap": (
-                                self.config.overlap_chars
-                            ),
+                            "chunk_size": (self.config.max_chars),
+                            "chunk_overlap": (self.config.overlap_chars),
                         },
                     )
                 )
                 chunk_index += 1
-
 
         return tuple(chunks)

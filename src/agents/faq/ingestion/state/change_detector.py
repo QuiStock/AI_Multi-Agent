@@ -19,6 +19,7 @@ class FileSnapshot:
     path: Path
     source_hash: str
 
+
 @dataclass(frozen=True)
 class DetectedChange:
     status: ChangeStatus
@@ -26,13 +27,14 @@ class DetectedChange:
     path: Path | None = None
     source_hash: str | None = None
 
+
 class ChangeDetector:
     def detect(
-            self,
-            root: Path,
-            files: list[Path],
-            manifest: Manifest,
-            pipeline_version: str,
+        self,
+        root: Path,
+        files: list[Path],
+        manifest: Manifest,
+        pipeline_version: str,
     ) -> list[DetectedChange]:
         changes: list[DetectedChange] = []
 
@@ -58,18 +60,14 @@ class ChangeDetector:
                 )
                 continue
 
-            source_changed = (
-                previous_state.source_hash != source_hash
-            )
+            source_changed = previous_state.source_hash != source_hash
 
-            pipeline_changed = (
-                previous_state.pipeline_version != pipeline_version
-            )
+            pipeline_changed = previous_state.pipeline_version != pipeline_version
 
             previous_failed = previous_state.status == IndexStatus.FAILED
 
             if source_changed or pipeline_changed or previous_failed:
-                status = ChangeStatus.MODIFIED 
+                status = ChangeStatus.MODIFIED
             else:
                 status = ChangeStatus.UNCHANGED
 
@@ -81,14 +79,14 @@ class ChangeDetector:
                     source_hash=source_hash,
                 )
             )
-        for doc_id in manifest.documents:
-            if doc_id not in current_doc_ids:
-                changes.append(
-                    DetectedChange(
-                        status=ChangeStatus.DELETED,
-                        doc_id=doc_id,
-                    )
-                )
+        changes.extend(
+            DetectedChange(
+                status=ChangeStatus.DELETED,
+                doc_id=doc_id,
+            )
+            for doc_id in manifest.documents
+            if doc_id not in current_doc_ids
+        )
         return changes
 
     @staticmethod
@@ -98,5 +96,3 @@ class ChangeDetector:
             while chunk := f.read(block_size):
                 hasher.update(chunk)
         return hasher.hexdigest()
-
-    

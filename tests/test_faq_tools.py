@@ -27,9 +27,7 @@ def test_faq_search_reports_missing_evidence() -> None:
 
     result = search_tool.invoke({"query": "qual é a regra?"})
 
-    assert result == (
-        "Nenhuma evidência relevante encontrada na base de conhecimento."
-    )
+    assert result == ("Nenhuma evidência relevante encontrada na base de conhecimento.")
 
 
 def test_faq_search_serializes_retrieved_evidence() -> None:

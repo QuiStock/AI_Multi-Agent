@@ -13,6 +13,7 @@ class Chunk:
     heading: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
+
 @dataclass(frozen=True)
 class ChunkingConfig:
     max_chars: int = 1_000

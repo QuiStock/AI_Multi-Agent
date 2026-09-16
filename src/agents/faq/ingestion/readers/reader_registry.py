@@ -23,8 +23,7 @@ class ReaderRegistry:
 
                 if normalized_extension in self._reader_by_extension:
                     raise ValueError(
-                        f"Existe mais de um reader para "
-                        f"{normalized_extension}"
+                        f"Existe mais de um reader para {normalized_extension}"
                     )
 
                 self._reader_by_extension[normalized_extension] = reader
@@ -45,6 +44,7 @@ class ReaderRegistry:
         """Read a document using the reader registered for its extension."""
         reader = self.reader_for(path)
         return reader.read(path, doc_id=doc_id)
+
 
 def create_default_registry() -> ReaderRegistry:
     return ReaderRegistry(

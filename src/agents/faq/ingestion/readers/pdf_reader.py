@@ -17,9 +17,7 @@ class PDFReader(DocumentReader):
         try:
             pdf = PdfReader(str(path))
         except Exception as e:
-            raise DocumentReaderError(
-                f"Erro ao ler o arquivo PDF {path}: {e}"
-            ) from e
+            raise DocumentReaderError(f"Erro ao ler o arquivo PDF {path}: {e}") from e
 
         parts: list[DocumentPart] = []
         for page_index, page in enumerate(pdf.pages):
@@ -33,13 +31,12 @@ class PDFReader(DocumentReader):
 
             parts.append(
                 DocumentPart(
-                    index=page_index, 
+                    index=page_index,
                     text=text,
                     page_number=page_index + 1,
-                    metadata={
-                        "text_extraction_empty": not bool(text.strip())
-                    },
-                    ))
+                    metadata={"text_extraction_empty": not bool(text.strip())},
+                )
+            )
 
         return DocumentLoaded(
             doc_id=doc_id,

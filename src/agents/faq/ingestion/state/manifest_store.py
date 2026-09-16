@@ -18,9 +18,7 @@ class ManifestStore:
             return Manifest()
 
         try:
-            data = json.loads(
-                self.manifest_path.read_text(encoding="utf-8")
-            )
+            data = json.loads(self.manifest_path.read_text(encoding="utf-8"))
 
         except json.JSONDecodeError as e:
             raise RuntimeError(
@@ -40,20 +38,21 @@ class ManifestStore:
                 error=doc_data.get("error"),
             )
 
-        return Manifest(schema_version=data.get(
-            "schema_version",
-            1,
-        ), documents=documents)
+        return Manifest(
+            schema_version=data.get(
+                "schema_version",
+                1,
+            ),
+            documents=documents,
+        )
 
-
-    def save(self, manifest:Manifest) -> None:
+    def save(self, manifest: Manifest) -> None:
         self.manifest_path.parent.mkdir(parents=True, exist_ok=True)
 
         data = {
             "schema_version": manifest.schema_version,
             "documents": {
-                doc_id: asdict(doc_state)
-                | {"status": doc_state.status.value}
+                doc_id: asdict(doc_state) | {"status": doc_state.status.value}
                 for doc_id, doc_state in manifest.documents.items()
             },
         }
@@ -66,6 +65,5 @@ class ManifestStore:
             json.dumps(data, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
-
 
         temporary_path.replace(self.manifest_path)

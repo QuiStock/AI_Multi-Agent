@@ -19,9 +19,7 @@ class GoogleEmbeddingProvider:
         self,
         embedding_model: Embeddings | None = None,
     ):
-        self._embedding_model = (
-            embedding_model or embeddings
-        )
+        self._embedding_model = embedding_model or embeddings
 
     @property
     def model_name(self) -> str:
@@ -63,10 +61,7 @@ class GoogleEmbeddingProvider:
             )
             return []
 
-        texts = [
-            chunk.text
-            for chunk in chunks
-        ]
+        texts = [chunk.text for chunk in chunks]
 
         try:
             vectors = self._embedding_model.embed_documents(texts)
@@ -88,10 +83,7 @@ class GoogleEmbeddingProvider:
                 },
             )
 
-            return [
-                [float(value) for value in vector]
-                for vector in vectors
-            ]
+            return [[float(value) for value in vector] for vector in vectors]
         except Exception as exc:
             logger.exception(
                 "faq_embedding_documents_failed",
@@ -113,18 +105,11 @@ class GoogleEmbeddingProvider:
         query: str,
     ) -> list[float]:
         if not query.strip():
-            raise ValueError(
-                "A consulta não pode estar vazia."
-            )
+            raise ValueError("A consulta não pode estar vazia.")
 
-        vector = self._embedding_model.embed_query(
-            query
-        )
+        vector = self._embedding_model.embed_query(query)
 
-        return [
-            float(value)
-            for value in vector
-        ]
+        return [float(value) for value in vector]
 
     @staticmethod
     def _validate_dimensions(
@@ -136,17 +121,9 @@ class GoogleEmbeddingProvider:
         dimension = len(vectors[0])
 
         if dimension == 0:
-            raise RuntimeError(
-                "O embedding retornou um vetor vazio."
-            )
+            raise RuntimeError("O embedding retornou um vetor vazio.")
 
-        invalid_vectors = [
-            vector
-            for vector in vectors
-            if len(vector) != dimension
-        ]
+        invalid_vectors = [vector for vector in vectors if len(vector) != dimension]
 
         if invalid_vectors:
-            raise RuntimeError(
-                "Os embeddings retornaram dimensões diferentes."
-            )
+            raise RuntimeError("Os embeddings retornaram dimensões diferentes.")
