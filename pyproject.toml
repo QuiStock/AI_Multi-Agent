@@ -47,6 +47,9 @@ skip-magic-trailing-comma = false
 [tool.ruff.lint]
 select = ["E", "F", "I"]
 
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
 [tool.mypy]
 python_version = "3.14"
 warn_return_any = true
