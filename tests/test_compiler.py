@@ -5,7 +5,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage
 
 from src.agents.compiler.compiler_node import create_compiler_node
-from src.context.schemas import CompilerResult
+from src.graphs.contracts import CompilerResult
 
 
 class FakeCompilerModel:

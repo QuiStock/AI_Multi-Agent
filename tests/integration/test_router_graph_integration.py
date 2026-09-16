@@ -6,7 +6,8 @@ import pytest
 from langchain_core.messages import HumanMessage
 
 from src.agents.router.router_node import create_router_node
-from src.context.schemas import Route, RouteDecision
+from src.graphs.contracts import RouteDecision
+from src.graphs.state import RouteName as Route
 
 pytestmark = pytest.mark.integration
 

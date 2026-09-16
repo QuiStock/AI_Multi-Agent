@@ -1,6 +1,6 @@
 import json
 
-from langchain_core.tools import tool
+from langchain_core.tools import BaseTool, tool
 
 from src.agents.faq.retrieval.qdrant_retriever import (
     QdrantRetriever,
@@ -9,7 +9,7 @@ from src.agents.faq.retrieval.qdrant_retriever import (
 
 def create_faq_search_tool(
     retriever: QdrantRetriever,
-):
+) -> BaseTool:
     @tool
     def faq_search(query: str) -> str:
         """Busca evidências na base de conhecimento da FAQ."""

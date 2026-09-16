@@ -1,7 +1,11 @@
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
-from .config import GuardrailConfig, GuardrailResult
+from .config import (
+    GuardrailConfig,
+    InputGuardrailResult,
+    OutputGuardrailResult,
+)
 from .input import SemanticCategory, validate_input
 from .output import OutputSource, SupportStatus, validate_output
 
@@ -21,7 +25,7 @@ class GuardrailPipeline:
     def check_input(
         self,
         state: Mapping[str, Any],
-    ) -> GuardrailResult:
+    ) -> InputGuardrailResult:
         return validate_input(
             state,
             config=self.config,
@@ -34,7 +38,7 @@ class GuardrailPipeline:
         *,
         source: OutputSource,
         references: Sequence[str] = (),
-    ) -> GuardrailResult:
+    ) -> OutputGuardrailResult:
         return validate_output(
             content,
             config=self.config,

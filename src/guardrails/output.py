@@ -3,14 +3,17 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from functools import partial
 from typing import Any, Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from src.context.schemas import SupportValidationResult
-
-from .config import GuardrailConfig, GuardrailResult
+from .config import (
+    GuardrailConfig,
+    OutputGuardrailResult,
+    SupportValidationResult,
+)
 
 CONTROLLED_OUTPUT_RESPONSE = (
     "Não foi possível liberar essa resposta. "
@@ -110,8 +113,8 @@ def _result(
     status: Literal["passed", "blocked"],
     violations: list[str] | None = None,
     sanitized_content: str | None = None,
-) -> GuardrailResult:
-    result: GuardrailResult = {
+) -> OutputGuardrailResult:
+    result: OutputGuardrailResult = {
         "status": status,
         "reason_code": reason_code,
         "reason": reason,
@@ -131,7 +134,7 @@ def validate_output(
     source: OutputSource,
     references: Sequence[str] = (),
     evaluator: Callable[[str, list[str]], SupportStatus] | None = None,
-) -> GuardrailResult:
+) -> OutputGuardrailResult:
     config = config or GuardrailConfig()
 
     if not isinstance(content, str):
@@ -266,7 +269,12 @@ def output_guardrail_node(
     source: OutputSource,
     evaluator: Callable[[str, list[str]], SupportStatus] | None = None,
 ) -> dict[str, object]:
-    response = state.get("final_response")
+    response_key = "response_draft"
+    response = state.get(response_key)
+
+    if not isinstance(response, Mapping):
+        response_key = "final_response"
+        response = state.get(response_key)
 
     if not isinstance(response, Mapping):
         result = _result(
@@ -274,6 +282,26 @@ def output_guardrail_node(
             "Nenhuma resposta foi disponibilizada para validação.",
             status="blocked",
             violations=["empty_response"],
+        )
+
+        return {
+            "output_guardrail": result,
+            "status": "completed",
+        }
+
+    raw_agent_results = state.get("agent_results")
+    judge = (
+        raw_agent_results.get("judge")
+        if isinstance(raw_agent_results, Mapping)
+        else None
+    )
+
+    if isinstance(judge, Mapping) and judge.get("status") != "approved":
+        result = _result(
+            "judge_not_approved",
+            "A resposta não foi aprovada pelas evidências disponíveis.",
+            status="blocked",
+            violations=["judge_not_approved"],
         )
 
         return {
@@ -295,17 +323,44 @@ def output_guardrail_node(
             "status": "completed",
         }
 
-    raw_outputs = state.get("agent_outputs", [])
+    raw_evidences = state.get("evidences", [])
     references = [
         item["content"]
-        for item in raw_outputs
+        for item in raw_evidences
         if isinstance(item, Mapping)
         and isinstance(item.get("content"), str)
-    ] if isinstance(raw_outputs, list) else []
+    ] if isinstance(raw_evidences, list) else []
+
+    if not references:
+        raw_outputs = state.get("agent_outputs", [])
+        references = [
+            item["content"]
+            for item in raw_outputs
+            if isinstance(item, Mapping)
+            and isinstance(item.get("content"), str)
+        ] if isinstance(raw_outputs, list) else []
+
+    if not references:
+        raw_results = state.get("agent_results", {})
+        references = [
+            value[key]
+            for value in raw_results.values()
+            if isinstance(value, Mapping)
+            for key in ("answer", "content")
+            if isinstance(value.get(key), str)
+        ] if isinstance(raw_results, Mapping) else []
+
+    validation_config = config or GuardrailConfig()
+
+    if isinstance(judge, Mapping) and judge.get("status") == "approved":
+        validation_config = replace(
+            validation_config,
+            evaluate_compiled_support=False,
+        )
 
     result = validate_output(
         content,
-        config=config,
+        config=validation_config,
         source=source,
         references=references,
         evaluator=evaluator,
@@ -323,7 +378,7 @@ def output_guardrail_node(
     sanitized_content = result.get("sanitized_content")
 
     if isinstance(sanitized_content, str):
-        update["final_response"] = {
+        update[response_key] = {
             **response,
             "content": sanitized_content,
         }
