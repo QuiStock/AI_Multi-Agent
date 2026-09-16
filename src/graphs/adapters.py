@@ -10,7 +10,8 @@ from src.graphs.state import FAQResult, GraphState, JudgeResult
 GraphUpdate = GraphState
 GraphNode = Callable[[GraphState], GraphUpdate]
 
-def sanitized_state(state: GraphState)-> GraphState:
+
+def sanitized_state(state: GraphState) -> GraphState:
     request = state.get("request", {})
     sanitized = request.get("sanitized_message")
 
@@ -31,26 +32,21 @@ def sanitized_state(state: GraphState)-> GraphState:
         "messages": messages,
     }
 
+
 def run_router_node(
-        state: GraphState,
-        *,
-        router: GraphNode,
-)-> GraphUpdate:
+    state: GraphState,
+    *,
+    router: GraphNode,
+) -> GraphUpdate:
     return router(sanitized_state(state=state))
 
+
 def run_faq_node(
-        state: GraphState,
-        *,
-        agent: Any,
-)-> GraphUpdate:
-    result = agent.invoke(
-        {
-            "messages":sanitized_state(state).get(
-                "messages",
-                []
-            )
-        }
-    )
+    state: GraphState,
+    *,
+    agent: Any,
+) -> GraphUpdate:
+    result = agent.invoke({"messages": sanitized_state(state).get("messages", [])})
 
     messages: list[AnyMessage] = result.get(
         "messages",
@@ -59,12 +55,11 @@ def run_faq_node(
 
     answer = next(
         (
-        str(message.content).strip()
-        for message in reversed(messages)
-        if isinstance(message, AIMessage)
-        and str(message.content).strip()
-    ),
-    ""
+            str(message.content).strip()
+            for message in reversed(messages)
+            if isinstance(message, AIMessage) and str(message.content).strip()
+        ),
+        "",
     )
 
     faq_result: FAQResult = {
@@ -74,17 +69,14 @@ def run_faq_node(
     }
 
     return {
-        "agent_results":{
+        "agent_results": {
             "faq": faq_result,
         }
     }
 
-def run_judge_node(
-        state: GraphState,
-        *,
-        judge: Any
-)-> GraphUpdate:
-    result= judge.invoke(
+
+def run_judge_node(state: GraphState, *, judge: Any) -> GraphUpdate:
+    result = judge.invoke(
         {
             "agent_results": state.get(
                 "agent_results",

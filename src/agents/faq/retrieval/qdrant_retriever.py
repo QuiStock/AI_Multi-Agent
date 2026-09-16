@@ -29,7 +29,6 @@ class QdrantRetriever:
         results_count = 0
 
         try:
-
             query_vector = self.embedding_provider.embed_query(query)
 
             points = self.vector_store.search(

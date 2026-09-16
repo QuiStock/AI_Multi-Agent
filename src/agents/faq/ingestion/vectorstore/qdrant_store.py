@@ -19,10 +19,9 @@ class QdrantStore:
         self.qdrant_client = qdrant_client
         self.collection_name = collection_name
 
-
     def ensure_collection(
-            self,
-            vector_size: int,
+        self,
+        vector_size: int,
     ) -> None:
         if self.qdrant_client.collection_exists(self.collection_name):
             return
@@ -36,19 +35,17 @@ class QdrantStore:
         )
 
     def replace_document(
-            self,
-            *,
-            doc_id: str,
-            source_hash: str,
-            pipeline_version: str,
-            chunks: Sequence[Chunk],
-            vectors: Sequence[Sequence[float]],
-    )-> None:
+        self,
+        *,
+        doc_id: str,
+        source_hash: str,
+        pipeline_version: str,
+        chunks: Sequence[Chunk],
+        vectors: Sequence[Sequence[float]],
+    ) -> None:
         if len(chunks) != len(vectors):
-            raise ValueError(
-                "O número de chunks não corresponde ao número de vetores."
-            )
-        
+            raise ValueError("O número de chunks não corresponde ao número de vetores.")
+
         if not chunks:
             self.delete_by_document(doc_id=doc_id)
             return
@@ -73,15 +70,9 @@ class QdrantStore:
                 "doc_id": doc_id,
                 "source_hash": source_hash,
                 "pipeline_version": pipeline_version,
-                "source_name": chunk.metadata.get(
-                    "source_name"
-                ),
-                "file_type": chunk.metadata.get(
-                    "file_type"
-                ),
-                "part_index": chunk.metadata.get(
-                    "part_index"
-                ),
+                "source_name": chunk.metadata.get("source_name"),
+                "file_type": chunk.metadata.get("file_type"),
+                "part_index": chunk.metadata.get("part_index"),
                 "chunk_index": chunk.chunk_index,
                 "text": chunk.text,
                 "page_number": chunk.page_number,
@@ -98,7 +89,6 @@ class QdrantStore:
 
         started_at = perf_counter()
         points_inserted = len(points)
-
 
         try:
             # Salva a nova versão.
@@ -144,9 +134,7 @@ class QdrantStore:
         self,
         doc_id: str,
     ) -> None:
-        if not self.qdrant_client.collection_exists(
-            self.collection_name
-        ):
+        if not self.qdrant_client.collection_exists(self.collection_name):
             logger.info(
                 "qdrant_document_deleted",
                 extra={
@@ -164,9 +152,7 @@ class QdrantStore:
             must=[
                 models.FieldCondition(
                     key="doc_id",
-                    match=models.MatchValue(
-                        value=doc_id
-                    ),
+                    match=models.MatchValue(value=doc_id),
                 )
             ]
         )
@@ -176,9 +162,7 @@ class QdrantStore:
 
             self.qdrant_client.delete(
                 collection_name=self.collection_name,
-                points_selector=models.FilterSelector(
-                    filter=document_filter
-                ),
+                points_selector=models.FilterSelector(filter=document_filter),
                 wait=True,
             )
 
@@ -218,17 +202,13 @@ class QdrantStore:
             must=[
                 models.FieldCondition(
                     key="doc_id",
-                    match=models.MatchValue(
-                        value=doc_id
-                    ),
+                    match=models.MatchValue(value=doc_id),
                 )
             ],
             must_not=[
                 models.FieldCondition(
                     key="source_hash",
-                    match=models.MatchValue(
-                        value=source_hash
-                    ),
+                    match=models.MatchValue(value=source_hash),
                 )
             ],
         )
@@ -240,9 +220,7 @@ class QdrantStore:
 
             self.qdrant_client.delete(
                 collection_name=self.collection_name,
-                points_selector=models.FilterSelector(
-                    filter=old_version_filter
-                ),
+                points_selector=models.FilterSelector(filter=old_version_filter),
                 wait=True,
             )
 
@@ -293,16 +271,9 @@ class QdrantStore:
         source_hash: str,
         chunk_index: int,
     ) -> str:
-        value = (
-            f"{self.collection_name}:"
-            f"{doc_id}:"
-            f"{source_hash}:"
-            f"{chunk_index}"
-        )
+        value = f"{self.collection_name}:{doc_id}:{source_hash}:{chunk_index}"
 
-        return str(
-            uuid5(NAMESPACE_URL, value)
-        )
+        return str(uuid5(NAMESPACE_URL, value))
 
     def _count_points(self, point_filter: models.Filter) -> int:
         result = self.qdrant_client.count(

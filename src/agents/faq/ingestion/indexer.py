@@ -26,7 +26,6 @@ from src.agents.faq.ingestion.vectorstore.qdrant_store import QdrantStore
 logger = logging.getLogger(__name__)
 
 
-
 SUPPORTED_EXTENSIONS = frozenset({".txt", ".md", ".pdf"})
 
 
@@ -39,7 +38,7 @@ class IndexingSummary:
 
 
 class Indexer:
-    def __init__(
+    def __init__(  # noqa: PLR0913 - explicit dependency-injection boundary
         self,
         *,
         documents_root: Path,
@@ -134,8 +133,6 @@ class Indexer:
                 },
             )
 
-            
-
     def _discover_files(self) -> list[Path]:
         if not self.documents_root.exists():
             return []
@@ -143,11 +140,8 @@ class Indexer:
         return sorted(
             path
             for path in self.documents_root.rglob("*")
-            if path.is_file()
-            and path.suffix.lower() in SUPPORTED_EXTENSIONS
+            if path.is_file() and path.suffix.lower() in SUPPORTED_EXTENSIONS
         )
-
-    
 
     def _handle_document(
         self,
@@ -170,7 +164,6 @@ class Indexer:
             },
         )
 
-        
         if change.path is None or change.source_hash is None:
             raise RuntimeError(
                 "Uma alteração de documento precisa de path e source_hash."
@@ -288,9 +281,7 @@ class Indexer:
                 manifest=manifest,
                 doc_id=doc_id,
                 source_hash=(
-                    previous_state.source_hash
-                    if previous_state is not None
-                    else ""
+                    previous_state.source_hash if previous_state is not None else ""
                 ),
                 error_message=str(exc),
             )

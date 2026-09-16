@@ -25,13 +25,7 @@ OutputSource = Literal["faq", "compiled"]
 SupportStatus = Literal["supported", "unsupported"]
 
 
-_EMOJI_PATTERN = re.compile(
-    "["
-    "\U0001F1E6-\U0001F1FF"
-    "\U0001F300-\U0001FAFF"
-    "\u2600-\u27BF"
-    "]"
-)
+_EMOJI_PATTERN = re.compile("[\U0001f1e6-\U0001f1ff\U0001f300-\U0001faff\u2600-\u27bf]")
 
 
 _UNSUPPORTED_COMMERCIAL_CLAIMS = (
@@ -127,16 +121,10 @@ def _result(
     return result
 
 
-def validate_output(
-    content: str,
-    *,
-    config: GuardrailConfig | None = None,
-    source: OutputSource,
-    references: Sequence[str] = (),
-    evaluator: Callable[[str, list[str]], SupportStatus] | None = None,
-) -> OutputGuardrailResult:
-    config = config or GuardrailConfig()
-
+def _initial_output_result(
+    content: object,
+    config: GuardrailConfig,
+) -> OutputGuardrailResult | None:
     if not isinstance(content, str):
         return _result(
             "invalid_output_type",
@@ -159,100 +147,176 @@ def validate_output(
             status="blocked",
         )
 
-    sanitized = content
-    sanitized_result: str | None = None
+    return None
 
-    if config.remove_emojis:
-        sanitized, emoji_removed = _remove_emojis(content)
-        if emoji_removed:
-            sanitized_result = sanitized
 
-    if config.validate_markdown:
-        violations = _markdown_violations(sanitized)
+def _sanitize_output(
+    content: str,
+    config: GuardrailConfig,
+) -> tuple[str, str | None]:
+    if not config.remove_emojis:
+        return content, None
 
-        if violations:
-            return _result(
-                (
-                    "empty_response"
-                    if "empty_response" in violations
-                    else "invalid_markdown"
-                ),
-                "A resposta não atende ao formato mínimo permitido.",
-                status="blocked",
-                violations=violations,
-                sanitized_content=sanitized_result,
-            )
+    sanitized, emoji_removed = _remove_emojis(content)
+    return sanitized, sanitized if emoji_removed else None
 
-    if (
-        source == "faq"
-        and config.require_sources_for_faq
-        and not references
-    ):
+
+def _markdown_result(
+    sanitized: str,
+    sanitized_result: str | None,
+    config: GuardrailConfig,
+) -> OutputGuardrailResult | None:
+    if not config.validate_markdown:
+        return None
+
+    violations = _markdown_violations(sanitized)
+    if not violations:
+        return None
+
+    return _result(
+        "empty_response" if "empty_response" in violations else "invalid_markdown",
+        "A resposta não atende ao formato mínimo permitido.",
+        status="blocked",
+        violations=violations,
+        sanitized_content=sanitized_result,
+    )
+
+
+def _missing_sources_result(
+    *,
+    source: OutputSource,
+    references: Sequence[str],
+    sanitized_result: str | None,
+    config: GuardrailConfig,
+) -> OutputGuardrailResult | None:
+    if source != "faq" or not config.require_sources_for_faq or references:
+        return None
+
+    return _result(
+        "missing_sources",
+        "A resposta do FAQ não possui fontes suficientes.",
+        status="blocked",
+        sanitized_content=sanitized_result,
+    )
+
+
+def _commercial_claim_result(
+    sanitized: str,
+    sanitized_result: str | None,
+    config: GuardrailConfig,
+) -> OutputGuardrailResult | None:
+    if not config.block_unsupported_commercial_claims:
+        return None
+
+    lowered = sanitized.casefold()
+    if not any(claim in lowered for claim in _UNSUPPORTED_COMMERCIAL_CLAIMS):
+        return None
+
+    return _result(
+        "unsupported_commercial_claim",
+        "A resposta afirma uma operação que não pertence ao escopo do Quistock.",
+        status="blocked",
+        sanitized_content=sanitized_result,
+    )
+
+
+def _compiled_support_result(
+    sanitized: str,
+    references: Sequence[str],
+    sanitized_result: str | None,
+    evaluator: Callable[[str, list[str]], SupportStatus] | None,
+) -> OutputGuardrailResult | None:
+    if evaluator is None:
         return _result(
-            "missing_sources",
-            "A resposta do FAQ não possui fontes suficientes.",
+            "validator_unavailable",
+            "Não foi possível validar o suporte da resposta.",
             status="blocked",
+            violations=["support_validation_failed"],
             sanitized_content=sanitized_result,
         )
 
-    if config.block_unsupported_commercial_claims:
-        lowered = sanitized.casefold()
+    try:
+        support = evaluator(sanitized, list(references))
+    except Exception:
+        return _result(
+            "validator_unavailable",
+            "Não foi possível validar o suporte da resposta.",
+            status="blocked",
+            violations=["support_validation_failed"],
+            sanitized_content=sanitized_result,
+        )
 
-        if any(
-            claim in lowered
-            for claim in _UNSUPPORTED_COMMERCIAL_CLAIMS
-        ):
-            return _result(
-                "unsupported_commercial_claim",
-                (
-                    "A resposta afirma uma operação que não pertence "
-                    "ao escopo do Quistock."
-                ),
-                status="blocked",
-                sanitized_content=sanitized_result,
-            )
+    if support == "unsupported":
+        return _result(
+            "unsupported_content",
+            "A resposta contém conteúdo não sustentado pelos materiais fornecidos.",
+            status="blocked",
+            violations=["unsupported_content"],
+            sanitized_content=sanitized_result,
+        )
+
+    if support != "supported":
+        return _result(
+            "validator_unavailable",
+            "A validação não retornou uma classificação permitida.",
+            status="blocked",
+            violations=["invalid_support_status"],
+            sanitized_content=sanitized_result,
+        )
+
+    return None
+
+
+def validate_output(
+    content: str,
+    *,
+    config: GuardrailConfig | None = None,
+    source: OutputSource,
+    references: Sequence[str] = (),
+    evaluator: Callable[[str, list[str]], SupportStatus] | None = None,
+) -> OutputGuardrailResult:
+    config = config or GuardrailConfig()
+
+    initial_result = _initial_output_result(content, config)
+    if initial_result is not None:
+        return initial_result
+
+    sanitized, sanitized_result = _sanitize_output(content, config)
+
+    markdown_result = _markdown_result(
+        sanitized,
+        sanitized_result,
+        config,
+    )
+    if markdown_result is not None:
+        return markdown_result
+
+    sources_result = _missing_sources_result(
+        source=source,
+        references=references,
+        sanitized_result=sanitized_result,
+        config=config,
+    )
+    if sources_result is not None:
+        return sources_result
+
+    commercial_claim_result = _commercial_claim_result(
+        sanitized,
+        sanitized_result,
+        config,
+    )
+    if commercial_claim_result is not None:
+        return commercial_claim_result
 
     if source == "compiled" and config.evaluate_compiled_support:
-        if evaluator is None:
-            return _result(
-                "validator_unavailable",
-                "Não foi possível validar o suporte da resposta.",
-                status="blocked",
-                violations=["support_validation_failed"],
-                sanitized_content=sanitized_result,
-            )
-
-        try:
-            support = evaluator(sanitized, list(references))
-        except Exception:
-            return _result(
-                "validator_unavailable",
-                "Não foi possível validar o suporte da resposta.",
-                status="blocked",
-                violations=["support_validation_failed"],
-                sanitized_content=sanitized_result,
-            )
-
-        if support == "unsupported":
-            return _result(
-                "unsupported_content",
-                (
-                    "A resposta contém conteúdo não sustentado "
-                    "pelos materiais fornecidos."
-                ),
-                status="blocked",
-                violations=["unsupported_content"],
-                sanitized_content=sanitized_result,
-            )
-
-        if support != "supported":
-            return _result(
-                "validator_unavailable",
-                "A validação não retornou uma classificação permitida.",
-                status="blocked",
-                violations=["invalid_support_status"],
-                sanitized_content=sanitized_result,
-            )
+        support_result = _compiled_support_result(
+            sanitized,
+            references,
+            sanitized_result,
+            evaluator,
+        )
+        if support_result is not None:
+            return support_result
 
     return _result(
         "approved",
@@ -324,31 +388,41 @@ def output_guardrail_node(
         }
 
     raw_evidences = state.get("evidences", [])
-    references = [
-        item["content"]
-        for item in raw_evidences
-        if isinstance(item, Mapping)
-        and isinstance(item.get("content"), str)
-    ] if isinstance(raw_evidences, list) else []
+    references = (
+        [
+            item["content"]
+            for item in raw_evidences
+            if isinstance(item, Mapping) and isinstance(item.get("content"), str)
+        ]
+        if isinstance(raw_evidences, list)
+        else []
+    )
 
     if not references:
         raw_outputs = state.get("agent_outputs", [])
-        references = [
-            item["content"]
-            for item in raw_outputs
-            if isinstance(item, Mapping)
-            and isinstance(item.get("content"), str)
-        ] if isinstance(raw_outputs, list) else []
+        references = (
+            [
+                item["content"]
+                for item in raw_outputs
+                if isinstance(item, Mapping) and isinstance(item.get("content"), str)
+            ]
+            if isinstance(raw_outputs, list)
+            else []
+        )
 
     if not references:
         raw_results = state.get("agent_results", {})
-        references = [
-            value[key]
-            for value in raw_results.values()
-            if isinstance(value, Mapping)
-            for key in ("answer", "content")
-            if isinstance(value.get(key), str)
-        ] if isinstance(raw_results, Mapping) else []
+        references = (
+            [
+                value[key]
+                for value in raw_results.values()
+                if isinstance(value, Mapping)
+                for key in ("answer", "content")
+                if isinstance(value.get(key), str)
+            ]
+            if isinstance(raw_results, Mapping)
+            else []
+        )
 
     validation_config = config or GuardrailConfig()
 
@@ -368,11 +442,7 @@ def output_guardrail_node(
 
     update: dict[str, object] = {
         "output_guardrail": result,
-        "status": (
-            "in_progress"
-            if result["status"] == "passed"
-            else "completed"
-        ),
+        "status": ("in_progress" if result["status"] == "passed" else "completed"),
     }
 
     sanitized_content = result.get("sanitized_content")

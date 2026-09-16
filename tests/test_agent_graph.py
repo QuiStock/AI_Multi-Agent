@@ -123,9 +123,7 @@ def test_decision_functions_fail_closed() -> None:
 
 
 def test_graph_dispatches_to_faq_judge_and_compiler() -> None:
-    result = _graph().invoke(
-        {"messages": [HumanMessage(content="pergunta original")]}
-    )
+    result = _graph().invoke({"messages": [HumanMessage(content="pergunta original")]})
 
     assert result["agent_results"]["faq"]["status"] == "success"
     assert result["agent_results"]["judge"]["status"] == "approved"

@@ -19,25 +19,30 @@ TurnStatus = Literal[
     "failed",
 ]
 
+
 class RequestContext(TypedDict):
     request_id: str
     user_id: str
     conversation_id: str
     sanitized_message: NotRequired[str]
 
+
 class ChatMessage(TypedDict):
     role: Literal["user", "assistant"]
     content: str
     created_at: str
+
 
 class ConversationSummary(TypedDict):
     conversation_id: str
     summary: str
     created_at: str
 
+
 class MemoryContext(TypedDict):
     recent_messages: list[ChatMessage]
     previous_conversation_summaries: list[ConversationSummary]
+
 
 class InputGuardrailResult(TypedDict):
     status: Literal["passed", "blocked"]
@@ -46,21 +51,24 @@ class InputGuardrailResult(TypedDict):
     redactions: list[str]
     sanitized_message: NotRequired[str]
 
+
 class OutputGuardrailResult(TypedDict):
     status: Literal["passed", "blocked"]
     reason_code: str
     reason: str
     violations: list[str]
 
+
 class RoutingDecision(TypedDict):
     route: RouteName
-    target_agent: str | None 
+    target_agent: str | None
     outcome: Literal[
         "dispatch",
         "clarification_required",
         "out_of_scope",
     ]
     reason: str
+
 
 class Evidence(TypedDict):
     evidence_id: str
@@ -69,18 +77,22 @@ class Evidence(TypedDict):
     content: str
     metadata: dict[str, str]
 
+
 class AgentResult(TypedDict):
     error_code: NotRequired[str]
+
 
 class FAQResult(AgentResult):
     status: Literal["success", "unavailable", "error"]
     answer: str
     citation_ids: list[str]
 
+
 class ProductWorkFlowResult(AgentResult):
     status: Literal["success", "unavailable", "error"]
     answer: str
     evidence_ids: list[str]
+
 
 class JudgeResult(AgentResult):
     status: Literal[
@@ -91,15 +103,18 @@ class JudgeResult(AgentResult):
     reason: str
     evidence_ids: list[str]
 
+
 class AgentResults(TypedDict, total=False):
     faq: FAQResult
     product_workflow: ProductWorkFlowResult
     judge: JudgeResult
 
+
 class ResponseDraft(TypedDict):
     content: str
-    citations:list[str]
+    citations: list[str]
     status: Literal["draft", "blocked"]
+
 
 class FinalResponse(TypedDict):
     content: str
@@ -111,34 +126,31 @@ class FinalResponse(TypedDict):
         "error",
     ]
 
+
 class AgentError(TypedDict):
     agent: str
     code: str
     message: str
     retryable: bool
 
+
 def merge_agent_results(
-        current: AgentResults | None,
-        update: AgentResults | None
+    current: AgentResults | None, update: AgentResults | None
 ) -> AgentResults:
-    return {
-        **(current or {}),
-        **(update or {})
-    }
+    return {**(current or {}), **(update or {})}
+
 
 def merge_evidence(
     current: list[Evidence] | None,
     update: list[Evidence] | None,
 ) -> list[Evidence]:
-    merged = {
-        item["evidence_id"]: item
-        for item in (current or [])
-    }
+    merged = {item["evidence_id"]: item for item in (current or [])}
 
     for item in update or []:
         merged[item["evidence_id"]] = item
 
     return list(merged.values())
+
 
 class GraphState(TypedDict, total=False):
     request: RequestContext
@@ -169,4 +181,3 @@ class GraphState(TypedDict, total=False):
 
     status: TurnStatus
     errors: list[AgentError]
-

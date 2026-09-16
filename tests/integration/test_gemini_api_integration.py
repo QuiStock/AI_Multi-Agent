@@ -18,5 +18,3 @@ def test_real_embeddings_can_embed_a_query() -> None:
 
     assert vector
     assert all(isinstance(value, float) for value in vector)
-
-

@@ -131,9 +131,7 @@ Mensagem: {message}
 """
 
 
-
-
-def _content_to_text(content:Any) -> str:
+def _content_to_text(content: Any) -> str:
     if isinstance(content, str):
         return content
 
@@ -156,7 +154,7 @@ def _content_to_text(content:Any) -> str:
     return str(content)
 
 
-def _latest_human_message(state: Mapping[str, Any])-> str| None:
+def _latest_human_message(state: Mapping[str, Any]) -> str | None:
     messages = state.get("messages", [])
 
     for message in reversed(messages):
@@ -223,19 +221,11 @@ def _classify_semantically(message: str) -> SemanticCategory:
     raise ValueError("Classificação semântica inválida.")
 
 
-
-def validate_input(
-    state: Mapping[str, Any],
-    *,
-    config: GuardrailConfig | None = None,
-    classifier: Callable[[str], SemanticCategory] | None = None,
-) -> InputGuardrailResult:
-    config = config or GuardrailConfig()
-    text = _latest_human_message(state)
-
-    if text is None or (
-        config.reject_empty_input and not text.strip()
-    ):
+def _initial_input_result(
+    text: str | None,
+    config: GuardrailConfig,
+) -> InputGuardrailResult | None:
+    if text is None or (config.reject_empty_input and not text.strip()):
         return _blocked(
             "empty_message",
             "A mensagem do usuário está vazia.",
@@ -256,15 +246,16 @@ def validate_input(
             "A mensagem excede o limite permitido.",
         )
 
-    sanitized = text
-    redactions: list[str] = []
+    return None
 
-    if config.redact_sensitive_data:
-        sanitized, redactions = _redact_sensitive_data(text)
 
+def _static_input_result(
+    sanitized: str,
+    redactions: list[str],
+    config: GuardrailConfig,
+) -> InputGuardrailResult | None:
     if config.detect_prompt_injection and any(
-        pattern.search(sanitized)
-        for pattern in _INJECTION_PATTERNS
+        pattern.search(sanitized) for pattern in _INJECTION_PATTERNS
     ):
         return _blocked(
             "prompt_injection",
@@ -275,8 +266,7 @@ def validate_input(
     lowered = sanitized.casefold()
 
     if config.block_internal_data_requests and any(
-        keyword in lowered
-        for keyword in _INTERNAL_DATA_KEYWORDS
+        keyword in lowered for keyword in _INTERNAL_DATA_KEYWORDS
     ):
         return _blocked(
             "access_internal_data",
@@ -285,8 +275,7 @@ def validate_input(
         )
 
     if config.block_government_politics and any(
-        pattern.search(sanitized)
-        for pattern in _GOVERNMENT_POLITICS_PATTERNS
+        pattern.search(sanitized) for pattern in _GOVERNMENT_POLITICS_PATTERNS
     ):
         return _blocked(
             "government_politics",
@@ -294,34 +283,86 @@ def validate_input(
             redactions,
         )
 
-    if config.classify_semantically:
-        classifier_to_use = classifier or _classify_semantically
+    return None
 
-        try:
-            category = classifier_to_use(sanitized)
-        except Exception:
-            if config.fail_closed:
-                return _blocked(
-                    "classifier_unavailable",
-                    "Não foi possível concluir a classificação de segurança.",
-                    redactions,
-                )
-            category = "APROVADO"
 
-        if category in _BLOCKED_CATEGORIES:
-            reason_code, reason = _BLOCKED_CATEGORIES[category]
-            return _blocked(
-                reason_code,
-                reason,
-                redactions,
-            )
+def _semantic_input_result(
+    sanitized: str,
+    redactions: list[str],
+    config: GuardrailConfig,
+    classifier: Callable[[str], SemanticCategory] | None,
+) -> InputGuardrailResult | None:
+    if not config.classify_semantically:
+        return None
 
-        if category != "APROVADO":
+    classifier_to_use = classifier or _classify_semantically
+
+    try:
+        category = classifier_to_use(sanitized)
+    except Exception:
+        if config.fail_closed:
             return _blocked(
                 "classifier_unavailable",
-                "A classificação de segurança retornou uma categoria inválida.",
+                "Não foi possível concluir a classificação de segurança.",
                 redactions,
             )
+        category = "APROVADO"
+
+    if category in _BLOCKED_CATEGORIES:
+        reason_code, reason = _BLOCKED_CATEGORIES[category]
+        return _blocked(
+            reason_code,
+            reason,
+            redactions,
+        )
+
+    if category != "APROVADO":
+        return _blocked(
+            "classifier_unavailable",
+            "A classificação de segurança retornou uma categoria inválida.",
+            redactions,
+        )
+
+    return None
+
+
+def validate_input(
+    state: Mapping[str, Any],
+    *,
+    config: GuardrailConfig | None = None,
+    classifier: Callable[[str], SemanticCategory] | None = None,
+) -> InputGuardrailResult:
+    config = config or GuardrailConfig()
+    text = _latest_human_message(state)
+
+    initial_result = _initial_input_result(text, config)
+    if initial_result is not None:
+        return initial_result
+
+    assert text is not None
+
+    sanitized = text
+    redactions: list[str] = []
+
+    if config.redact_sensitive_data:
+        sanitized, redactions = _redact_sensitive_data(text)
+
+    static_result = _static_input_result(
+        sanitized,
+        redactions,
+        config,
+    )
+    if static_result is not None:
+        return static_result
+
+    semantic_result = _semantic_input_result(
+        sanitized,
+        redactions,
+        config,
+        classifier,
+    )
+    if semantic_result is not None:
+        return semantic_result
 
     return {
         "status": "passed",
@@ -330,8 +371,6 @@ def validate_input(
         "redactions": redactions,
         "sanitized_message": sanitized,
     }
-
-
 
 
 def input_guardrail_node(
@@ -353,11 +392,7 @@ def input_guardrail_node(
 
     update: dict[str, Any] = {
         "input_guardrail": result,
-        "status": (
-            "in_progress"
-            if result["status"] == "passed"
-            else "completed"
-        ),
+        "status": ("in_progress" if result["status"] == "passed" else "completed"),
     }
 
     request = state.get("request")
