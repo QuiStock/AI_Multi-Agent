@@ -5,7 +5,8 @@ from typing import Any
 import pytest
 from langchain_core.messages import HumanMessage
 
-from src.agents.router.router_node import create_router_node
+from src.agents.router.executor import RouterExecutor
+from src.graphs.adapters import run_router_node
 from src.graphs.contracts import RouteDecision
 from src.graphs.state import RouteName as Route
 
@@ -28,18 +29,21 @@ class FakeRouterModel:
         ("out_of_scope", "out_of_scope"),
     ],
 )
-def test_router_node_handles_active_route_contract(
+def test_router_adapter_calls_executor_for_active_route_contract(
     route: Route, expected_outcome: str
 ) -> None:
-    node = create_router_node(
-        FakeRouterModel(RouteDecision(route=route, reason="Classificação controlada."))
+    executor = RouterExecutor(
+        model=FakeRouterModel(
+            RouteDecision(route=route, reason="Classificação controlada.")
+        )
     )
 
-    result = node(
+    result = run_router_node(
         {
             "messages": [HumanMessage(content="Solicitação de teste.")],
             "status": "pending",
-        }
+        },
+        router=executor,
     )
 
     assert result["routing_decision"]["outcome"] == expected_outcome

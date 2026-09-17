@@ -9,9 +9,13 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from src.graphs.adapters import (
+    CompilerExecutorPort,
     GraphNode,
+    RouterExecutorPort,
+    run_compiler_node,
     run_context_enrichment_node,
     run_judge_node,
+    run_router_node,
 )
 from src.graphs.decisions import (
     decide_after_input_guardrail,
@@ -77,7 +81,22 @@ def finalize_output_node(
             "status": "completed",
         }
 
+    draft = state.get("response_draft")
+
+    if not draft or draft["status"] != "draft":
+        return {
+            "final_response": {
+                "content": "Não foi possível gerar uma resposta.",
+                "status": "error",
+            },
+            "status": "completed",
+        }
+
     return {
+        "final_response": {
+            "content": draft["content"],
+            "status": "success",
+        },
         "status": "completed",
     }
 
@@ -91,10 +110,10 @@ def _as_runnable(
 def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
     *,
     input_guardrail: GraphNode,
-    router: GraphNode,
+    router: RouterExecutorPort,
     capabilities: Mapping[RouteName, GraphNode],
     judge: Any,
-    compiler: Any,
+    compiler: CompilerExecutorPort,
     output_guardrail: GraphNode,
 ) -> CompiledStateGraph:
     graph: StateGraph[
@@ -124,7 +143,7 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
 
     graph.add_node(
         "router",
-        _as_runnable(router),
+        _as_runnable(partial(run_router_node, router=router)),
         input_schema=GraphState,
     )
 
@@ -143,7 +162,7 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
 
     graph.add_node(
         "compiler",
-        _as_runnable(partial(lambda state: compiler.invoke(state))),
+        _as_runnable(partial(run_compiler_node, compiler=compiler)),
         input_schema=GraphState,
     )
 

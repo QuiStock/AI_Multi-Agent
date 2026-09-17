@@ -11,30 +11,37 @@ from langchain_core.messages import (
 
 from src.agents.compiler.card import COMPILER_CARD
 from src.graphs.contracts import CompilerResult
-from src.graphs.state import GraphState
+from src.graphs.state import GraphState, ResponseDraft
 from src.llm_factory import get_structured_model
 
 
 class CompilerExecutor:
     def __init__(self, model: Any | None = None) -> None:
         self.card = COMPILER_CARD
-        self.model = model or get_structured_model(
-            CompilerResult,
-            kind="fast",
+        self.model = (
+            get_structured_model(
+                CompilerResult,
+                kind="fast",
+            )
+            if model is None
+            else model
         )
 
     def _compiler_messages(
         self,
         state: GraphState,
     ) -> list[AnyMessage]:
-        outputs = json.dumps(
-            state.get("agent_outputs", []),
+        payload = json.dumps(
+            {
+                "agent_results": state.get("agent_results", {}),
+                "evidences": state.get("evidences", []),
+            },
             ensure_ascii=False,
         )
 
         context = HumanMessage(
             content=(
-                f"Resultados dos agentes especializados, já normalizados:\n{outputs}"
+                f"Resultados dos agentes especializados, já normalizados:\n{payload}"
             )
         )
 
@@ -47,17 +54,12 @@ class CompilerExecutor:
     def invoke(
         self,
         state: GraphState,
-    ) -> dict[str, Any]:
-        if not state.get("agent_outputs"):
+    ) -> ResponseDraft:
+        if not state.get("agent_results"):
             return {
-                "validation": {
-                    "status": "blocked",
-                    "reason": ("Nenhum resultado de agente foi disponibilizado."),
-                },
-                "final_response": {
-                    "content": "Não foi possível gerar uma resposta.",
-                    "status": "error",
-                },
+                "content": "Não foi possível gerar uma resposta.",
+                "citations": [],
+                "status": "blocked",
             }
 
         try:
@@ -68,21 +70,20 @@ class CompilerExecutor:
 
         except Exception:
             return {
-                "validation": {
-                    "status": "blocked",
-                    "reason": (
-                        "A saída do compilador não respeitou o contrato esperado."
-                    ),
-                },
-                "final_response": {
-                    "content": ("Não foi possível gerar uma resposta."),
-                    "status": "error",
-                },
+                "content": "Não foi possível gerar uma resposta.",
+                "citations": [],
+                "status": "blocked",
             }
+
+        judge_result = state.get("agent_results", {}).get("judge")
+        citations = (
+            list(judge_result.get("evidence_ids", []))
+            if judge_result is not None
+            else []
+        )
+
         return {
-            "validation": {
-                "status": "passed",
-                "reason": ("A resposta foi compilada conforme o contrato esperado."),
-            },
-            "final_response": result.model_dump(),
+            "content": result.content,
+            "citations": citations,
+            "status": "draft" if result.status == "success" else "blocked",
         }

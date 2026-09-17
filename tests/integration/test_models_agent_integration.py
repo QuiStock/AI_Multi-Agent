@@ -2,12 +2,19 @@ import pytest
 from langgraph.graph.state import CompiledStateGraph
 
 from src import config, llm_factory
-from src.agents.faq.faq_node import create_faq_agent
+from src.agents import tool_registry
+from src.agents.faq.executor import FAQExecutor
+from src.agents.faq.tools.faq_tool import create_faq_search_tool
 from src.agents.registry import get_agent_card
 from src.graphs.contracts import RouteDecision
 from src.models.gemini import get_chat_model, get_embeddings
 
 pytestmark = pytest.mark.integration
+
+
+class FakeRetriever:
+    def search(self, query: str) -> list[dict[str, object]]:
+        return []
 
 
 def _set_fake_key(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -25,10 +32,19 @@ def test_embeddings_uses_configured_model(monkeypatch: pytest.MonkeyPatch) -> No
     assert get_embeddings().model == config.GEMINI_EMBEDDING_MODEL
 
 
-def test_faq_agent_builds_compiled_graph(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_faq_executor_builds_compiled_graph(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     _set_fake_key(monkeypatch)
-    agent = create_faq_agent()
-    assert isinstance(agent, CompiledStateGraph)
+    monkeypatch.setitem(
+        tool_registry.TOOL_REGISTRY,
+        "faq_search",
+        create_faq_search_tool(FakeRetriever()),
+    )
+
+    executor = FAQExecutor()
+
+    assert isinstance(executor.agent, CompiledStateGraph)
 
 
 def test_structured_model_binds_fast_and_fallback_paths(

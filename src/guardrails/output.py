@@ -399,18 +399,6 @@ def output_guardrail_node(
     )
 
     if not references:
-        raw_outputs = state.get("agent_outputs", [])
-        references = (
-            [
-                item["content"]
-                for item in raw_outputs
-                if isinstance(item, Mapping) and isinstance(item.get("content"), str)
-            ]
-            if isinstance(raw_outputs, list)
-            else []
-        )
-
-    if not references:
         raw_results = state.get("agent_results", {})
         references = (
             [

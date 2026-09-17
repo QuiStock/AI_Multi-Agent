@@ -4,7 +4,8 @@ import json
 
 from langgraph.graph.state import CompiledStateGraph
 
-from src.agents.faq.faq_node import create_faq_agent
+from src.agents import tool_registry
+from src.agents.faq.executor import FAQExecutor
 from src.agents.faq.tools.faq_tool import create_faq_search_tool
 
 
@@ -49,9 +50,14 @@ def test_faq_search_serializes_retrieved_evidence() -> None:
     assert result["resultados"][0]["relevancia"] == 0.91
 
 
-def test_faq_agent_accepts_a_tool_through_dependency_injection() -> None:
+def test_faq_executor_builds_agent_with_registered_tool(monkeypatch) -> None:
     search_tool = create_faq_search_tool(FakeRetriever([]))
+    monkeypatch.setitem(
+        tool_registry.TOOL_REGISTRY,
+        "faq_search",
+        search_tool,
+    )
 
-    agent = create_faq_agent(tools=[search_tool])
+    executor = FAQExecutor()
 
-    assert isinstance(agent, CompiledStateGraph)
+    assert isinstance(executor.agent, CompiledStateGraph)

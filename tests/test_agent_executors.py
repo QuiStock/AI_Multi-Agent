@@ -72,19 +72,25 @@ def test_compiler_executor_returns_structured_response() -> None:
     result = CompilerExecutor(model=model).invoke(
         {
             "messages": [HumanMessage(content="Faça um resumo.")],
-            "agent_outputs": [
-                {
-                    "content": "Resultado do FAQ.",
+            "agent_results": {
+                "faq": {
                     "status": "success",
-                }
-            ],
+                    "answer": "Resultado do FAQ.",
+                    "citation_ids": ["faq-1"],
+                },
+                "judge": {
+                    "status": "approved",
+                    "reason": "Evidência suficiente.",
+                    "evidence_ids": ["faq-1"],
+                },
+            },
         }
     )
 
-    assert result["validation"]["status"] == "passed"
-    assert result["final_response"] == {
+    assert result == {
         "content": "Resposta consolidada.",
-        "status": "success",
+        "citations": ["faq-1"],
+        "status": "draft",
     }
     assert model.messages is not None
     assert "Resultado do FAQ." in str(model.messages[-1].content)
@@ -102,8 +108,11 @@ def test_compiler_executor_blocks_missing_outputs() -> None:
         {"messages": [HumanMessage(content="Faça um resumo.")]}
     )
 
-    assert result["validation"]["status"] == "blocked"
-    assert result["final_response"]["status"] == "error"
+    assert result == {
+        "content": "Não foi possível gerar uma resposta.",
+        "citations": [],
+        "status": "blocked",
+    }
     assert model.messages is None
 
 
@@ -113,14 +122,14 @@ def test_compiler_executor_blocks_invalid_output() -> None:
     ).invoke(
         {
             "messages": [HumanMessage(content="Faça um resumo.")],
-            "agent_outputs": [
-                {
-                    "content": "Resultado do FAQ.",
+            "agent_results": {
+                "faq": {
                     "status": "success",
+                    "answer": "Resultado do FAQ.",
+                    "citation_ids": [],
                 }
-            ],
+            },
         }
     )
 
-    assert result["validation"]["status"] == "blocked"
-    assert result["final_response"]["status"] == "error"
+    assert result["status"] == "blocked"

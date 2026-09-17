@@ -29,9 +29,13 @@ def _approved(_: str) -> Literal["APROVADO"]:
 def _output_state(content: str) -> dict[str, Any]:
     return {
         "final_response": {"content": content, "status": "success"},
-        "agent_outputs": [
-            {"content": "Material documentado pelo agente.", "status": "success"}
-        ],
+        "agent_results": {
+            "faq": {
+                "status": "success",
+                "answer": "Material documentado pelo agente.",
+                "citation_ids": [],
+            }
+        },
         "status": "in_progress",
     }
 

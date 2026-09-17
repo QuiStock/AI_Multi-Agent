@@ -14,7 +14,7 @@ from src.llm_factory import get_structured_model
 class RouterExecutor:
     def __init__(self, model: Any | None = None) -> None:
         self.card = ROUTER_CARD
-        self.model = model or get_structured_model(RouteDecision)
+        self.model = get_structured_model(RouteDecision) if model is None else model
 
     @staticmethod
     def _normalize_decision(

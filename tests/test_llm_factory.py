@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import importlib
 from typing import Any
 
 from src import config, llm_factory
+from src.agents.compiler import executor as compiler_module
+from src.agents.faq import executor as faq_module
+from src.agents.router import executor as router_module
 from src.graphs.contracts import CompilerResult, RouteDecision
-
-compiler_module = importlib.import_module("src.agents.compiler.compiler_node")
-faq_module = importlib.import_module("src.agents.faq.faq_node")
-router_module = importlib.import_module("src.agents.router.router_node")
 
 
 class FakeStructuredRunnable:
@@ -72,20 +70,25 @@ def test_fast_structured_model_does_not_create_default_fallback(
     assert fallback.schemas == []
 
 
-def test_faq_agent_uses_fast_model(monkeypatch: Any) -> None:
+def test_faq_executor_uses_fast_model_by_default(monkeypatch: Any) -> None:
     sentinel_model = object()
     captured: dict[str, Any] = {}
 
-    def fake_create_agent(model: Any, **kwargs: Any) -> object:
+    def fake_create_agent_from_card(*, card: Any, model: Any) -> object:
+        captured["card"] = card
         captured["model"] = model
-        captured.update(kwargs)
         return object()
 
     monkeypatch.setattr(faq_module, "llm_fast", sentinel_model)
-    monkeypatch.setattr(faq_module, "create_agent", fake_create_agent)
+    monkeypatch.setattr(
+        faq_module,
+        "create_agent_from_card",
+        fake_create_agent_from_card,
+    )
 
-    faq_module.create_faq_agent()
+    executor = faq_module.FAQExecutor()
 
+    assert executor.agent is not None
     assert captured["model"] is sentinel_model
 
 
@@ -99,9 +102,9 @@ def test_router_uses_default_structured_model(monkeypatch: Any) -> None:
 
     monkeypatch.setattr(router_module, "get_structured_model", fake_structured_model)
 
-    node = router_module.create_router_node()
+    executor = router_module.RouterExecutor()
 
-    assert node is not None
+    assert executor.model is sentinel_model
     assert captured["schema"] is RouteDecision
 
 
@@ -120,7 +123,7 @@ def test_compiler_uses_fast_structured_model(monkeypatch: Any) -> None:
         fake_structured_model,
     )
 
-    node = compiler_module.create_compiler_node()
+    executor = compiler_module.CompilerExecutor()
 
-    assert node is not None
+    assert executor.model is sentinel_model
     assert captured == {"schema": CompilerResult, "kind": "fast"}

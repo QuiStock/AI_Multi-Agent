@@ -1,14 +1,35 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+from collections.abc import Callable, Sequence
+from typing import Any, Protocol
 
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
 
-from src.graphs.state import FAQResult, GraphState, JudgeResult
+from src.graphs.state import (
+    FAQResult,
+    GraphState,
+    JudgeResult,
+    ResponseDraft,
+    RoutingDecision,
+)
 
 GraphUpdate = GraphState
 GraphNode = Callable[[GraphState], GraphUpdate]
+
+
+class RouterExecutorPort(Protocol):
+    def invoke(
+        self,
+        messages: Sequence[AnyMessage],
+    ) -> RoutingDecision: ...
+
+
+class FAQExecutorPort(Protocol):
+    def invoke(self, state: dict[str, Any]) -> dict[str, Any]: ...
+
+
+class CompilerExecutorPort(Protocol):
+    def invoke(self, state: GraphState) -> ResponseDraft: ...
 
 
 def sanitized_state(state: GraphState) -> GraphState:
@@ -36,17 +57,29 @@ def sanitized_state(state: GraphState) -> GraphState:
 def run_router_node(
     state: GraphState,
     *,
-    router: GraphNode,
+    router: RouterExecutorPort,
 ) -> GraphUpdate:
-    return router(sanitized_state(state=state))
+    current_state = sanitized_state(state)
+
+    return {
+        "routing_decision": router.invoke(
+            current_state.get("messages", []),
+        ),
+        "status": "in_progress",
+    }
 
 
 def run_faq_node(
     state: GraphState,
     *,
-    agent: Any,
+    executor: FAQExecutorPort,
 ) -> GraphUpdate:
-    result = agent.invoke({"messages": sanitized_state(state).get("messages", [])})
+    current_state = sanitized_state(state)
+    result = executor.invoke(
+        {
+            "messages": current_state.get("messages", []),
+        }
+    )
 
     messages: list[AnyMessage] = result.get(
         "messages",
@@ -101,21 +134,9 @@ def run_judge_node(state: GraphState, *, judge: Any) -> GraphUpdate:
 def run_compiler_node(
     state: GraphState,
     *,
-    compiler: Any,
+    compiler: CompilerExecutorPort,
 ) -> GraphUpdate:
-    result = compiler.invoke(
-        {
-            "messages": state.get("messages", []),
-            "agent_results": state.get(
-                "agent_results",
-                {},
-            ),
-            "evidences": state.get(
-                "evidences",
-                [],
-            ),
-        }
-    )
+    result = compiler.invoke(state)
 
     return {
         "response_draft": result,
