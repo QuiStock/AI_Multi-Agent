@@ -5,8 +5,9 @@ from typing import Any
 from src import config, llm_factory
 from src.agents.compiler import executor as compiler_module
 from src.agents.faq import executor as faq_module
+from src.agents.judge import executor as judge_module
 from src.agents.router import executor as router_module
-from src.graphs.contracts import CompilerResult, RouteDecision
+from src.graphs.contracts import CompilerResult, JudgeDecision, RouteDecision
 
 
 class FakeStructuredRunnable:
@@ -127,3 +128,24 @@ def test_compiler_uses_fast_structured_model(monkeypatch: Any) -> None:
 
     assert executor.model is sentinel_model
     assert captured == {"schema": CompilerResult, "kind": "fast"}
+
+
+def test_judge_uses_fast_structured_model(monkeypatch: Any) -> None:
+    sentinel_model = object()
+    captured: dict[str, Any] = {}
+
+    def fake_structured_model(schema: type[Any], *, kind: str) -> object:
+        captured["schema"] = schema
+        captured["kind"] = kind
+        return sentinel_model
+
+    monkeypatch.setattr(
+        judge_module,
+        "get_structured_model",
+        fake_structured_model,
+    )
+
+    executor = judge_module.JudgeExecutor()
+
+    assert executor.model is sentinel_model
+    assert captured == {"schema": JudgeDecision, "kind": "fast"}

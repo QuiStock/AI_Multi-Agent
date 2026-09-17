@@ -34,7 +34,12 @@ def _output_state(content: str) -> dict[str, Any]:
                 "status": "success",
                 "answer": "Material documentado pelo agente.",
                 "citation_ids": [],
-            }
+            },
+            "judge": {
+                "status": "approved",
+                "reason": "Resposta sustentada.",
+                "evidence_ids": ["faq-1"],
+            },
         },
         "status": "in_progress",
     }
@@ -88,7 +93,7 @@ def test_faq_output_node_sanitizes_response_before_release() -> None:
     assert result["status"] == "in_progress"
 
 
-def test_compiler_output_node_accepts_supported_response() -> None:
+def test_compiler_output_node_accepts_judge_approved_response() -> None:
     model = FakeSupportModel("supported")
     node = create_output_guardrail_node(source="compiled", model=model)
 
@@ -96,17 +101,20 @@ def test_compiler_output_node_accepts_supported_response() -> None:
 
     assert result["output_guardrail"]["status"] == "passed"
     assert result["output_guardrail"]["reason_code"] == "approved"
-    assert model.messages is not None
-    assert "Material documentado pelo agente." in model.messages[1].content
+    assert model.messages is None
     assert result["status"] == "in_progress"
 
 
-def test_compiler_output_node_blocks_unsupported_response() -> None:
-    model = FakeSupportModel("unsupported")
-    node = create_output_guardrail_node(source="compiled", model=model)
+def test_compiler_output_node_blocks_nonapproved_judge() -> None:
+    state = _output_state("Resposta com informação sem suporte.")
+    state["agent_results"]["judge"] = {
+        "status": "insufficient_evidence",
+        "reason": "Evidência insuficiente.",
+        "evidence_ids": [],
+    }
 
-    result = node(_output_state("Resposta com informação inventada."))
+    result = output_guardrail_node(state, source="compiled")
 
     assert result["output_guardrail"]["status"] == "blocked"
-    assert result["output_guardrail"]["reason_code"] == "unsupported_content"
+    assert result["output_guardrail"]["reason_code"] == "judge_not_approved"
     assert result["status"] == "completed"

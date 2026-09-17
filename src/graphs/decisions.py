@@ -38,11 +38,13 @@ def decide_after_router(
     return "out_of_scope"
 
 
-def decide_after_judge(state: GraphState) -> Literal["compiler", "judge_blocked"]:
+def decide_after_judge(
+    state: GraphState,
+) -> Literal["output_guardrail", "judge_blocked"]:
     judge_result = state.get("agent_results", {}).get("judge")
 
     if judge_result and judge_result["status"] == "approved":
-        return "compiler"
+        return "output_guardrail"
 
     return "judge_blocked"
 

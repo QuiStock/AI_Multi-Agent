@@ -8,9 +8,16 @@ from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
 from src.graphs.adapters import (
     run_compiler_node,
     run_faq_node,
+    run_judge_node,
     run_router_node,
 )
-from src.graphs.state import GraphState, ResponseDraft, RoutingDecision
+from src.graphs.state import (
+    Evidence,
+    GraphState,
+    JudgeResult,
+    ResponseDraft,
+    RoutingDecision,
+)
 
 
 class FakeRouterExecutor:
@@ -51,6 +58,26 @@ class FakeCompilerExecutor:
             "content": "Resposta compilada.",
             "citations": ["faq-1"],
             "status": "draft",
+        }
+
+
+class FakeJudgeExecutor:
+    def __init__(self) -> None:
+        self.response_draft: ResponseDraft | None = None
+        self.evidences: Sequence[Evidence] | None = None
+
+    def invoke(
+        self,
+        *,
+        response_draft: ResponseDraft | None,
+        evidences: Sequence[Evidence],
+    ) -> JudgeResult:
+        self.response_draft = response_draft
+        self.evidences = evidences
+        return {
+            "status": "approved",
+            "reason": "Resposta sustentada.",
+            "evidence_ids": ["faq-1"],
         }
 
 
@@ -111,3 +138,59 @@ def test_compiler_adapter_forwards_canonical_state_to_executor() -> None:
         "citations": ["faq-1"],
         "status": "draft",
     }
+
+
+def test_judge_adapter_forwards_draft_and_full_evidence_content() -> None:
+    executor = FakeJudgeExecutor()
+    evidence: Evidence = {
+        "evidence_id": "faq-1",
+        "source_type": "faq_document",
+        "source_id": "manual.md",
+        "content": "Conteúdo usado para sustentar a resposta.",
+        "metadata": {},
+    }
+    draft: ResponseDraft = {
+        "content": "Resposta compilada.",
+        "citations": ["faq-1"],
+        "status": "draft",
+    }
+
+    result = run_judge_node(
+        {
+            "response_draft": draft,
+            "evidences": [evidence],
+        },
+        judge=executor,
+    )
+
+    assert executor.response_draft is draft
+    assert executor.evidences == [evidence]
+    assert executor.evidences[0]["content"] == evidence["content"]
+    assert result["agent_results"]["judge"]["status"] == "approved"
+
+
+def test_judge_adapter_fails_closed_on_unexpected_executor_error() -> None:
+    class FailingJudgeExecutor:
+        def invoke(
+            self,
+            *,
+            response_draft: ResponseDraft | None,
+            evidences: Sequence[Evidence],
+        ) -> JudgeResult:
+            raise RuntimeError("unexpected failure")
+
+    result = run_judge_node(
+        {
+            "response_draft": {
+                "content": "Resposta compilada.",
+                "citations": ["faq-1"],
+                "status": "draft",
+            },
+            "evidences": [],
+        },
+        judge=FailingJudgeExecutor(),
+    )
+
+    judge_result = result["agent_results"]["judge"]
+    assert judge_result["status"] == "invalid"
+    assert judge_result["error_code"] == "JUDGE_ADAPTER_FAILURE"

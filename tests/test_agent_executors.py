@@ -65,6 +65,7 @@ def test_compiler_executor_returns_structured_response() -> None:
     model = FakeCompilerModel(
         CompilerResult(
             content="Resposta consolidada.",
+            citations=["faq-1"],
             status="success",
         )
     )
@@ -78,12 +79,16 @@ def test_compiler_executor_returns_structured_response() -> None:
                     "answer": "Resultado do FAQ.",
                     "citation_ids": ["faq-1"],
                 },
-                "judge": {
-                    "status": "approved",
-                    "reason": "Evidência suficiente.",
-                    "evidence_ids": ["faq-1"],
-                },
             },
+            "evidences": [
+                {
+                    "evidence_id": "faq-1",
+                    "source_type": "faq_document",
+                    "source_id": "manual.md",
+                    "content": "Resultado do FAQ.",
+                    "metadata": {},
+                }
+            ],
         }
     )
 
@@ -100,6 +105,7 @@ def test_compiler_executor_blocks_missing_outputs() -> None:
     model = FakeCompilerModel(
         CompilerResult(
             content="não deveria ser chamado",
+            citations=[],
             status="success",
         )
     )

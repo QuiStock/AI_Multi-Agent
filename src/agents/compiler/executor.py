@@ -41,7 +41,8 @@ class CompilerExecutor:
 
         context = HumanMessage(
             content=(
-                f"Resultados dos agentes especializados, já normalizados:\n{payload}"
+                "Resultados dos agentes especializados e evidências "
+                f"disponíveis:\n{payload}"
             )
         )
 
@@ -75,15 +76,8 @@ class CompilerExecutor:
                 "status": "blocked",
             }
 
-        judge_result = state.get("agent_results", {}).get("judge")
-        citations = (
-            list(judge_result.get("evidence_ids", []))
-            if judge_result is not None
-            else []
-        )
-
         return {
             "content": result.content,
-            "citations": citations,
-            "status": "draft" if result.status == "success" else "blocked",
+            "citations": list(result.citations),
+            "status": ("draft" if result.status == "success" else "blocked"),
         }

@@ -241,6 +241,23 @@ def test_output_node_blocks_when_judge_is_not_approved() -> None:
     assert result["output_guardrail"]["reason_code"] == "judge_not_approved"
 
 
+def test_compiled_output_node_blocks_when_judge_is_missing() -> None:
+    result = output_guardrail_node(
+        {
+            "status": "in_progress",
+            "response_draft": {
+                "content": "Resposta sem julgamento.",
+                "citations": ["faq-1"],
+                "status": "draft",
+            },
+        },
+        source="compiled",
+    )
+
+    assert result["output_guardrail"]["status"] == "blocked"
+    assert result["output_guardrail"]["reason_code"] == "judge_missing"
+
+
 def test_created_compiled_node_passes_injected_model() -> None:
     class FakeStructuredModel:
         def invoke(self, _: Any) -> SupportValidationResult:
@@ -250,12 +267,17 @@ def test_created_compiled_node_passes_injected_model() -> None:
         source="compiled",
         model=FakeStructuredModel(),
     )
-    result = node(
-        _state(
-            "Resposta compilada.",
-            agent_contents=["Material do agente."],
-        )
+    state = _state(
+        "Resposta compilada.",
+        agent_contents=["Material do agente."],
     )
+    state["agent_results"]["judge"] = {
+        "status": "approved",
+        "reason": "Resposta sustentada.",
+        "evidence_ids": ["faq-1"],
+    }
+
+    result = node(state)
 
     assert result["output_guardrail"]["status"] == "passed"
     assert result["status"] == "in_progress"

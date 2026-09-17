@@ -360,18 +360,32 @@ def output_guardrail_node(
         else None
     )
 
-    if isinstance(judge, Mapping) and judge.get("status") != "approved":
-        result = _result(
-            "judge_not_approved",
-            "A resposta não foi aprovada pelas evidências disponíveis.",
-            status="blocked",
-            violations=["judge_not_approved"],
-        )
+    if source == "compiled":
+        if not isinstance(judge, Mapping):
+            result = _result(
+                "judge_missing",
+                "A resposta não possui validação do agente juiz.",
+                status="blocked",
+                violations=["judge_missing"],
+            )
 
-        return {
-            "output_guardrail": result,
-            "status": "completed",
-        }
+            return {
+                "output_guardrail": result,
+                "status": "completed",
+            }
+
+        if judge.get("status") != "approved":
+            result = _result(
+                "judge_not_approved",
+                "A resposta não foi aprovada pelas evidências disponíveis.",
+                status="blocked",
+                violations=["judge_not_approved"],
+            )
+
+            return {
+                "output_guardrail": result,
+                "status": "completed",
+            }
 
     content = response.get("content")
 

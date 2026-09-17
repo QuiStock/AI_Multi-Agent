@@ -6,6 +6,7 @@ from typing import Any, Protocol
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
 
 from src.graphs.state import (
+    Evidence,
     FAQResult,
     GraphState,
     JudgeResult,
@@ -30,6 +31,15 @@ class FAQExecutorPort(Protocol):
 
 class CompilerExecutorPort(Protocol):
     def invoke(self, state: GraphState) -> ResponseDraft: ...
+
+
+class JudgeExecutorPort(Protocol):
+    def invoke(
+        self,
+        *,
+        response_draft: ResponseDraft | None,
+        evidences: Sequence[Evidence],
+    ) -> JudgeResult: ...
 
 
 def sanitized_state(state: GraphState) -> GraphState:
@@ -108,21 +118,23 @@ def run_faq_node(
     }
 
 
-def run_judge_node(state: GraphState, *, judge: Any) -> GraphUpdate:
-    result = judge.invoke(
-        {
-            "agent_results": state.get(
-                "agent_results",
-                {},
-            ),
-            "evidences": state.get(
-                "evidences",
-                [],
-            ),
+def run_judge_node(
+    state: GraphState,
+    *,
+    judge: JudgeExecutorPort,
+) -> GraphUpdate:
+    try:
+        judge_result = judge.invoke(
+            response_draft=state.get("response_draft"),
+            evidences=state.get("evidences", []),
+        )
+    except Exception:
+        judge_result = {
+            "status": "invalid",
+            "reason": "O agente juiz não conseguiu validar a resposta.",
+            "evidence_ids": [],
+            "error_code": "JUDGE_ADAPTER_FAILURE",
         }
-    )
-
-    judge_result: JudgeResult = result
 
     return {
         "agent_results": {
