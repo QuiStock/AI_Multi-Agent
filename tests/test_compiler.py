@@ -4,7 +4,8 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage
 
-from src.agents.compiler.compiler_node import create_compiler_node
+from src.agents.compiler.executor import CompilerExecutor
+from src.graphs.adapters import run_compiler_node
 from src.graphs.contracts import CompilerResult
 
 
@@ -25,46 +26,52 @@ def test_compiler_returns_structured_final_response() -> None:
             status="success",
         )
     )
-    node = create_compiler_node(model)
+    executor = CompilerExecutor(model=model)
 
-    result = node(
+    result = run_compiler_node(
         {
             "messages": [HumanMessage(content="Faça um resumo.")],
-            "agent_outputs": [
-                {
-                    "content": "A primeira parte da resposta.",
+            "agent_results": {
+                "faq": {
                     "status": "success",
+                    "answer": "A primeira parte da resposta.",
+                    "citation_ids": ["faq-1"],
                 },
-                {
-                    "content": "A segunda parte da resposta.",
-                    "status": "success",
+                "judge": {
+                    "status": "approved",
+                    "reason": "Evidência suficiente.",
+                    "evidence_ids": ["faq-1"],
                 },
-            ],
-        }
+            },
+        },
+        compiler=executor,
     )
 
-    assert result["final_response"] == {
+    assert result["response_draft"] == {
         "content": "A resposta consolidada está disponível.",
-        "status": "success",
+        "citations": ["faq-1"],
+        "status": "draft",
     }
-    assert result["validation"]["status"] == "passed"
     assert model.messages is not None
     assert "A primeira parte da resposta." in str(model.messages[-1].content)
 
 
-def test_compiler_returns_error_without_agent_outputs() -> None:
+def test_compiler_returns_blocked_draft_without_agent_results() -> None:
     model = FakeCompilerModel(
         CompilerResult(content="não deveria ser chamado", status="success")
     )
-    node = create_compiler_node(model)
+    executor = CompilerExecutor(model=model)
 
-    result = node({"messages": [HumanMessage(content="Faça um resumo.")]})
+    result = run_compiler_node(
+        {"messages": [HumanMessage(content="Faça um resumo.")]},
+        compiler=executor,
+    )
 
-    assert result["final_response"] == {
+    assert result["response_draft"] == {
         "content": "Não foi possível gerar uma resposta.",
-        "status": "error",
+        "citations": [],
+        "status": "blocked",
     }
-    assert result["validation"]["status"] == "blocked"
     assert model.messages is None
 
 
@@ -73,14 +80,20 @@ def test_compiler_handles_invalid_structured_output() -> None:
         def invoke(self, messages: list[Any]) -> dict[str, str]:
             return {"content": "resposta sem status"}
 
-    node = create_compiler_node(InvalidCompilerModel())
+    executor = CompilerExecutor(model=InvalidCompilerModel())
 
-    result = node(
+    result = run_compiler_node(
         {
             "messages": [HumanMessage(content="Faça um resumo.")],
-            "agent_outputs": [{"content": "Resultado do agente.", "status": "success"}],
-        }
+            "agent_results": {
+                "faq": {
+                    "status": "success",
+                    "answer": "Resultado do agente.",
+                    "citation_ids": [],
+                }
+            },
+        },
+        compiler=executor,
     )
 
-    assert result["final_response"]["status"] == "error"
-    assert result["validation"]["status"] == "blocked"
+    assert result["response_draft"]["status"] == "blocked"

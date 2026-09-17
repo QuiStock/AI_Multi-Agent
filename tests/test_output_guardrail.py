@@ -21,10 +21,13 @@ def _state(
     if content is not None:
         state["final_response"] = {"content": content, "status": "success"}
     if agent_contents is not None:
-        state["agent_outputs"] = [
-            {"content": agent_content, "status": "success"}
-            for agent_content in agent_contents
-        ]
+        state["agent_results"] = {
+            "faq": {
+                "status": "success",
+                "answer": "\n".join(agent_contents),
+                "citation_ids": [],
+            }
+        }
     return state
 
 
