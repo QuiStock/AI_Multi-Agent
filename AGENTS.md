@@ -65,6 +65,31 @@ Arquivos relevantes:
 
 ## Ferramentas
 
+### Contrato de retorno
+
+- Tools novas ou migradas devem retornar o envelope canônico definido em
+  `src/agents/schemas/tool_result.py`.
+- O envelope é `ToolResult[DataT]`: campos comuns ficam em `ToolResult`, enquanto
+  `data` recebe um schema específico e tipado para cada tool.
+- `response.mode="direct"` contém texto final fornecido pela tool;
+  `response.mode="compose"` delega a redação ao agente; e
+  `response.mode="none"` é reservado para erros sem mensagem segura.
+- `response.intent` descreve a finalidade da composição e não contém a resposta
+  textual. Em respostas `compose`, `must_include` usa JSON Pointer relativo ao
+  conteúdo de `data`, por exemplo `/results/0/content`.
+- Tools não devem montar o envelope manualmente. Use as funções de
+  `src/agents/tooling/result_factory.py` para metadata, sucessos, resultados
+  parciais e erros.
+- `src/agents/tooling/result_adapter.py` mantém duas projeções: a visão do agente
+  omite `meta` e `error.details`; a visão de estado preserva o contrato completo
+  para rastreabilidade.
+- Schemas específicos ficam junto às tools do agente. Na FAQ,
+  `FAQSearchItem` representa um trecho recuperado e `FAQSearchData` representa a
+  busca completa, incluindo consulta, quantidade e lista de itens.
+- Metadata e detalhes técnicos não devem ser usados como instruções para o
+  modelo. Não inclua credenciais, raciocínio interno ou segredos em qualquer
+  campo do resultado.
+
 ### `faq_search(query: str) -> str`
 
 Busca na base de conhecimento via `similarity_search` (FAISS) e retorna os `k=4`
