@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Hashable, Mapping
 from functools import partial
-from typing import Any
 
 from langchain_core.runnables import RunnableLambda
 from langgraph.graph import END, START, StateGraph
@@ -11,6 +10,7 @@ from langgraph.graph.state import CompiledStateGraph
 from src.graphs.adapters import (
     CompilerExecutorPort,
     GraphNode,
+    JudgeExecutorPort,
     RouterExecutorPort,
     run_compiler_node,
     run_context_enrichment_node,
@@ -55,12 +55,16 @@ def out_of_scope_node(_: GraphState) -> GraphState:
     }
 
 
-def judge_blocked_node(_: GraphState) -> GraphState:
+def judge_blocked_node(state: GraphState) -> GraphState:
+    judge_result = state.get("agent_results", {}).get("judge")
+    content = "Não foi possível validar a resposta gerada."
+
+    if judge_result and judge_result["status"] == "insufficient_evidence":
+        content = "Não foi possível confirmar a resposta com as evidências disponíveis."
+
     return {
         "final_response": {
-            "content": (
-                "Não foi possível confirmar a resposta com evidências suficientes."
-            ),
+            "content": content,
             "status": "error",
         },
         "status": "completed",
@@ -112,7 +116,7 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
     input_guardrail: GraphNode,
     router: RouterExecutorPort,
     capabilities: Mapping[RouteName, GraphNode],
-    judge: Any,
+    judge: JudgeExecutorPort,
     compiler: CompilerExecutorPort,
     output_guardrail: GraphNode,
 ) -> CompiledStateGraph:
@@ -240,20 +244,20 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
     )
 
     for route in capabilities:
-        graph.add_edge(route, "judge")
+        graph.add_edge(route, "compiler")
+
+    graph.add_edge(
+        "compiler",
+        "judge",
+    )
 
     graph.add_conditional_edges(
         "judge",
         decide_after_judge,
         {
-            "compiler": "compiler",
+            "output_guardrail": "output_guardrail",
             "judge_blocked": "judge_blocked",
         },
-    )
-
-    graph.add_edge(
-        "compiler",
-        "output_guardrail",
     )
 
     graph.add_edge(

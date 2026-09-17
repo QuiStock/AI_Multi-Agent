@@ -23,6 +23,7 @@ def test_compiler_returns_structured_final_response() -> None:
     model = FakeCompilerModel(
         CompilerResult(
             content="A resposta consolidada está disponível.",
+            citations=["faq-1"],
             status="success",
         )
     )
@@ -37,12 +38,16 @@ def test_compiler_returns_structured_final_response() -> None:
                     "answer": "A primeira parte da resposta.",
                     "citation_ids": ["faq-1"],
                 },
-                "judge": {
-                    "status": "approved",
-                    "reason": "Evidência suficiente.",
-                    "evidence_ids": ["faq-1"],
-                },
             },
+            "evidences": [
+                {
+                    "evidence_id": "faq-1",
+                    "source_type": "faq_document",
+                    "source_id": "manual.md",
+                    "content": "A primeira parte da resposta.",
+                    "metadata": {},
+                }
+            ],
         },
         compiler=executor,
     )
@@ -58,7 +63,11 @@ def test_compiler_returns_structured_final_response() -> None:
 
 def test_compiler_returns_blocked_draft_without_agent_results() -> None:
     model = FakeCompilerModel(
-        CompilerResult(content="não deveria ser chamado", status="success")
+        CompilerResult(
+            content="não deveria ser chamado",
+            citations=[],
+            status="success",
+        )
     )
     executor = CompilerExecutor(model=model)
 

@@ -58,10 +58,23 @@ class FakeFAQExecutor:
 
 
 class FakeJudge:
-    def __init__(self, status: str = "approved") -> None:
+    def __init__(
+        self,
+        status: str = "approved",
+        events: list[str] | None = None,
+    ) -> None:
         self.status = status
+        self.events = events
 
-    def invoke(self, _: dict[str, Any]) -> dict[str, Any]:
+    def invoke(
+        self,
+        *,
+        response_draft: dict[str, Any] | None,
+        evidences: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        if self.events is not None:
+            self.events.append("judge")
+
         return {
             "status": self.status,
             "reason": "Resultado controlado.",
@@ -70,7 +83,13 @@ class FakeJudge:
 
 
 class FakeCompiler:
+    def __init__(self, events: list[str] | None = None) -> None:
+        self.events = events
+
     def invoke(self, _: dict[str, Any]) -> dict[str, Any]:
+        if self.events is not None:
+            self.events.append("compiler")
+
         return {
             "content": "Resposta compilada.",
             "citations": ["faq-1"],
@@ -126,7 +145,7 @@ def test_decision_functions_fail_closed() -> None:
     )
 
 
-def test_graph_dispatches_to_faq_judge_and_compiler() -> None:
+def test_graph_dispatches_to_faq_compiler_and_judge() -> None:
     result = _graph().invoke({"messages": [HumanMessage(content="pergunta original")]})
 
     assert result["agent_results"]["faq"]["status"] == "success"
@@ -138,6 +157,27 @@ def test_graph_dispatches_to_faq_judge_and_compiler() -> None:
     }
     assert result["output_guardrail"]["status"] == "passed"
     assert result["status"] == "completed"
+
+
+def test_graph_runs_compiler_before_judge() -> None:
+    events: list[str] = []
+    graph = create_agent_graph(
+        input_guardrail=_passed_input,
+        router=FakeRouter("faq", "dispatch"),
+        capabilities={
+            "faq": partial(
+                run_faq_node,
+                executor=FakeFAQExecutor(),
+            )
+        },
+        judge=FakeJudge(events=events),
+        compiler=FakeCompiler(events=events),
+        output_guardrail=_passing_output,
+    )
+
+    graph.invoke({"messages": [HumanMessage(content="pergunta")]})
+
+    assert events == ["compiler", "judge"]
 
 
 def test_graph_returns_controlled_response_for_input_rejection() -> None:
@@ -207,8 +247,19 @@ def test_graph_returns_controlled_response_when_judge_blocks() -> None:
 
     assert result["final_response"] == {
         "content": (
-            "Não foi possível confirmar a resposta com evidências suficientes."
+            "Não foi possível confirmar a resposta com as evidências disponíveis."
         ),
+        "status": "error",
+    }
+
+
+def test_graph_returns_controlled_response_when_judge_is_invalid() -> None:
+    result = _graph(judge_status="invalid").invoke(
+        {"messages": [HumanMessage(content="pergunta")]}
+    )
+
+    assert result["final_response"] == {
+        "content": "Não foi possível validar a resposta gerada.",
         "status": "error",
     }
 
@@ -223,7 +274,7 @@ def test_graph_returns_controlled_error_when_compiler_blocks() -> None:
                 executor=FakeFAQExecutor(),
             )
         },
-        judge=FakeJudge(),
+        judge=FakeJudge("invalid"),
         compiler=FakeBlockedCompiler(),
         output_guardrail=_passing_output,
     )
@@ -231,6 +282,6 @@ def test_graph_returns_controlled_error_when_compiler_blocks() -> None:
     result = graph.invoke({"messages": [HumanMessage(content="pergunta")]})
 
     assert result["final_response"] == {
-        "content": "Não foi possível gerar uma resposta.",
+        "content": "Não foi possível validar a resposta gerada.",
         "status": "error",
     }

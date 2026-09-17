@@ -111,9 +111,10 @@ provam seu cumprimento.
 ### Registro e construção
 
 - Cards disponíveis ficam em `src/agents/registry.py`.
-- Atualmente estão registrados `router`, `faq_rag` e `compiler`.
-- Product Workflow e Evidence Judge existem nos contratos, mas ainda não têm
-  cards registrados nesta branch.
+- Atualmente estão registrados `router`, `faq_rag`, `compiler` e
+  `evidence_judge`.
+- Product Workflow existe nos contratos, mas ainda não possui card registrado
+  nesta branch.
 - `src/agents/factory.py` resolve tools pelo `ToolRegistry` e cria o agente a
   partir do card.
 - O `TOOL_REGISTRY` nasce vazio no código-fonte; a composição da aplicação ou
@@ -416,8 +417,8 @@ START
   -> context_enrichment
   -> router
   -> capability
-  -> judge
   -> compiler
+  -> judge
   -> output_guardrail
   -> finalize_output
   -> END
@@ -436,8 +437,9 @@ Guardrails são controles adicionais e não agentes.
   fontes do FAQ e bloqueia alegações comerciais fora do escopo.
 - Resposta compilada pode ser avaliada contra materiais fornecidos.
 - Indisponibilidade do classificador ou avaliador deve respeitar `fail_closed`.
-- O judge aprovado evita repetir a mesma validação semântica no output
-  guardrail, mas não elimina validações determinísticas.
+- O judge avalia o `response_draft` produzido pelo compilador contra o conteúdo
+  completo das evidências. Sua aprovação evita repetir a mesma validação
+  semântica no output guardrail, mas não elimina validações determinísticas.
 
 Resultados de guardrail usam `status`, `reason_code`, `reason` e coleções de
 redações ou violações. Mensagens bloqueadas devem usar resposta controlada e

@@ -6,6 +6,7 @@ from langchain_core.tools import StructuredTool
 from src.agents import factory, tool_registry
 from src.agents.faq.card import FAQ_CARD
 from src.agents.faq.executor import FAQExecutor
+from src.agents.judge.card import JUDGE_CARD
 from src.agents.registry import get_agent_card
 
 
@@ -17,6 +18,10 @@ def _fake_search(query: str) -> str:
 
 def test_registry_returns_the_faq_card() -> None:
     assert get_agent_card("faq_rag") is FAQ_CARD
+
+
+def test_registry_returns_the_judge_card() -> None:
+    assert get_agent_card("evidence_judge") is JUDGE_CARD
 
 
 def test_factory_resolves_card_tools_and_builds_agent(
