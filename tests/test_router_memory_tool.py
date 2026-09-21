@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from src.agents.router.tools.search_conversation_summaries import (
+    SummarySearchToolContext,
     build_search_conversation_summaries_tool,
 )
 from src.memory.contracts import SummaryContextSelection
@@ -32,10 +33,12 @@ class FakeSummarySearchService:
 def _tool(service: FakeSummarySearchService):
     return build_search_conversation_summaries_tool(
         service=service,
-        user_id="authenticated-user",
-        conversation_id="current-conversation",
-        query="O que combinamos na conversa anterior?",
-        request_id="request-1",
+        context=SummarySearchToolContext(
+            user_id="authenticated-user",
+            conversation_id="current-conversation",
+            query="O que combinamos na conversa anterior?",
+            request_id="request-1",
+        ),
         call_id_factory=lambda: "tool-call-1",
     )
 

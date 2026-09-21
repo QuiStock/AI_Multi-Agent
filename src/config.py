@@ -30,6 +30,7 @@ class Settings(BaseSettings):
 
     # Models
     gemini_chat_model: str = "gemini-3.6-flash"
+    gemini_title_model: str = "gemini-2.5-flash-lite"
     gemini_embedding_model: str = "gemini-embedding-2-preview"
     groq_chat_model: str = "llama-3.3-70b-versatile"
     groq_fast_model: str = "llama-3.3-70b-versatile"
@@ -135,6 +136,7 @@ GEMINI_API_KEY = settings.gemini_api_key
 GROQ_API_KEY = settings.groq_api_key
 
 GEMINI_CHAT_MODEL = settings.gemini_chat_model
+GEMINI_TITLE_MODEL = settings.gemini_title_model
 GEMINI_EMBEDDING_MODEL = settings.gemini_embedding_model
 GROQ_CHAT_MODEL = settings.groq_chat_model
 GROQ_FAST_MODEL = settings.groq_fast_model

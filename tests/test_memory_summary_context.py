@@ -7,11 +7,12 @@ from typing import Any
 from src.memory.contracts import (
     ConversationSummary,
     SummaryCandidate,
+    SummarySearchRequest,
     VersionedConversationSummary,
 )
 from src.memory.get_summary_context import get_summary_context
 from src.memory.mongo_repository import MongoConversationRepository
-from src.memory.service import SummaryContextService
+from src.memory.service import SummaryContextService, SummarySearchConfig
 
 
 class FakeQdrant:
@@ -129,10 +130,10 @@ def _service(
     repository: FakeSummaryRepository,
 ) -> SummaryContextService:
     return SummaryContextService(
-        repository=repository,  # type: ignore[arg-type]
-        qdrant=qdrant,  # type: ignore[arg-type]
-        embed_query=lambda _: [0.1, 0.2],
-        collection_name="conversation_summaries",
+        repository,  # type: ignore[arg-type]
+        qdrant,  # type: ignore[arg-type]
+        lambda _: [0.1, 0.2],
+        SummarySearchConfig(collection_name="conversation_summaries"),
     )
 
 
@@ -157,12 +158,14 @@ def test_qdrant_search_filters_ended_user_summaries_and_reads_payload() -> None:
     query_texts: list[str] = []
 
     results = get_summary_context(
-        user_id="user-1",
-        conversation_id="current-1",
-        query="O que comprei?",
+        request=SummarySearchRequest(
+            user_id="user-1",
+            conversation_id="current-1",
+            query="O que comprei?",
+            collection_name="conversation_summaries",
+        ),
         embed_query=lambda text: query_texts.append(text) or [0.1, 0.2],
         qdrant=qdrant,  # type: ignore[arg-type]
-        collection_name="conversation_summaries",
     )
 
     assert len(results) == 1

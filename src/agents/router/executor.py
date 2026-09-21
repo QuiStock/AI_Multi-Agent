@@ -9,6 +9,7 @@ from src.agents.factory import create_agent_from_card
 from src.agents.router.card import ROUTER_CARD
 from src.agents.router.tools.search_conversation_summaries import (
     SummarySearchService,
+    SummarySearchToolContext,
     build_search_conversation_summaries_tool,
 )
 from src.graphs.contracts import RouteDecision
@@ -69,11 +70,13 @@ class RouterExecutor:
             if self.summary_search_service is not None and tool_context is not None:
                 tool = build_search_conversation_summaries_tool(
                     service=self.summary_search_service,
-                    user_id=tool_context["user_id"],
-                    conversation_id=tool_context["conversation_id"],
-                    query=tool_context["query"],
-                    request_id=tool_context["request_id"],
-                    trace_id=tool_context["trace_id"],
+                    context=SummarySearchToolContext(
+                        user_id=tool_context["user_id"],
+                        conversation_id=tool_context["conversation_id"],
+                        query=tool_context["query"],
+                        request_id=tool_context["request_id"],
+                        trace_id=tool_context["trace_id"],
+                    ),
                 )
                 agent = self.agent_factory(
                     card=self.card,
