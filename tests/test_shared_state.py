@@ -66,7 +66,6 @@ def test_evidence_reducer_replaces_duplicate_ids_instead_of_appending() -> None:
 
 def test_memory_is_optional_in_shared_state() -> None:
     memory: MemoryContext = {
-        "recent_messages": [],
         "previous_conversation_summaries": [],
     }
     state_without_memory: GraphState = {

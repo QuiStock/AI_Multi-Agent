@@ -2,7 +2,12 @@
 
 **Status:** MVP do roteador e do grafo FAQ implementado; Product Flow Advisor ainda não implementado
 
-**Última atualização:** 2026-08-16
+**Última atualização:** 2026-09-21
+
+O planejamento específico da branch `memory` está em
+[`planejamento-memory.md`](planejamento-memory.md). Ele define a retomada pelo
+MongoDB em `enrich_context` e a busca semântica sob demanda pelo router. Os
+endpoints e a interface de sessões ficam para a futura branch `api`.
 
 ## Objetivo
 
@@ -595,9 +600,9 @@ O compilador não deve aceitar uma resposta factual sem evidência quando a perg
 
 | Node | Responsabilidade | Não deve fazer |
 |---|---|---|
-| preparação do turno | criar IDs e carregar contexto permitido | decidir intenção |
+| preparação do turno | criar IDs; iniciar histórico ou restaurar sessão selecionada via memória | decidir intenção |
 | guardrail de entrada | validar segurança e escopo básico | responder conteúdo documental |
-| roteador | classificar e encaminhar | consultar RAG para responder |
+| roteador | classificar, encaminhar e solicitar resumos anteriores quando necessários | acessar MongoDB/Qdrant diretamente |
 | FAQ/RAG | consultar `faq_search` e responder | usar conhecimento externo |
 | validador | verificar fonte, escopo e formato | reescrever livremente os fatos |
 | compilador | organizar o resultado | criar evidências |

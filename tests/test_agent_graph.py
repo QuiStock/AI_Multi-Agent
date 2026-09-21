@@ -38,7 +38,12 @@ class FakeRouter:
         self.route = route
         self.outcome = outcome
 
-    def invoke(self, _: list[AnyMessage]) -> RoutingDecision:
+    def invoke(
+        self,
+        _: list[AnyMessage],
+        *,
+        request_context: dict[str, Any] | None = None,
+    ) -> RoutingDecision:
         return {
             "route": self.route,
             "target_agent": "faq" if self.route == "faq" else None,
@@ -117,6 +122,13 @@ def _passing_output(_: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+class EmptyContextEnricher:
+    def restore_messages(
+        self, *, user_id: str, conversation_id: str
+    ) -> list[AnyMessage]:
+        return []
+
+
 def _graph(judge_status: str = "approved") -> Any:
     return create_agent_graph(
         input_guardrail=_passed_input,
@@ -130,6 +142,7 @@ def _graph(judge_status: str = "approved") -> Any:
         judge=FakeJudge(judge_status),
         compiler=FakeCompiler(),
         output_guardrail=_passing_output,
+        context_enricher=EmptyContextEnricher(),
     )
 
 
@@ -146,7 +159,18 @@ def test_decision_functions_fail_closed() -> None:
 
 
 def test_graph_dispatches_to_faq_compiler_and_judge() -> None:
-    result = _graph().invoke({"messages": [HumanMessage(content="pergunta original")]})
+    result = _graph().invoke(
+        {
+            "request": {
+                "request_id": "request-1",
+                "user_id": "user-1",
+                "conversation_id": "conversation-1",
+                "sanitized_message": "pergunta original",
+                "is_new_conversation": True,
+            },
+            "messages": [HumanMessage(content="pergunta original")],
+        }
+    )
 
     assert result["agent_results"]["faq"]["status"] == "success"
     assert result["agent_results"]["judge"]["status"] == "approved"
@@ -157,6 +181,7 @@ def test_graph_dispatches_to_faq_compiler_and_judge() -> None:
     }
     assert result["output_guardrail"]["status"] == "passed"
     assert result["status"] == "completed"
+    assert "memory" not in result
 
 
 def test_graph_runs_compiler_before_judge() -> None:
@@ -173,6 +198,7 @@ def test_graph_runs_compiler_before_judge() -> None:
         judge=FakeJudge(events=events),
         compiler=FakeCompiler(events=events),
         output_guardrail=_passing_output,
+        context_enricher=EmptyContextEnricher(),
     )
 
     graph.invoke({"messages": [HumanMessage(content="pergunta")]})
@@ -193,6 +219,7 @@ def test_graph_returns_controlled_response_for_input_rejection() -> None:
         judge=FakeJudge(),
         compiler=FakeCompiler(),
         output_guardrail=_passing_output,
+        context_enricher=EmptyContextEnricher(),
     )
 
     result = graph.invoke({"messages": [HumanMessage(content="bloqueada")]})
@@ -230,6 +257,7 @@ def test_graph_handles_clarification_and_out_of_scope_routes() -> None:
             judge=FakeJudge(),
             compiler=FakeCompiler(),
             output_guardrail=_passing_output,
+            context_enricher=EmptyContextEnricher(),
         )
 
         result = graph.invoke({"messages": [HumanMessage(content="pergunta")]})
@@ -277,6 +305,7 @@ def test_graph_returns_controlled_error_when_compiler_blocks() -> None:
         judge=FakeJudge("invalid"),
         compiler=FakeBlockedCompiler(),
         output_guardrail=_passing_output,
+        context_enricher=EmptyContextEnricher(),
     )
 
     result = graph.invoke({"messages": [HumanMessage(content="pergunta")]})

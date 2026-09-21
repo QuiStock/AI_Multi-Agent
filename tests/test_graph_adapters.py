@@ -3,10 +3,16 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
-from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
+from langchain_core.messages import (
+    AIMessage,
+    AnyMessage,
+    HumanMessage,
+    RemoveMessage,
+)
 
 from src.graphs.adapters import (
     run_compiler_node,
+    run_context_enrichment_node,
     run_faq_node,
     run_judge_node,
     run_router_node,
@@ -23,9 +29,16 @@ from src.graphs.state import (
 class FakeRouterExecutor:
     def __init__(self) -> None:
         self.messages: Sequence[AnyMessage] | None = None
+        self.request_context: dict[str, Any] | None = None
 
-    def invoke(self, messages: Sequence[AnyMessage]) -> RoutingDecision:
+    def invoke(
+        self,
+        messages: Sequence[AnyMessage],
+        *,
+        request_context: dict[str, Any] | None = None,
+    ) -> RoutingDecision:
         self.messages = messages
+        self.request_context = request_context
         return {
             "route": "faq",
             "target_agent": "faq",
@@ -97,8 +110,97 @@ def test_router_adapter_sanitizes_state_before_calling_executor() -> None:
 
     assert executor.messages is not None
     assert executor.messages[-1].content == "Mensagem sanitizada."
+    assert executor.request_context == state["request"]
     assert result["routing_decision"]["route"] == "faq"
     assert result["status"] == "in_progress"
+
+
+class FakeConversationEnricher:
+    def __init__(self, messages: list[AnyMessage]) -> None:
+        self.messages = messages
+        self.calls: list[tuple[str, str]] = []
+
+    def restore_messages(
+        self,
+        *,
+        user_id: str,
+        conversation_id: str,
+    ) -> list[AnyMessage]:
+        self.calls.append((user_id, conversation_id))
+        return self.messages
+
+
+def test_context_enrichment_does_not_load_history_for_new_conversation() -> None:
+    enricher = FakeConversationEnricher([])
+    state: GraphState = {
+        "request": {
+            "request_id": "request-1",
+            "user_id": "user-1",
+            "conversation_id": "conversation-1",
+            "sanitized_message": "O que comprei?",
+            "is_new_conversation": True,
+        },
+        "messages": [HumanMessage(content="O que comprei?")],
+    }
+
+    result = run_context_enrichment_node(state, context_enricher=enricher)
+
+    assert result == {}
+    assert enricher.calls == []
+
+
+def test_context_enrichment_does_not_reopen_an_active_continuing_conversation() -> None:
+    enricher = FakeConversationEnricher([])
+    state: GraphState = {
+        "request": {
+            "request_id": "request-2",
+            "user_id": "user-1",
+            "conversation_id": "conversation-1",
+            "sanitized_message": "Próxima mensagem.",
+            "is_new_conversation": False,
+            "is_resuming_conversation": False,
+        },
+        "messages": [HumanMessage(content="Próxima mensagem.")],
+    }
+
+    result = run_context_enrichment_node(state, context_enricher=enricher)
+
+    assert result == {}
+    assert enricher.calls == []
+
+
+def test_context_enrichment_restores_history_before_current_sanitized_message() -> None:
+    current_id = "request-1:user"
+    enricher = FakeConversationEnricher(
+        [
+            HumanMessage(id="message-1", content="Primeira pergunta."),
+            AIMessage(id="message-2", content="Primeira resposta."),
+            HumanMessage(id=current_id, content="Texto salvo antes do guardrail."),
+        ]
+    )
+    state: GraphState = {
+        "request": {
+            "request_id": "request-1",
+            "user_id": "user-1",
+            "conversation_id": "conversation-1",
+            "sanitized_message": "Mensagem atual sanitizada.",
+            "is_resuming_conversation": True,
+        },
+        "messages": [HumanMessage(content="Mensagem atual original.")],
+    }
+
+    result = run_context_enrichment_node(state, context_enricher=enricher)
+    messages = result["messages"]
+
+    assert enricher.calls == [("user-1", "conversation-1")]
+    assert isinstance(messages[0], RemoveMessage)
+    assert messages[0].id == current_id
+    assert [message.id for message in messages[1:]] == [
+        "message-1",
+        "message-2",
+        current_id,
+    ]
+    assert messages[-1].content == "Mensagem atual sanitizada."
 
 
 def test_faq_adapter_calls_executor_and_normalizes_answer() -> None:

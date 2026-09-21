@@ -8,7 +8,11 @@ from langchain_core.messages import AnyMessage, HumanMessage
 from src.agents.judge.executor import JudgeExecutor
 from src.graphs.agent_graph import create_agent_graph
 from src.graphs.contracts import JudgeDecision
-from src.graphs.state import GraphState, ResponseDraft, RoutingDecision
+from src.graphs.state import (
+    GraphState,
+    ResponseDraft,
+    RoutingDecision,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -25,7 +29,12 @@ def _passed_input(_: GraphState) -> GraphState:
 
 
 class FakeRouter:
-    def invoke(self, _: list[AnyMessage]) -> RoutingDecision:
+    def invoke(
+        self,
+        _: list[AnyMessage],
+        *,
+        request_context: dict[str, Any] | None = None,
+    ) -> RoutingDecision:
         return {
             "route": "faq",
             "target_agent": "faq",
@@ -88,6 +97,13 @@ def _passing_output(_: GraphState) -> GraphState:
     }
 
 
+class EmptyContextEnricher:
+    def restore_messages(
+        self, *, user_id: str, conversation_id: str
+    ) -> list[AnyMessage]:
+        return []
+
+
 def test_real_judge_executor_validates_compiler_draft_inside_graph() -> None:
     model = FakeJudgeModel()
     graph = create_agent_graph(
@@ -97,6 +113,7 @@ def test_real_judge_executor_validates_compiler_draft_inside_graph() -> None:
         compiler=FakeCompiler(),
         judge=JudgeExecutor(model=model),
         output_guardrail=_passing_output,
+        context_enricher=EmptyContextEnricher(),
     )
 
     result = graph.invoke(

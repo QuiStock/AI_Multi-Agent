@@ -334,7 +334,8 @@ JSON legado; não documente esse comportamento como contrato final.
 ### Subcontratos fechados
 
 - `RequestContext`: `request_id`, `user_id`, `conversation_id` e
-  `sanitized_message` opcional.
+  `sanitized_message` opcional; `is_resuming_conversation` sinaliza a seleção
+  explícita de uma sessão encerrada para retomada.
 - `ChatMessage`: role `user` ou `assistant`, conteúdo e `created_at`.
 - `ConversationSummary`: `conversation_id`, resumo e `created_at`.
 - `MemoryContext`: mensagens recentes e resumos de conversas anteriores.
@@ -387,7 +388,9 @@ anterior; IDs diferentes são preservados.
 ### Ownership de escrita
 
 - Input guardrail: `input_guardrail`, mensagem sanitizada e status inicial.
-- Context enrichment: `memory`; no MVP é no-op.
+- Context enrichment: restaura no `messages` o histórico MongoDB somente quando
+  `is_resuming_conversation` está ativo; mensagens normais de uma conversa
+  ativa não reabrem a sessão nem carregam o histórico de novo.
 - Router: `routing_decision`.
 - Capacidade especializada: sua chave em `agent_results` e suas evidências.
 - Judge: `agent_results.judge`.
@@ -447,9 +450,25 @@ não revelar regras internas.
 
 ## Memória e observabilidade
 
-- `src/memory/service.py` é apenas a fronteira reservada para enriquecimento de
-  contexto; memória durável ainda não está implementada nesta branch.
-- O snapshot de memória deve ser somente leitura durante o turno.
+- O desenho da pasta está em `docs/planejamento-memory.md`. A spec canônica
+  fica no repositório Quistock, em `docs/sdd/specs/memoria-conversacional.md`.
+- `src/memory/` concentra persistência MongoDB, restauração de sessões,
+  recuperação semântica e atualização dos resumos no Qdrant.
+- `enrich_context`, entre guardrail de entrada e router, restaura mensagens
+  apenas quando a API sinaliza retomada de uma conversa encerrada. Não busca
+  resumos semanticamente.
+- O router pode chamar a tool de busca de resumos quando a verbalização pedir
+  contexto anterior. A busca limita-se ao usuário autenticado, conversas
+  encerradas, score inicial `0.5` e até três resultados validados no MongoDB.
+  Se não houver resultado semântico válido, preserva o fallback já definido
+  para até três conversas encerradas mais recentes, marcado como fallback.
+- No encerramento, atualizar o resumo anterior da mesma conversa com as
+  mensagens posteriores a `summarized_through_message_id`; só a primeira
+  geração usa todo o histórico. Resumos recuperados de outras conversas não
+  alteram o resumo da conversa atual.
+- Mensagens de histórico restauradas permanecem em `GraphState.messages`;
+  resumos retornados pela tool são contexto estruturado, não falas adicionadas
+  artificialmente à conversa.
 - `src/observability/audit.py`, `metrics.py` e `traces.py` ainda são
   placeholders.
 - Mesmo antes da implementação final, preserve `request_id`, `tool_call_id` e

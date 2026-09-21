@@ -5,6 +5,8 @@ from typing import Annotated, Literal, NotRequired, TypedDict
 from langchain_core.messages import AnyMessage
 from langgraph.graph import add_messages
 
+from src.memory.contracts import ConversationSummary
+
 RouteName = Literal[
     "faq",
     "product_workflow",
@@ -25,23 +27,14 @@ class RequestContext(TypedDict):
     user_id: str
     conversation_id: str
     sanitized_message: NotRequired[str]
-
-
-class ChatMessage(TypedDict):
-    role: Literal["user", "assistant"]
-    content: str
-    created_at: str
-
-
-class ConversationSummary(TypedDict):
-    conversation_id: str
-    summary: str
-    created_at: str
+    is_new_conversation: NotRequired[bool]
+    is_resuming_conversation: NotRequired[bool]
+    trace_id: NotRequired[str]
 
 
 class MemoryContext(TypedDict):
-    recent_messages: list[ChatMessage]
     previous_conversation_summaries: list[ConversationSummary]
+    summary_context_loaded: NotRequired[bool]
 
 
 class InputGuardrailResult(TypedDict):
