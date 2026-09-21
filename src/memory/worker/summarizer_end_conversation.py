@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from typing import Any, Protocol
@@ -12,12 +13,15 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.llm_factory import get_structured_model
 
-from ..contracts import ConversationSummarySnapshot, StoredMessage
+from ..contracts import ConversationSummarySnapshot, StoredMessage, SummaryCommit
 from ..mongo_repository import (
     MongoConversationRepository,
     SummaryUpdateConflictError,
 )
 from .summary_prompt import SUMMARY_SYSTEM_PROMPT
+from .title_generator import LLMConversationTitleGenerator, TitleGenerator
+
+logger = logging.getLogger(__name__)
 
 
 class SummaryText(BaseModel):
@@ -88,11 +92,17 @@ class EndConversationSummaryWorker:
         repository: MongoConversationRepository,
         summary_updater: SummaryUpdater,
         summary_indexer: SummaryIndexer,
+        title_generator: TitleGenerator | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._repository = repository
         self._summary_updater = summary_updater
         self._summary_indexer = summary_indexer
+        self._title_generator = (
+            LLMConversationTitleGenerator()
+            if title_generator is None
+            else title_generator
+        )
         self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def run(
@@ -121,12 +131,14 @@ class EndConversationSummaryWorker:
                 raise ValueError("O resumo gerado não pode estar vazio")
 
             committed = self._repository.save_summary_if_current(
-                conversation_id=conversation_id,
-                user_id=user_id,
-                expected_summary_version=snapshot.summary_version,
-                expected_message_id=snapshot.summarized_through_message_id,
-                summary=updated_summary,
-                summarized_through_message_id=new_messages[-1].message_id,
+                SummaryCommit(
+                    conversation_id=conversation_id,
+                    user_id=user_id,
+                    expected_summary_version=snapshot.summary_version,
+                    expected_message_id=snapshot.summarized_through_message_id,
+                    summary=updated_summary,
+                    summarized_through_message_id=new_messages[-1].message_id,
+                )
             )
             if not committed:
                 raise SummaryUpdateConflictError(conversation_id)
@@ -140,8 +152,37 @@ class EndConversationSummaryWorker:
                 "A conversa não tem mensagens novas nem resumo anterior"
             )
 
+        snapshot = self._generate_missing_title(snapshot)
         self._summary_indexer.upsert(snapshot)
         return snapshot
+
+    def _generate_missing_title(
+        self,
+        snapshot: ConversationSummarySnapshot,
+    ) -> ConversationSummarySnapshot:
+        if snapshot.title is not None or snapshot.summary is None:
+            return snapshot
+
+        try:
+            title = self._title_generator.generate(summary=snapshot.summary)
+        except Exception:
+            logger.warning("Falha ao gerar título; o resumo será indexado sem título.")
+            return snapshot
+
+        if not title.strip():
+            logger.warning("Título vazio; o resumo será indexado sem título.")
+            return snapshot
+
+        self._repository.save_title_if_missing(
+            conversation_id=snapshot.conversation_id,
+            user_id=snapshot.user_id,
+            expected_summary_version=snapshot.summary_version,
+            title=title,
+        )
+        return self._repository.get_summary_snapshot(
+            conversation_id=snapshot.conversation_id,
+            user_id=snapshot.user_id,
+        )
 
     @staticmethod
     def _messages_after_summary_marker(

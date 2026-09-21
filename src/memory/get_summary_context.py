@@ -2,11 +2,11 @@
 
 from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, cast
 
 from qdrant_client import QdrantClient, models
 
-from .contracts import SummaryCandidate
+from .contracts import MAX_SUMMARY_RESULTS, SummaryCandidate, SummarySearchRequest
 
 
 def _as_timestamp(value: object) -> str | None:
@@ -19,100 +19,118 @@ def _as_timestamp(value: object) -> str | None:
     return None
 
 
-def get_summary_context(
-    *,
-    user_id: str,
-    conversation_id: str,
-    query: str,
-    embed_query: Callable[[str], list[float]],
-    qdrant: QdrantClient,
-    collection_name: str,
-    limit: int = 3,
-    score_threshold: float = 0.5,
-) -> list[SummaryCandidate]:
-    """Return ranked, well-formed Qdrant payloads; score validation is in service."""
-    if not user_id.strip():
-        raise ValueError("user_id é obrigatório")
-    if not conversation_id.strip():
-        raise ValueError("conversation_id é obrigatório")
-    if not query.strip():
-        raise ValueError("query é obrigatória")
-    if not collection_name.strip():
-        raise ValueError("collection_name é obrigatório")
-    if not 1 <= limit <= 3:
+def _validate_request(request: SummarySearchRequest) -> None:
+    required = {
+        "user_id": request.user_id,
+        "conversation_id": request.conversation_id,
+        "query": request.query,
+        "collection_name": request.collection_name,
+    }
+    if any(not value.strip() for value in required.values()):
+        raise ValueError(
+            "user_id, conversation_id, query e collection_name são obrigatórios"
+        )
+    if not 1 <= request.limit <= MAX_SUMMARY_RESULTS:
         raise ValueError("limit deve estar entre um e três")
-    if not 0.0 <= score_threshold <= 1.0:
+    if not 0.0 <= request.score_threshold <= 1.0:
         raise ValueError("score_threshold deve estar entre 0.0 e 1.0")
 
+
+def _summary_filter(request: SummarySearchRequest) -> models.Filter:
+    return models.Filter(
+        must=[
+            models.FieldCondition(
+                key="user_id",
+                match=models.MatchValue(value=request.user_id),
+            ),
+            models.FieldCondition(
+                key="memory_type",
+                match=models.MatchValue(value="conversation_summary"),
+            ),
+            models.FieldCondition(
+                key="status",
+                match=models.MatchValue(value="ended"),
+            ),
+        ],
+        must_not=[
+            models.FieldCondition(
+                key="conversation_id",
+                match=models.MatchValue(value=request.conversation_id),
+            ),
+        ],
+    )
+
+
+def _has_valid_identity(payload: Mapping[str, Any], user_id: str) -> bool:
+    conversation_id = payload.get("conversation_id")
+    return (
+        isinstance(conversation_id, str)
+        and bool(conversation_id.strip())
+        and payload.get("user_id") == user_id
+        and payload.get("memory_type") == "conversation_summary"
+        and payload.get("status") == "ended"
+    )
+
+
+def _has_valid_summary(payload: Mapping[str, Any]) -> bool:
+    title = payload.get("title")
+    summary = payload.get("summary")
+    version = payload.get("summary_version")
+    return (
+        (title is None or isinstance(title, str))
+        and isinstance(summary, str)
+        and bool(summary.strip())
+        and isinstance(version, int)
+        and not isinstance(version, bool)
+        and version >= 1
+    )
+
+
+def _candidate_from_point(
+    point: Any,
+    *,
+    user_id: str,
+) -> SummaryCandidate | None:
+    payload = point.payload
+    if not isinstance(payload, Mapping):
+        return None
+    if not _has_valid_identity(payload, user_id) or not _has_valid_summary(payload):
+        return None
+
+    updated_at = _as_timestamp(payload.get("updated_at"))
+    if updated_at is None:
+        return None
+
+    return {
+        "conversation_id": cast(str, payload["conversation_id"]),
+        "title": cast(str | None, payload.get("title")),
+        "summary": cast(str, payload["summary"]),
+        "updated_at": updated_at,
+        "summary_version": cast(int, payload["summary_version"]),
+        "score": float(point.score),
+    }
+
+
+def get_summary_context(
+    *,
+    request: SummarySearchRequest,
+    embed_query: Callable[[str], list[float]],
+    qdrant: QdrantClient,
+) -> list[SummaryCandidate]:
+    """Return ranked, well-formed Qdrant payloads; score validation is in service."""
+    _validate_request(request)
     result = qdrant.query_points(
-        collection_name=collection_name,
-        query=embed_query(query),
-        query_filter=models.Filter(
-            must=[
-                models.FieldCondition(
-                    key="user_id",
-                    match=models.MatchValue(value=user_id),
-                ),
-                models.FieldCondition(
-                    key="memory_type",
-                    match=models.MatchValue(value="conversation_summary"),
-                ),
-                models.FieldCondition(
-                    key="status",
-                    match=models.MatchValue(value="ended"),
-                ),
-            ],
-            must_not=[
-                models.FieldCondition(
-                    key="conversation_id",
-                    match=models.MatchValue(value=conversation_id),
-                ),
-            ],
-        ),
-        limit=limit,
-        score_threshold=score_threshold,
+        collection_name=request.collection_name,
+        query=embed_query(request.query),
+        query_filter=_summary_filter(request),
+        limit=request.limit,
+        score_threshold=request.score_threshold,
         with_payload=True,
     )
 
-    candidates: list[SummaryCandidate] = []
+    candidates = []
     for point in result.points:
-        payload: Any = point.payload
-        if not isinstance(payload, Mapping):
-            continue
-
-        candidate_id = payload.get("conversation_id")
-        candidate_user_id = payload.get("user_id")
-        memory_type = payload.get("memory_type")
-        status = payload.get("status")
-        title = payload.get("title")
-        summary = payload.get("summary")
-        version = payload.get("summary_version")
-        updated_at = _as_timestamp(payload.get("updated_at"))
-
-        if not isinstance(candidate_id, str) or not candidate_id.strip():
-            continue
-        if candidate_user_id != user_id:
-            continue
-        if memory_type != "conversation_summary" or status != "ended":
-            continue
-        if title is not None and not isinstance(title, str):
-            continue
-        if not isinstance(summary, str) or not summary.strip():
-            continue
-        if not isinstance(version, int) or isinstance(version, bool) or version < 1:
-            continue
-        if updated_at is None:
-            continue
-
-        candidates.append(
-            {
-                "conversation_id": candidate_id,
-                "title": title,
-                "summary": summary,
-                "updated_at": updated_at,
-                "summary_version": version,
-                "score": float(point.score),
-            }
-        )
-
+        candidate = _candidate_from_point(point, user_id=request.user_id)
+        if candidate is not None:
+            candidates.append(candidate)
     return candidates

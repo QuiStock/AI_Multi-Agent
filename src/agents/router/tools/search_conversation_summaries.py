@@ -1,6 +1,7 @@
 """Build the router's user-scoped semantic conversation-memory tool."""
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Protocol
 from uuid import uuid4
 
@@ -31,25 +32,38 @@ class SummarySearchService(Protocol):
     ) -> SummaryContextSelection: ...
 
 
+@dataclass(frozen=True, slots=True)
+class SummarySearchToolContext:
+    """Authenticated and sanitized request data bound to the router tool."""
+
+    user_id: str
+    conversation_id: str
+    query: str
+    request_id: str
+    trace_id: str | None = None
+
+
 def build_search_conversation_summaries_tool(
     *,
     service: SummarySearchService,
-    user_id: str,
-    conversation_id: str,
-    query: str,
-    request_id: str,
-    trace_id: str | None = None,
+    context: SummarySearchToolContext,
     call_id_factory: Callable[[], str] | None = None,
 ) -> BaseTool:
     """Bind authenticated request context outside the model-visible arguments."""
-    if not user_id.strip() or not conversation_id.strip() or not query.strip():
+    if (
+        not context.user_id.strip()
+        or not context.conversation_id.strip()
+        or not context.query.strip()
+    ):
         raise ValueError("user_id, conversation_id e query são obrigatórios")
-    if not request_id.strip():
+    if not context.request_id.strip():
         raise ValueError("request_id é obrigatório")
 
     get_call_id = call_id_factory or (lambda: str(uuid4()))
     effective_trace_id = (
-        trace_id.strip() if trace_id and trace_id.strip() else request_id
+        context.trace_id.strip()
+        if context.trace_id and context.trace_id.strip()
+        else context.request_id
     )
 
     def search() -> str:
@@ -61,9 +75,9 @@ def build_search_conversation_summaries_tool(
         )
         try:
             selection = service.search_context(
-                user_id=user_id,
-                conversation_id=conversation_id,
-                query=query,
+                user_id=context.user_id,
+                conversation_id=context.conversation_id,
+                query=context.query,
             )
             data = SearchConversationSummariesData.model_validate(selection)
             result = compose_success(

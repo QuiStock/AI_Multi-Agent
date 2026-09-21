@@ -25,6 +25,12 @@ llm_gemini = ChatGoogleGenerativeAI(
     google_api_key=config.GEMINI_API_KEY or "missing-gemini-api-key",
 )
 
+llm_gemini_title = ChatGoogleGenerativeAI(
+    model=config.GEMINI_TITLE_MODEL,
+    temperature=0.0,
+    google_api_key=config.GEMINI_API_KEY or "missing-gemini-api-key",
+)
+
 llm_groq = ChatGroq(
     model=config.GROQ_CHAT_MODEL,
     temperature=config.LLM_TEMPERATURE,
@@ -71,11 +77,18 @@ def get_structured_model(
     return primary.with_fallbacks([fallback])
 
 
+def get_title_model(schema: type[SchemaT]) -> Runnable[Any, Any]:
+    """Return Gemini Flash-Lite structured output for conversation titles."""
+    return llm_gemini_title.with_structured_output(schema)
+
+
 __all__ = [
     "embeddings",
     "get_structured_model",
+    "get_title_model",
     "llm",
     "llm_fast",
     "llm_gemini",
+    "llm_gemini_title",
     "llm_groq",
 ]

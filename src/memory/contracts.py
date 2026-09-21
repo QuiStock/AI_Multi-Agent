@@ -1,9 +1,12 @@
 """Contracts for durable conversational message persistence."""
 
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, Protocol, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+MAX_SUMMARY_RESULTS = 3
 
 
 class StoredMessage(BaseModel):
@@ -69,6 +72,31 @@ class ConversationSummarySnapshot(BaseModel):
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("updated_at precisa incluir timezone")
         return value
+
+
+class SummaryCommit(BaseModel):
+    """Optimistic-concurrency payload for committing a summary revision."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    conversation_id: str = Field(min_length=1)
+    user_id: str = Field(min_length=1)
+    expected_summary_version: int = Field(ge=0)
+    expected_message_id: str | None
+    summary: str = Field(min_length=1)
+    summarized_through_message_id: str = Field(min_length=1)
+
+
+@dataclass(frozen=True, slots=True)
+class SummarySearchRequest:
+    """Inputs for one semantic summary search."""
+
+    user_id: str
+    conversation_id: str
+    query: str
+    collection_name: str
+    limit: int = MAX_SUMMARY_RESULTS
+    score_threshold: float = 0.5
 
 
 class ConversationSummary(TypedDict):

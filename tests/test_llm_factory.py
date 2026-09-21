@@ -8,6 +8,7 @@ from src.agents.faq import executor as faq_module
 from src.agents.judge import executor as judge_module
 from src.agents.router import executor as router_module
 from src.graphs.contracts import CompilerResult, JudgeDecision, RouteDecision
+from src.memory.worker.title_generator import ConversationTitle
 
 
 class FakeStructuredRunnable:
@@ -32,6 +33,7 @@ class FakeModel:
 def test_factory_uses_configured_provider_models() -> None:
     assert llm_factory.llm_gemini.model == config.GEMINI_CHAT_MODEL
     assert llm_factory.llm_groq.model == config.GROQ_CHAT_MODEL
+    assert llm_factory.llm_gemini_title.model == config.GEMINI_TITLE_MODEL
     assert llm_factory.llm_fast.model == config.GROQ_FAST_MODEL
     assert llm_factory.embeddings.model == config.GEMINI_EMBEDDING_MODEL
 
@@ -69,6 +71,16 @@ def test_fast_structured_model_does_not_create_default_fallback(
     assert fast.schemas == [CompilerResult]
     assert primary.schemas == []
     assert fallback.schemas == []
+
+
+def test_title_model_uses_dedicated_gemini_model(monkeypatch: Any) -> None:
+    title_model = FakeModel()
+    monkeypatch.setattr(llm_factory, "llm_gemini_title", title_model)
+
+    result = llm_factory.get_title_model(ConversationTitle)
+
+    assert isinstance(result, FakeStructuredRunnable)
+    assert title_model.schemas == [ConversationTitle]
 
 
 def test_faq_executor_uses_fast_model_by_default(monkeypatch: Any) -> None:

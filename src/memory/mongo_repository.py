@@ -5,11 +5,13 @@ from datetime import datetime, timezone
 from pymongo.collection import Collection
 
 from .contracts import (
+    MAX_SUMMARY_RESULTS,
     ConversationDocument,
     ConversationListItem,
     ConversationSummary,
     ConversationSummarySnapshot,
     StoredMessage,
+    SummaryCommit,
     VersionedConversationSummary,
 )
 
@@ -217,23 +219,48 @@ class MongoConversationRepository:
             )
         return conversations
 
-    def save_summary_if_current(
+    def save_summary_if_current(self, commit: SummaryCommit) -> bool:
+        """Commit one summary version only if its source boundary is unchanged."""
+        if not commit.summary.strip():
+            raise ValueError("summary não pode estar vazio")
+        if not commit.summarized_through_message_id.strip():
+            raise ValueError("summarized_through_message_id é obrigatório")
+        if commit.expected_summary_version < 0:
+            raise ValueError("expected_summary_version não pode ser negativo")
+
+        result = self._collection.update_one(
+            {
+                "_id": commit.conversation_id,
+                "user_id": commit.user_id,
+                "status": "ended",
+                "summary_version": commit.expected_summary_version,
+                "summarized_through_message_id": commit.expected_message_id,
+            },
+            {
+                "$set": {
+                    "summary": commit.summary,
+                    "summary_version": commit.expected_summary_version + 1,
+                    "summarized_through_message_id": (
+                        commit.summarized_through_message_id
+                    ),
+                }
+            },
+        )
+        return result.modified_count == 1
+
+    def save_title_if_missing(
         self,
         *,
         conversation_id: str,
         user_id: str,
         expected_summary_version: int,
-        expected_message_id: str | None,
-        summary: str,
-        summarized_through_message_id: str,
+        title: str,
     ) -> bool:
-        """Commit one summary version only if its source boundary is unchanged."""
-        if not summary.strip():
-            raise ValueError("summary não pode estar vazio")
-        if not summarized_through_message_id.strip():
-            raise ValueError("summarized_through_message_id é obrigatório")
-        if expected_summary_version < 0:
-            raise ValueError("expected_summary_version não pode ser negativo")
+        """Save a generated title only while its source summary is current."""
+        if not title.strip():
+            raise ValueError("title não pode estar vazio")
+        if expected_summary_version < 1:
+            raise ValueError("expected_summary_version deve ser positivo")
 
         result = self._collection.update_one(
             {
@@ -241,15 +268,9 @@ class MongoConversationRepository:
                 "user_id": user_id,
                 "status": "ended",
                 "summary_version": expected_summary_version,
-                "summarized_through_message_id": expected_message_id,
+                "$or": [{"title": None}, {"title": {"$exists": False}}],
             },
-            {
-                "$set": {
-                    "summary": summary,
-                    "summary_version": expected_summary_version + 1,
-                    "summarized_through_message_id": summarized_through_message_id,
-                }
-            },
+            {"$set": {"title": title.strip()}},
         )
         return result.modified_count == 1
 
@@ -312,7 +333,7 @@ class MongoConversationRepository:
         """Return the user's most recently updated ended summaries."""
         if not user_id.strip():
             raise ValueError("user_id é obrigatório")
-        if not 1 <= limit <= 3:
+        if not 1 <= limit <= MAX_SUMMARY_RESULTS:
             raise ValueError("limit deve estar entre um e três")
 
         documents = (

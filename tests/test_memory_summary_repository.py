@@ -4,6 +4,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from src.memory.contracts import SummaryCommit
 from src.memory.mongo_repository import (
     ConversationNotEndedError,
     ConversationNotFoundError,
@@ -169,12 +170,14 @@ def test_summary_commit_checks_version_and_message_boundary() -> None:
     repository = MongoConversationRepository(collection)
 
     saved = repository.save_summary_if_current(
-        conversation_id="conversation-1",
-        user_id="user-1",
-        expected_summary_version=2,
-        expected_message_id="m1",
-        summary="Updated summary",
-        summarized_through_message_id="m2",
+        SummaryCommit(
+            conversation_id="conversation-1",
+            user_id="user-1",
+            expected_summary_version=2,
+            expected_message_id="m1",
+            summary="Updated summary",
+            summarized_through_message_id="m2",
+        )
     )
 
     query, update = collection.update_one.call_args.args
@@ -192,4 +195,28 @@ def test_summary_commit_checks_version_and_message_boundary() -> None:
             "summarized_through_message_id": "m2",
         }
     }
+    assert saved is True
+
+
+def test_title_commit_requires_missing_title_and_current_summary_version() -> None:
+    collection = Mock()
+    collection.update_one.return_value = SimpleNamespace(modified_count=1)
+    repository = MongoConversationRepository(collection)
+
+    saved = repository.save_title_if_missing(
+        conversation_id="conversation-1",
+        user_id="user-1",
+        expected_summary_version=2,
+        title="Conversation title",
+    )
+
+    query, update = collection.update_one.call_args.args
+    assert query == {
+        "_id": "conversation-1",
+        "user_id": "user-1",
+        "status": "ended",
+        "summary_version": 2,
+        "$or": [{"title": None}, {"title": {"$exists": False}}],
+    }
+    assert update == {"$set": {"title": "Conversation title"}}
     assert saved is True

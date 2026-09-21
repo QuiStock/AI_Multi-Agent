@@ -20,7 +20,7 @@ START -> input_guardrail -> enrich_context -> router
 
 1. O app inicia uma conversa ativa e envia `conversation_id` e identidade autenticada (`user_id`) à API.
 2. Enquanto ativa, a conversa continua no estado principal. O MongoDB mantém o histórico durável conforme o serviço de mensagens.
-3. Ao encerrar, o serviço garante as mensagens no MongoDB e seleciona as posteriores a `summarized_through_message_id`. No primeiro resumo, usa o histórico disponível; nos seguintes, atualiza o resumo anterior da mesma conversa usando apenas essa diferença de mensagens. Resumos recuperados de outras conversas nunca entram nessa atualização. Persiste nova versão e marcador, gera embedding e faz upsert do ponto no Qdrant.
+3. Ao encerrar, o serviço garante as mensagens no MongoDB e seleciona as posteriores a `summarized_through_message_id`. No primeiro resumo, usa o histórico disponível; nos seguintes, atualiza o resumo anterior da mesma conversa usando apenas essa diferença de mensagens. Resumos recuperados de outras conversas nunca entram nessa atualização. Persiste nova versão e marcador. Se ainda não houver título, gera-o a partir do resumo com `gemini-2.5-flash-lite` (modelo estruturado centralizado em `llm_factory`) e salva-o uma única vez no MongoDB; depois gera embedding e faz upsert do ponto no Qdrant com o título persistido. Falha na geração do título não impede salvar/indexar o resumo e permite nova tentativa no próximo encerramento.
 4. A sessão encerrada aparece na lista do app por título. A API fornece essa lista usando uma consulta por `user_id`; a UI e os endpoints são escopo da branch `api`.
 5. Ao selecionar uma sessão encerrada, a API sinaliza `is_resuming_conversation=true` no estado e usa o mesmo `conversation_id`. A memória valida propriedade, reabre a conversa e restaura `messages`. Mensagens de continuação normal não ativam essa etapa. A sessão ativa não é elegível na busca semântica.
 6. Ao encerrar novamente, o resumo e o mesmo ponto Qdrant são atualizados, sem criar uma conversa ou ponto duplicado.
@@ -66,6 +66,7 @@ src/memory/
   worker/
     summary_prompt.py            # novo: modos initial e incremental
     summarizer_end_conversation.py # LLM, diferença de mensagens e retry do índice
+    title_generator.py            # novo: título estruturado com Gemini Flash-Lite
 ```
 
 O wrapper da tool fica em `src/agents/router/tools/search_conversation_summaries.py`, conforme a convenção do repositório. O código de busca e acesso aos dados continua em `src/memory`.
@@ -94,6 +95,7 @@ Essa organização é um plano, não uma solicitação para substituir agora tod
 3. Implementar `enrich_context` para restaurar mensagens na retomada.
 4. Refatorar busca semântica para uso sob demanda e conectá-la à tool do router.
 5. Fechar o ciclo de resumo incremental, embedding e upsert Qdrant com retry idempotente; em retry, não reaplicar mensagens já incluídas no marcador.
+6. Gerar e persistir o título ausente a partir do resumo, sem refazer títulos existentes; indexar o ponto Qdrant com o título salvo.
 
 ## Critérios de aceite
 
@@ -104,6 +106,7 @@ Essa organização é um plano, não uma solicitação para substituir agora tod
 - **CA-MEM-05:** ao encerrar, só mensagens posteriores a `summarized_through_message_id` são combinadas com o resumo anterior; na primeira geração usa-se o histórico completo. O novo resumo e marcador ficam no MongoDB e o Qdrant recebe upsert do mesmo `conversation_id`; retry não resume a mesma diferença duas vezes.
 - **CA-MEM-06:** ao retomar e encerrar novamente, a conversa mantém o ID e o resumo/ponto vetorial é atualizado.
 - **CA-MEM-07:** IDs ou payloads de outra pessoa nunca permitem leitura, alteração ou recuperação de contexto.
+- **CA-MEM-08:** o primeiro resumo de uma conversa sem título recebe um título em português gerado por `gemini-2.5-flash-lite`; retomadas preservam o título, e falha de título não impede persistência/indexação do resumo.
 
 ## Fora do escopo desta branch
 

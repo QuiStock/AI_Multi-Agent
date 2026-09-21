@@ -7,6 +7,7 @@ from pymongo import MongoClient
 from pymongo.collection import Collection
 from testcontainers.community.mongodb import MongoDbContainer
 
+from src.memory.contracts import SummaryCommit
 from src.memory.message_service import MemoryMessageService
 from src.memory.mongo_repository import (
     ConversationClosedError,
@@ -270,20 +271,24 @@ def test_summary_commit_advances_version_and_marker_only_once(
     ]
     assert snapshot.messages[0].created_at.tzinfo == timezone.utc
     committed = repository.save_summary_if_current(
-        conversation_id="conversation-1",
-        user_id="user-1",
-        expected_summary_version=snapshot.summary_version,
-        expected_message_id=snapshot.summarized_through_message_id,
-        summary="Question and answer.",
-        summarized_through_message_id="request-1:assistant",
+        SummaryCommit(
+            conversation_id="conversation-1",
+            user_id="user-1",
+            expected_summary_version=snapshot.summary_version,
+            expected_message_id=snapshot.summarized_through_message_id,
+            summary="Question and answer.",
+            summarized_through_message_id="request-1:assistant",
+        )
     )
     stale_retry = repository.save_summary_if_current(
-        conversation_id="conversation-1",
-        user_id="user-1",
-        expected_summary_version=snapshot.summary_version,
-        expected_message_id=snapshot.summarized_through_message_id,
-        summary="Duplicate summary.",
-        summarized_through_message_id="request-1:assistant",
+        SummaryCommit(
+            conversation_id="conversation-1",
+            user_id="user-1",
+            expected_summary_version=snapshot.summary_version,
+            expected_message_id=snapshot.summarized_through_message_id,
+            summary="Duplicate summary.",
+            summarized_through_message_id="request-1:assistant",
+        )
     )
     updated = repository.get_summary_snapshot(
         conversation_id="conversation-1",
