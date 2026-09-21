@@ -3,6 +3,7 @@ from pydantic import ValidationError
 
 from src.agents.faq.card import FAQ_CARD
 from src.agents.judge.card import JUDGE_CARD
+from src.agents.router.card import ROUTER_CARD
 from src.agents.schemas.agent_card import AgentCard, AgentRole
 from src.agents.schemas.policies import EvidencePolicy, MemoryPolicy
 from src.agents.schemas.tool_binding import ToolBinding, ToolProperty
@@ -54,6 +55,13 @@ def test_judge_card_requires_evidence_and_has_no_tools() -> None:
     assert JUDGE_CARD.failure_policy is not None
     assert JUDGE_CARD.failure_policy.max_retries == 0
     assert JUDGE_CARD.routing_intents == []
+
+
+def test_router_card_declares_optional_long_term_memory_tool() -> None:
+    assert [tool.id for tool in ROUTER_CARD.tools] == ["search_conversation_summaries"]
+    assert ROUTER_CARD.memory_policy.enabled is True
+    assert ROUTER_CARD.memory_policy.mode == "long_term"
+    assert ROUTER_CARD.memory_policy.max_items == 3
 
 
 def test_agent_card_accepts_optional_failure_policy() -> None:

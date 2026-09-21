@@ -1,9 +1,14 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Protocol
 
-from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
+from langchain_core.messages import (
+    AIMessage,
+    AnyMessage,
+    HumanMessage,
+    RemoveMessage,
+)
 
 from src.graphs.state import (
     Evidence,
@@ -22,7 +27,18 @@ class RouterExecutorPort(Protocol):
     def invoke(
         self,
         messages: Sequence[AnyMessage],
+        *,
+        request_context: Mapping[str, Any] | None = None,
     ) -> RoutingDecision: ...
+
+
+class ConversationContextEnricherPort(Protocol):
+    def restore_messages(
+        self,
+        *,
+        user_id: str,
+        conversation_id: str,
+    ) -> list[AnyMessage]: ...
 
 
 class FAQExecutorPort(Protocol):
@@ -53,9 +69,15 @@ def sanitized_state(state: GraphState) -> GraphState:
 
     for index in range(len(messages) - 1, -1, -1):
         if isinstance(messages[index], HumanMessage):
+            request_id = request.get("request_id")
+            message_id = (
+                f"{request_id}:user"
+                if isinstance(request_id, str) and request_id.strip()
+                else messages[index].id
+            )
             messages[index] = HumanMessage(
                 content=sanitized,
-                id=messages[index].id,
+                id=message_id,
             )
             break
     return {
@@ -74,6 +96,7 @@ def run_router_node(
     return {
         "routing_decision": router.invoke(
             current_state.get("messages", []),
+            request_context=current_state.get("request"),
         ),
         "status": "in_progress",
     }
@@ -157,10 +180,38 @@ def run_compiler_node(
 
 def run_context_enrichment_node(
     state: GraphState,
+    *,
+    context_enricher: ConversationContextEnricherPort,
 ) -> GraphUpdate:
-    # No MVP, não carrega memória.
-    # Futuramente, este ponto poderá receber MemoryService.
-    return {}
+    request = state.get("request")
+    if not request or not request.get("is_resuming_conversation", False):
+        return {}
+
+    user_id = request.get("user_id", "").strip()
+    conversation_id = request.get("conversation_id", "").strip()
+    if not user_id or not conversation_id:
+        raise ValueError("user_id e conversation_id são necessários para retomada")
+
+    current_state = sanitized_state(state)
+    current_messages = list(current_state.get("messages", []))
+    restored_messages = context_enricher.restore_messages(
+        user_id=user_id,
+        conversation_id=conversation_id,
+    )
+
+    current_ids = [message.id for message in current_messages if message.id]
+    current_id_set = set(current_ids)
+    historical_messages = [
+        message for message in restored_messages if message.id not in current_id_set
+    ]
+    restored_state_messages: list[Any] = [
+        *(RemoveMessage(id=message_id) for message_id in current_ids),
+        *historical_messages,
+        *current_messages,
+    ]
+    return {
+        "messages": restored_state_messages,
+    }
 
 
 def run_output_guardrail_node(

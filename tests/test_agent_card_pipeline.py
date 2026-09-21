@@ -8,6 +8,8 @@ from src.agents.faq.card import FAQ_CARD
 from src.agents.faq.executor import FAQExecutor
 from src.agents.judge.card import JUDGE_CARD
 from src.agents.registry import get_agent_card
+from src.agents.router.card import ROUTER_CARD
+from src.graphs.contracts import RouteDecision
 
 
 def _fake_search(query: str) -> str:
@@ -79,3 +81,30 @@ def test_executor_forwards_agent_input_to_compiled_agent(
 
     assert result == agent_input
     assert captured["agent_input"] == agent_input
+
+
+def test_factory_accepts_per_request_router_tools_and_response_schema(
+    monkeypatch,
+) -> None:
+    tool = StructuredTool.from_function(
+        _fake_search,
+        name="search_conversation_summaries",
+    )
+    captured: dict[str, Any] = {}
+
+    def fake_create_agent(**kwargs: Any) -> str:
+        captured.update(kwargs)
+        return "compiled-router"
+
+    monkeypatch.setattr(factory, "create_agent", fake_create_agent)
+
+    result = factory.create_agent_from_card(
+        card=ROUTER_CARD,
+        model="fake-model",
+        tools=[tool],
+        response_format=RouteDecision,
+    )
+
+    assert result == "compiled-router"
+    assert captured["tools"] == [tool]
+    assert captured["response_format"] is RouteDecision

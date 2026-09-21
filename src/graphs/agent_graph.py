@@ -9,6 +9,7 @@ from langgraph.graph.state import CompiledStateGraph
 
 from src.graphs.adapters import (
     CompilerExecutorPort,
+    ConversationContextEnricherPort,
     GraphNode,
     JudgeExecutorPort,
     RouterExecutorPort,
@@ -119,6 +120,7 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
     judge: JudgeExecutorPort,
     compiler: CompilerExecutorPort,
     output_guardrail: GraphNode,
+    context_enricher: ConversationContextEnricherPort,
 ) -> CompiledStateGraph:
     graph: StateGraph[
         GraphState,
@@ -141,7 +143,12 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
 
     graph.add_node(
         "context_enrichment",
-        _as_runnable(run_context_enrichment_node),
+        _as_runnable(
+            partial(
+                run_context_enrichment_node,
+                context_enricher=context_enricher,
+            )
+        ),
         input_schema=GraphState,
     )
 

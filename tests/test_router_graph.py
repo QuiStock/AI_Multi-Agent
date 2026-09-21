@@ -87,3 +87,73 @@ def test_invalid_router_output_falls_back_to_clarification() -> None:
     )
 
     assert result["routing_decision"]["outcome"] == "clarification_required"
+
+
+def test_router_can_call_summary_search_tool_from_authenticated_request_context() -> (
+    None
+):
+    class FakeSummaryService:
+        arguments: dict[str, str] | None = None
+
+        def search_context(
+            self,
+            *,
+            user_id: str,
+            conversation_id: str,
+            query: str,
+        ) -> dict[str, Any]:
+            self.arguments = {
+                "user_id": user_id,
+                "conversation_id": conversation_id,
+                "query": query,
+            }
+            return {"source": "fallback", "results": []}
+
+    service = FakeSummaryService()
+    captured: dict[str, Any] = {}
+
+    class FakeToolCallingAgent:
+        def invoke(self, agent_input: dict[str, Any]) -> dict[str, Any]:
+            captured["agent_input"] = agent_input
+            captured["tool_output"] = captured["tools"][0].invoke({})
+            return {
+                "structured_response": RouteDecision(
+                    route="faq",
+                    reason="A pergunta depende da conversa anterior.",
+                )
+            }
+
+    def fake_agent_factory(**kwargs: Any) -> FakeToolCallingAgent:
+        captured.update(kwargs)
+        return FakeToolCallingAgent()
+
+    executor = RouterExecutor(
+        model=FakeRouterModel(
+            RouteDecision(route="out_of_scope", reason="Fallback não usado.")
+        ),
+        summary_search_service=service,  # type: ignore[arg-type]
+        tool_calling_model=object(),
+        agent_factory=fake_agent_factory,
+    )
+
+    result = run_router_node(
+        {
+            "request": {
+                "request_id": "request-1",
+                "user_id": "authenticated-user",
+                "conversation_id": "current-conversation",
+                "sanitized_message": "O que combinamos antes?",
+            },
+            "messages": [HumanMessage(content="O que combinamos antes?")],
+        },
+        router=executor,
+    )
+
+    assert service.arguments == {
+        "user_id": "authenticated-user",
+        "conversation_id": "current-conversation",
+        "query": "O que combinamos antes?",
+    }
+    assert captured["tools"][0].name == "search_conversation_summaries"
+    assert captured["response_format"] is RouteDecision
+    assert result["routing_decision"]["route"] == "faq"
