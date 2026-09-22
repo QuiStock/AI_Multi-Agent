@@ -35,6 +35,7 @@ class FakeConversationRepository:
                 role="assistant",
                 content="Earlier answer.",
                 created_at=datetime(2026, 9, 20, 0, 1, tzinfo=timezone.utc),
+                consulted_agents=["faq"],
             ),
         ]
 
@@ -55,3 +56,5 @@ def test_context_enricher_reopens_and_preserves_stored_message_ids() -> None:
     assert isinstance(messages[0], HumanMessage)
     assert isinstance(messages[1], AIMessage)
     assert [message.id for message in messages] == ["message-1", "message-2"]
+    assert messages[0].additional_kwargs["created_at"] == ("2026-09-20T00:00:00+00:00")
+    assert messages[1].additional_kwargs["consulted_agents"] == ["faq"]

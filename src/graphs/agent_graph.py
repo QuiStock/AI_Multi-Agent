@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Hashable, Mapping
 from functools import partial
+from typing import cast
 
+from langchain_core.messages import AnyMessage, HumanMessage, RemoveMessage
 from langchain_core.runnables import RunnableLambda
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
@@ -12,10 +15,13 @@ from src.graphs.adapters import (
     ConversationContextEnricherPort,
     GraphNode,
     JudgeExecutorPort,
+    MemoryMessagePersistencePort,
     RouterExecutorPort,
     run_compiler_node,
     run_context_enrichment_node,
     run_judge_node,
+    run_persist_assistant_message_node,
+    run_persist_user_message_node,
     run_router_node,
 )
 from src.graphs.decisions import (
@@ -26,14 +32,24 @@ from src.graphs.decisions import (
 from src.graphs.state import GraphState, RouteName
 
 
-def input_rejected_node(_: GraphState) -> GraphState:
-    return {
+def input_rejected_node(state: GraphState) -> GraphState:
+    update: GraphState = {
         "final_response": {
             "content": "A entrada não pôde ser processada.",
             "status": "rejected",
         },
         "status": "completed",
     }
+    latest_human = next(
+        (
+            message
+            for message in reversed(state.get("messages", []))
+            if isinstance(message, HumanMessage)
+        ),
+    )
+    if latest_human is not None and latest_human.id:
+        update["messages"] = [cast(AnyMessage, RemoveMessage(id=latest_human.id))]
+    return update
 
 
 def clarification_node(_: GraphState) -> GraphState:
@@ -121,6 +137,8 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
     compiler: CompilerExecutorPort,
     output_guardrail: GraphNode,
     context_enricher: ConversationContextEnricherPort,
+    message_service: MemoryMessagePersistencePort | None = None,
+    checkpointer: BaseCheckpointSaver | None = None,
 ) -> CompiledStateGraph:
     graph: StateGraph[
         GraphState,
@@ -147,6 +165,17 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
             partial(
                 run_context_enrichment_node,
                 context_enricher=context_enricher,
+            )
+        ),
+        input_schema=GraphState,
+    )
+
+    graph.add_node(
+        "persist_user_message",
+        _as_runnable(
+            partial(
+                run_persist_user_message_node,
+                message_service=message_service,
             )
         ),
         input_schema=GraphState,
@@ -213,6 +242,17 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
         input_schema=GraphState,
     )
 
+    graph.add_node(
+        "persist_assistant_message",
+        _as_runnable(
+            partial(
+                run_persist_assistant_message_node,
+                message_service=message_service,
+            )
+        ),
+        input_schema=GraphState,
+    )
+
     graph.add_edge(
         START,
         "input_guardrail",
@@ -227,10 +267,8 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
         },
     )
 
-    graph.add_edge(
-        "context_enrichment",
-        "router",
-    )
+    graph.add_edge("context_enrichment", "persist_user_message")
+    graph.add_edge("persist_user_message", "router")
 
     router_targets: dict[Hashable, str] = {route: route for route in capabilities}
 
@@ -273,12 +311,14 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
     )
 
     for terminal_node in (
-        "input_rejected",
         "clarification_required",
         "out_of_scope",
         "judge_blocked",
         "finalize_output",
     ):
-        graph.add_edge(terminal_node, END)
+        graph.add_edge(terminal_node, "persist_assistant_message")
 
-    return graph.compile()
+    graph.add_edge("persist_assistant_message", END)
+    graph.add_edge("input_rejected", END)
+
+    return graph.compile(checkpointer=checkpointer)
