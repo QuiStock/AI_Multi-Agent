@@ -140,13 +140,15 @@ def test_resume_rejects_other_user_and_already_active_conversations() -> None:
 
 def test_list_ended_conversations_only_queries_authenticated_user() -> None:
     collection = Mock()
-    collection.find.return_value = [
+    cursor = Mock()
+    cursor.sort.return_value = [
         {
             "_id": "conversation-1",
             "title": "Earlier session",
             "updated_at": datetime(2026, 9, 20, tzinfo=timezone.utc),
         }
     ]
+    collection.find.return_value = cursor
     repository = MongoConversationRepository(collection)
 
     result = repository.list_ended_conversations(user_id="user-1")
@@ -155,6 +157,10 @@ def test_list_ended_conversations_only_queries_authenticated_user() -> None:
         "user_id": "user-1",
         "status": "ended",
     }
+    assert cursor.sort.call_args.args[0] == [
+        ("updated_at", -1),
+        ("_id", -1),
+    ]
     assert result == [
         {
             "conversation_id": "conversation-1",
