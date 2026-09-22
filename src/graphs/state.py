@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated, Literal, NotRequired, TypedDict
 
 from langchain_core.messages import AnyMessage
@@ -26,6 +27,7 @@ class RequestContext(TypedDict):
     request_id: str
     user_id: str
     conversation_id: str
+    sent_at: datetime
     sanitized_message: NotRequired[str]
     is_new_conversation: NotRequired[bool]
     is_resuming_conversation: NotRequired[bool]

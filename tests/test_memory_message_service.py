@@ -61,6 +61,25 @@ def test_assistant_message_stores_consulted_agents() -> None:
     assert message.consulted_agents == ["product_workflow"]
 
 
+def test_save_turn_uses_sent_at_for_the_user_message() -> None:
+    repository = RecordingRepository()
+    service = MemoryMessageService(repository)
+    sent_at = datetime(2026, 9, 22, 17, 30, tzinfo=timezone.utc)
+
+    service.save_turn(
+        conversation_id="conversation-1",
+        user_id="user-1",
+        request_id="request-1",
+        sanitized_user_content="Pergunta sanitizada",
+        assistant_content="Resposta final",
+        consulted_agents=["faq"],
+        sent_at=sent_at,
+    )
+
+    assert repository.messages[0][2].created_at == sent_at
+    assert repository.messages[1][2].role == "assistant"
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
