@@ -86,8 +86,9 @@ def _capability(_: GraphState) -> GraphState:
     }
 
 
-def _passing_output(_: GraphState) -> GraphState:
-    return {
+def _passing_output(state: GraphState) -> GraphState:
+    response_draft = state.get("response_draft")
+    result: GraphState = {
         "output_guardrail": {
             "status": "passed",
             "reason_code": "approved",
@@ -95,6 +96,12 @@ def _passing_output(_: GraphState) -> GraphState:
             "violations": [],
         }
     }
+    if response_draft is not None:
+        result["final_response"] = {
+            "content": response_draft["content"],
+            "status": "success",
+        }
+    return result
 
 
 class EmptyContextEnricher:

@@ -63,7 +63,7 @@ class MemoryMessagePersistencePort(Protocol):
         consulted_agents: list[str],
     ) -> bool: ...
 
-    def save_turn(
+    def save_turn(  # noqa: PLR0913 - one persistence operation needs both messages
         self,
         *,
         conversation_id: str,
@@ -393,6 +393,7 @@ def run_persist_turn_node(
             )
         ],
         "pii_map": {},
+        "status": "completed",
     }
 
 
