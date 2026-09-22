@@ -105,7 +105,7 @@ def test_compiler_output_node_accepts_judge_approved_response() -> None:
     assert result["status"] == "in_progress"
 
 
-def test_compiler_output_node_blocks_nonapproved_judge() -> None:
+def test_compiler_output_node_replaces_nonapproved_judge() -> None:
     state = _output_state("Resposta com informação sem suporte.")
     state["agent_results"]["judge"] = {
         "status": "insufficient_evidence",
@@ -115,6 +115,7 @@ def test_compiler_output_node_blocks_nonapproved_judge() -> None:
 
     result = output_guardrail_node(state, source="compiled")
 
-    assert result["output_guardrail"]["status"] == "blocked"
+    assert result["output_guardrail"]["status"] == "passed"
     assert result["output_guardrail"]["reason_code"] == "judge_not_approved"
+    assert result["response_draft"]["content"].startswith("Não foi possível liberar")
     assert result["status"] == "completed"

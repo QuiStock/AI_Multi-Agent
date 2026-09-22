@@ -47,12 +47,13 @@ def test_faq_output_only_checks_markdown() -> None:
     assert "sanitized_content" not in result
 
 
-def test_faq_output_blocks_unbalanced_markdown() -> None:
+def test_faq_output_replaces_unbalanced_markdown() -> None:
     result = validate_output("Resposta com **negrito incompleto.", source="faq")
 
-    assert result["status"] == "blocked"
+    assert result["status"] == "passed"
     assert result["reason_code"] == "invalid_markdown"
     assert "unbalanced_bold_delimiter" in result["violations"]
+    assert result["sanitized_content"] == CONTROLLED_OUTPUT_RESPONSE
 
 
 def test_faq_output_removes_emojis_and_passes() -> None:
@@ -103,18 +104,19 @@ def test_compiled_evaluator_receives_content_without_emojis() -> None:
     assert result["sanitized_content"] == "Resposta compilada "
 
 
-def test_compiled_output_blocks_unsupported_content() -> None:
+def test_compiled_output_replaces_unsupported_content() -> None:
     result = validate_output(
         "A resposta adiciona uma informação não encontrada.",
         source="compiled",
         evaluator=lambda _response, _references: "unsupported",
     )
 
-    assert result["status"] == "blocked"
+    assert result["status"] == "passed"
     assert result["reason_code"] == "unsupported_content"
+    assert result["sanitized_content"] == CONTROLLED_OUTPUT_RESPONSE
 
 
-def test_compiled_output_blocks_when_validator_is_unavailable() -> None:
+def test_compiled_output_replaces_when_validator_is_unavailable() -> None:
     def failing_evaluator(_: str, __: list[str]) -> str:
         raise RuntimeError("modelo indisponível")
 
@@ -124,8 +126,9 @@ def test_compiled_output_blocks_when_validator_is_unavailable() -> None:
         evaluator=failing_evaluator,
     )
 
-    assert result["status"] == "blocked"
+    assert result["status"] == "passed"
     assert result["reason_code"] == "validator_unavailable"
+    assert result["sanitized_content"] == CONTROLLED_OUTPUT_RESPONSE
 
 
 def test_compiled_evaluator_uses_structured_supported_contract() -> None:
@@ -149,11 +152,12 @@ def test_compiled_evaluator_uses_structured_supported_contract() -> None:
     assert "Material do agente." in model.messages[1].content
 
 
-def test_output_node_blocks_missing_response() -> None:
+def test_output_node_replaces_missing_response() -> None:
     result = output_guardrail_node(_state(None), source="faq")
 
     assert result["output_guardrail"]["reason_code"] == "empty_response"
-    assert result["status"] == "completed"
+    assert result["status"] == "in_progress"
+    assert result["response_draft"]["content"] == CONTROLLED_OUTPUT_RESPONSE
     assert CONTROLLED_OUTPUT_RESPONSE.startswith("Não foi possível")
 
 
@@ -217,7 +221,7 @@ def test_approved_judge_prevents_duplicate_semantic_validation() -> None:
     assert result["output_guardrail"]["status"] == "passed"
 
 
-def test_output_node_blocks_when_judge_is_not_approved() -> None:
+def test_output_node_replaces_when_judge_is_not_approved() -> None:
     result = output_guardrail_node(
         {
             "status": "in_progress",
@@ -237,11 +241,12 @@ def test_output_node_blocks_when_judge_is_not_approved() -> None:
         source="compiled",
     )
 
-    assert result["output_guardrail"]["status"] == "blocked"
+    assert result["output_guardrail"]["status"] == "passed"
     assert result["output_guardrail"]["reason_code"] == "judge_not_approved"
+    assert result["response_draft"]["content"] == CONTROLLED_OUTPUT_RESPONSE
 
 
-def test_compiled_output_node_blocks_when_judge_is_missing() -> None:
+def test_compiled_output_node_replaces_when_judge_is_missing() -> None:
     result = output_guardrail_node(
         {
             "status": "in_progress",
@@ -254,8 +259,9 @@ def test_compiled_output_node_blocks_when_judge_is_missing() -> None:
         source="compiled",
     )
 
-    assert result["output_guardrail"]["status"] == "blocked"
+    assert result["output_guardrail"]["status"] == "passed"
     assert result["output_guardrail"]["reason_code"] == "judge_missing"
+    assert result["response_draft"]["content"] == CONTROLLED_OUTPUT_RESPONSE
 
 
 def test_created_compiled_node_passes_injected_model() -> None:
