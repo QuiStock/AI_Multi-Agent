@@ -15,6 +15,7 @@ class GuardrailResult(TypedDict, total=False):
     history_marker: str
     sanitized_message: str
     sanitized_content: str
+    pii_map: dict[str, str]
 
 
 class InputGuardrailResult(TypedDict, total=False):
@@ -24,10 +25,11 @@ class InputGuardrailResult(TypedDict, total=False):
     redactions: list[str]
     history_marker: str
     sanitized_message: str
+    pii_map: dict[str, str]
 
 
 class OutputGuardrailResult(TypedDict, total=False):
-    status: GuardrailStatus
+    status: Literal["passed"]
     reason_code: str
     reason: str
     violations: list[str]

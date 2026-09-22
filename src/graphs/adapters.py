@@ -63,6 +63,17 @@ class MemoryMessagePersistencePort(Protocol):
         consulted_agents: list[str],
     ) -> bool: ...
 
+    def save_turn(
+        self,
+        *,
+        conversation_id: str,
+        user_id: str,
+        request_id: str,
+        sanitized_user_content: str,
+        assistant_content: str,
+        consulted_agents: list[str],
+    ) -> None: ...
+
 
 class FAQExecutorPort(Protocol):
     def invoke(self, state: dict[str, Any]) -> dict[str, Any]: ...
@@ -315,6 +326,74 @@ def run_persist_user_message_node(
         )
 
     return {"messages": updates}
+
+
+def run_normalize_user_message_node(state: GraphState) -> GraphUpdate:
+    """Normalize the current user message without persisting the turn."""
+    return run_persist_user_message_node(state, message_service=None)
+
+
+def run_persist_turn_node(
+    state: GraphState,
+    *,
+    message_service: MemoryMessagePersistencePort | None,
+) -> GraphUpdate:
+    """Persist the sanitized user message and final assistant response once."""
+    if message_service is None and "request" not in state:
+        return {}
+
+    final_response = state.get("final_response")
+    if not final_response:
+        raise ValueError("final_response é necessário para persistir o turno")
+
+    content = final_response["content"].strip()
+    if not content:
+        raise ValueError("final_response.content não pode estar vazio")
+
+    request = state.get("request")
+    sanitized_message = request.get("sanitized_message") if request else None
+    if not isinstance(sanitized_message, str) or not sanitized_message.strip():
+        raise ValueError("sanitized_message é necessário para persistir o turno")
+
+    conversation_id, user_id, request_id = _request_for_persistence(state)
+    target_agent = state.get("routing_decision", {}).get("target_agent")
+    consulted_agents = [target_agent] if isinstance(target_agent, str) else []
+
+    if message_service is not None:
+        save_turn = getattr(message_service, "save_turn", None)
+        if callable(save_turn):
+            save_turn(
+                conversation_id=conversation_id,
+                user_id=user_id,
+                request_id=request_id,
+                sanitized_user_content=sanitized_message,
+                assistant_content=content,
+                consulted_agents=consulted_agents,
+            )
+        else:
+            message_service.save_user_message(
+                conversation_id=conversation_id,
+                user_id=user_id,
+                request_id=request_id,
+                sanitized_content=sanitized_message,
+            )
+            message_service.save_assistant_message(
+                conversation_id=conversation_id,
+                user_id=user_id,
+                request_id=request_id,
+                content=content,
+                consulted_agents=consulted_agents,
+            )
+
+    return {
+        "messages": [
+            AIMessage(
+                content=content,
+                id=f"{request_id}:assistant",
+            )
+        ],
+        "pii_map": {},
+    }
 
 
 def run_persist_assistant_message_node(

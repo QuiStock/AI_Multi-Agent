@@ -56,6 +56,31 @@ class MemoryMessageService:
             message=message,
         )
 
+    def save_turn(
+        self,
+        *,
+        conversation_id: str,
+        user_id: str,
+        request_id: str,
+        sanitized_user_content: str,
+        assistant_content: str,
+        consulted_agents: list[str],
+    ) -> None:
+        """Persist both messages of one completed turn."""
+        self.save_user_message(
+            conversation_id=conversation_id,
+            user_id=user_id,
+            request_id=request_id,
+            sanitized_content=sanitized_user_content,
+        )
+        self.save_assistant_message(
+            conversation_id=conversation_id,
+            user_id=user_id,
+            request_id=request_id,
+            content=assistant_content,
+            consulted_agents=consulted_agents,
+        )
+
     @staticmethod
     def _validate_identifiers(
         conversation_id: str,

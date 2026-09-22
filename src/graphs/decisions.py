@@ -49,5 +49,5 @@ def decide_after_judge(
     return "judge_blocked"
 
 
-def decide_after_output_guardrail(state: GraphState) -> Literal["finalize_output"]:
-    return "finalize_output"
+def decide_after_output_guardrail(state: GraphState) -> Literal["persist_turn"]:
+    return "persist_turn"

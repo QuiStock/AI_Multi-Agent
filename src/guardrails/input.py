@@ -177,19 +177,25 @@ def _latest_human_message(state: Mapping[str, Any]) -> str | None:
     return None
 
 
-def _redact_sensitive_data(text: str) -> tuple[str, list[str]]:
+def _redact_sensitive_data(
+    text: str,
+) -> tuple[str, list[str], dict[str, str]]:
     redactions: list[str] = []
+    pii_map: dict[str, str] = {}
     sanitized = text
 
     for kind, pattern in _PII_PATTERNS:
         if pattern.search(sanitized):
-            sanitized = pattern.sub(
-                f"[DADO_SENSIVEL_{kind}]",
-                sanitized,
-            )
+
+            def replace_match(match: re.Match[str]) -> str:
+                placeholder = f"[DADO_SENSIVEL_{kind}_{len(pii_map) + 1}]"
+                pii_map[placeholder] = match.group(0)
+                return placeholder
+
+            sanitized = pattern.sub(replace_match, sanitized)
             redactions.append(kind)
 
-    return sanitized, redactions
+    return sanitized, redactions, pii_map
 
 
 def _blocked(
@@ -343,9 +349,10 @@ def validate_input(
 
     sanitized = text
     redactions: list[str] = []
+    pii_map: dict[str, str] = {}
 
     if config.redact_sensitive_data:
-        sanitized, redactions = _redact_sensitive_data(text)
+        sanitized, redactions, pii_map = _redact_sensitive_data(text)
 
     static_result = _static_input_result(
         sanitized,
@@ -370,6 +377,7 @@ def validate_input(
         "reason": "Entrada aprovada pelo guardrail.",
         "redactions": redactions,
         "sanitized_message": sanitized,
+        "pii_map": pii_map,
     }
 
 
@@ -403,5 +411,9 @@ def input_guardrail_node(
             **request,
             "sanitized_message": sanitized_message,
         }
+
+    pii_map = result.get("pii_map")
+    if isinstance(pii_map, dict):
+        update["pii_map"] = pii_map
 
     return update

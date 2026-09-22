@@ -20,8 +20,8 @@ from src.graphs.adapters import (
     run_compiler_node,
     run_context_enrichment_node,
     run_judge_node,
-    run_persist_assistant_message_node,
-    run_persist_user_message_node,
+    run_normalize_user_message_node,
+    run_persist_turn_node,
     run_router_node,
 )
 from src.graphs.decisions import (
@@ -88,40 +88,6 @@ def judge_blocked_node(state: GraphState) -> GraphState:
     }
 
 
-def finalize_output_node(
-    state: GraphState,
-) -> GraphState:
-    guardrail = state.get("output_guardrail")
-
-    if guardrail and guardrail["status"] == "blocked":
-        return {
-            "final_response": {
-                "content": ("Não foi possível liberar essa resposta."),
-                "status": "rejected",
-            },
-            "status": "completed",
-        }
-
-    draft = state.get("response_draft")
-
-    if not draft or draft["status"] != "draft":
-        return {
-            "final_response": {
-                "content": "Não foi possível gerar uma resposta.",
-                "status": "error",
-            },
-            "status": "completed",
-        }
-
-    return {
-        "final_response": {
-            "content": draft["content"],
-            "status": "success",
-        },
-        "status": "completed",
-    }
-
-
 def _as_runnable(
     node: GraphNode,
 ) -> RunnableLambda[GraphState, GraphState]:
@@ -171,13 +137,8 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
     )
 
     graph.add_node(
-        "persist_user_message",
-        _as_runnable(
-            partial(
-                run_persist_user_message_node,
-                message_service=message_service,
-            )
-        ),
+        "normalize_user_message",
+        _as_runnable(run_normalize_user_message_node),
         input_schema=GraphState,
     )
 
@@ -237,16 +198,10 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
     )
 
     graph.add_node(
-        "finalize_output",
-        _as_runnable(finalize_output_node),
-        input_schema=GraphState,
-    )
-
-    graph.add_node(
-        "persist_assistant_message",
+        "persist_turn",
         _as_runnable(
             partial(
-                run_persist_assistant_message_node,
+                run_persist_turn_node,
                 message_service=message_service,
             )
         ),
@@ -267,8 +222,8 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
         },
     )
 
-    graph.add_edge("context_enrichment", "persist_user_message")
-    graph.add_edge("persist_user_message", "router")
+    graph.add_edge("context_enrichment", "normalize_user_message")
+    graph.add_edge("normalize_user_message", "router")
 
     router_targets: dict[Hashable, str] = {route: route for route in capabilities}
 
@@ -307,18 +262,17 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
 
     graph.add_edge(
         "output_guardrail",
-        "finalize_output",
+        "persist_turn",
     )
 
     for terminal_node in (
         "clarification_required",
         "out_of_scope",
         "judge_blocked",
-        "finalize_output",
     ):
-        graph.add_edge(terminal_node, "persist_assistant_message")
+        graph.add_edge(terminal_node, "persist_turn")
 
-    graph.add_edge("persist_assistant_message", END)
+    graph.add_edge("persist_turn", END)
     graph.add_edge("input_rejected", END)
 
     return graph.compile(checkpointer=checkpointer)
