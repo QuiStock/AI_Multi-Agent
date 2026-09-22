@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from functools import lru_cache, partial
-from typing import Any, cast
+from typing import Annotated, Any, cast
 
-from fastapi import Depends
+from fastapi import Depends, Query
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 from pymongo import MongoClient
@@ -153,7 +153,9 @@ def get_conversation_end_controller() -> ConversationEndController:
     )
 
 
-def get_conversation_list_controller() -> ConversationListController:
+def get_conversation_list_controller(
+    _: Annotated[str, Query(alias="user_id", min_length=1)],
+) -> ConversationListController:
     return ConversationListController(
         ConversationListService(get_conversation_repository())
     )
