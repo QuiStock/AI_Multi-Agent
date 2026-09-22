@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from datetime import datetime
 from typing import Any, Protocol, cast
 
 from langchain_core.messages import (
@@ -72,6 +73,7 @@ class MemoryMessagePersistencePort(Protocol):
         sanitized_user_content: str,
         assistant_content: str,
         consulted_agents: list[str],
+        sent_at: datetime | None = None,
     ) -> None: ...
 
 
@@ -358,6 +360,9 @@ def run_persist_turn_node(
     conversation_id, user_id, request_id = _request_for_persistence(state)
     target_agent = state.get("routing_decision", {}).get("target_agent")
     consulted_agents = [target_agent] if isinstance(target_agent, str) else []
+    sent_at = request.get("sent_at") if request else None
+    if sent_at is not None and not isinstance(sent_at, datetime):
+        raise ValueError("sent_at precisa ser um datetime com timezone")
 
     if message_service is not None:
         save_turn = getattr(message_service, "save_turn", None)
@@ -369,6 +374,7 @@ def run_persist_turn_node(
                 sanitized_user_content=sanitized_message,
                 assistant_content=content,
                 consulted_agents=consulted_agents,
+                sent_at=sent_at,
             )
         else:
             message_service.save_user_message(
