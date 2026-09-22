@@ -111,8 +111,9 @@ class FakeBlockedCompiler:
         }
 
 
-def _passing_output(_: dict[str, Any]) -> dict[str, Any]:
-    return {
+def _passing_output(state: dict[str, Any]) -> dict[str, Any]:
+    response_draft = state.get("response_draft")
+    result: dict[str, Any] = {
         "output_guardrail": {
             "status": "passed",
             "reason_code": "approved",
@@ -120,6 +121,12 @@ def _passing_output(_: dict[str, Any]) -> dict[str, Any]:
             "violations": [],
         }
     }
+    if response_draft:
+        result["final_response"] = {
+            "content": response_draft["content"],
+            "status": "success",
+        }
+    return result
 
 
 class EmptyContextEnricher:

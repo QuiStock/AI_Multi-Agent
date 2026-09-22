@@ -56,7 +56,7 @@ class MemoryMessageService:
             message=message,
         )
 
-    def save_turn(
+    def save_turn(  # noqa: PLR0913 - one persistence operation needs both messages
         self,
         *,
         conversation_id: str,
