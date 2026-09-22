@@ -19,6 +19,7 @@ class MemoryMessageService:
         user_id: str,
         request_id: str,
         sanitized_content: str,
+        sent_at: datetime | None = None,
     ) -> bool:
         """Persist input after the input guardrail has produced its safe text."""
         self._validate_identifiers(conversation_id, user_id, request_id)
@@ -26,6 +27,7 @@ class MemoryMessageService:
             request_id=request_id,
             role="user",
             content=sanitized_content,
+            created_at=sent_at,
         )
         return self._persist(
             conversation_id=conversation_id,
@@ -56,6 +58,33 @@ class MemoryMessageService:
             message=message,
         )
 
+    def save_turn(  # noqa: PLR0913 - one persistence operation needs both messages
+        self,
+        *,
+        conversation_id: str,
+        user_id: str,
+        request_id: str,
+        sanitized_user_content: str,
+        assistant_content: str,
+        consulted_agents: list[str],
+        sent_at: datetime | None = None,
+    ) -> None:
+        """Persist both messages of one completed turn."""
+        self.save_user_message(
+            conversation_id=conversation_id,
+            user_id=user_id,
+            request_id=request_id,
+            sanitized_content=sanitized_user_content,
+            sent_at=sent_at,
+        )
+        self.save_assistant_message(
+            conversation_id=conversation_id,
+            user_id=user_id,
+            request_id=request_id,
+            content=assistant_content,
+            consulted_agents=consulted_agents,
+        )
+
     @staticmethod
     def _validate_identifiers(
         conversation_id: str,
@@ -71,6 +100,7 @@ class MemoryMessageService:
         request_id: str,
         role: Literal["user", "assistant"],
         content: str,
+        created_at: datetime | None = None,
         consulted_agents: list[str] | None = None,
     ) -> StoredMessage:
         if not content.strip():
@@ -80,7 +110,7 @@ class MemoryMessageService:
             message_id=f"{request_id}:{role}",
             role=role,
             content=content,
-            created_at=datetime.now(timezone.utc),
+            created_at=created_at or datetime.now(timezone.utc),
             consulted_agents=consulted_agents,
         )
 

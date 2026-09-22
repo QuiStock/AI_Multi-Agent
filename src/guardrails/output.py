@@ -14,11 +14,28 @@ from .config import (
     OutputGuardrailResult,
     SupportValidationResult,
 )
+from .pii import restore_pii_placeholders
 
 CONTROLLED_OUTPUT_RESPONSE = (
     "Não foi possível liberar essa resposta. "
     "Tente novamente ou entre em contato com o suporte."
 )
+
+
+def _controlled_correction(
+    reason_code: str,
+    reason: str,
+    *,
+    violations: list[str] | None = None,
+) -> OutputGuardrailResult:
+    """Approve the turn with a controlled replacement response."""
+    return _result(
+        reason_code,
+        reason,
+        status="passed",
+        violations=violations,
+        sanitized_content=CONTROLLED_OUTPUT_RESPONSE,
+    )
 
 
 OutputSource = Literal["faq", "compiled"]
@@ -104,7 +121,7 @@ def _result(
     reason_code: str,
     reason: str,
     *,
-    status: Literal["passed", "blocked"],
+    status: Literal["passed"],
     violations: list[str] | None = None,
     sanitized_content: str | None = None,
 ) -> OutputGuardrailResult:
@@ -126,10 +143,9 @@ def _initial_output_result(
     config: GuardrailConfig,
 ) -> OutputGuardrailResult | None:
     if not isinstance(content, str):
-        return _result(
+        return _controlled_correction(
             "invalid_output_type",
             "A resposta não possui formato textual válido.",
-            status="blocked",
         )
 
     if not config.enabled:
@@ -141,10 +157,9 @@ def _initial_output_result(
         )
 
     if len(content) > config.max_output_chars:
-        return _result(
+        return _controlled_correction(
             "response_too_long",
             "A resposta excede o limite permitido.",
-            status="blocked",
         )
 
     return None
@@ -173,12 +188,10 @@ def _markdown_result(
     if not violations:
         return None
 
-    return _result(
+    return _controlled_correction(
         "empty_response" if "empty_response" in violations else "invalid_markdown",
         "A resposta não atende ao formato mínimo permitido.",
-        status="blocked",
         violations=violations,
-        sanitized_content=sanitized_result,
     )
 
 
@@ -192,11 +205,9 @@ def _missing_sources_result(
     if source != "faq" or not config.require_sources_for_faq or references:
         return None
 
-    return _result(
+    return _controlled_correction(
         "missing_sources",
         "A resposta do FAQ não possui fontes suficientes.",
-        status="blocked",
-        sanitized_content=sanitized_result,
     )
 
 
@@ -212,11 +223,9 @@ def _commercial_claim_result(
     if not any(claim in lowered for claim in _UNSUPPORTED_COMMERCIAL_CLAIMS):
         return None
 
-    return _result(
+    return _controlled_correction(
         "unsupported_commercial_claim",
         "A resposta afirma uma operação que não pertence ao escopo do Quistock.",
-        status="blocked",
-        sanitized_content=sanitized_result,
     )
 
 
@@ -227,41 +236,33 @@ def _compiled_support_result(
     evaluator: Callable[[str, list[str]], SupportStatus] | None,
 ) -> OutputGuardrailResult | None:
     if evaluator is None:
-        return _result(
+        return _controlled_correction(
             "validator_unavailable",
             "Não foi possível validar o suporte da resposta.",
-            status="blocked",
             violations=["support_validation_failed"],
-            sanitized_content=sanitized_result,
         )
 
     try:
         support = evaluator(sanitized, list(references))
     except Exception:
-        return _result(
+        return _controlled_correction(
             "validator_unavailable",
             "Não foi possível validar o suporte da resposta.",
-            status="blocked",
             violations=["support_validation_failed"],
-            sanitized_content=sanitized_result,
         )
 
     if support == "unsupported":
-        return _result(
+        return _controlled_correction(
             "unsupported_content",
             "A resposta contém conteúdo não sustentado pelos materiais fornecidos.",
-            status="blocked",
             violations=["unsupported_content"],
-            sanitized_content=sanitized_result,
         )
 
     if support != "supported":
-        return _result(
+        return _controlled_correction(
             "validator_unavailable",
             "A validação não retornou uma classificação permitida.",
-            status="blocked",
             violations=["invalid_support_status"],
-            sanitized_content=sanitized_result,
         )
 
     return None
@@ -333,129 +334,130 @@ def output_guardrail_node(
     source: OutputSource,
     evaluator: Callable[[str, list[str]], SupportStatus] | None = None,
 ) -> dict[str, object]:
-    response_key = "response_draft"
-    response = state.get(response_key)
+    response = state.get("response_draft")
+    if not isinstance(response, Mapping):
+        response = state.get("final_response")
+
+    result: OutputGuardrailResult
+    content: str
 
     if not isinstance(response, Mapping):
-        response_key = "final_response"
-        response = state.get(response_key)
-
-    if not isinstance(response, Mapping):
-        result = _result(
+        result = _controlled_correction(
             "empty_response",
             "Nenhuma resposta foi disponibilizada para validação.",
-            status="blocked",
             violations=["empty_response"],
         )
-
-        return {
-            "output_guardrail": result,
-            "status": "completed",
+        content = CONTROLLED_OUTPUT_RESPONSE
+        response = {
+            "content": content,
+            "citations": [],
+            "status": "draft",
         }
+    else:
+        raw_agent_results = state.get("agent_results")
+        judge = (
+            raw_agent_results.get("judge")
+            if isinstance(raw_agent_results, Mapping)
+            else None
+        )
 
-    raw_agent_results = state.get("agent_results")
-    judge = (
-        raw_agent_results.get("judge")
-        if isinstance(raw_agent_results, Mapping)
-        else None
-    )
-
-    if source == "compiled":
-        if not isinstance(judge, Mapping):
-            result = _result(
+        if source == "compiled" and not isinstance(judge, Mapping):
+            result = _controlled_correction(
                 "judge_missing",
                 "A resposta não possui validação do agente juiz.",
-                status="blocked",
                 violations=["judge_missing"],
             )
-
-            return {
-                "output_guardrail": result,
-                "status": "completed",
-            }
-
-        if judge.get("status") != "approved":
-            result = _result(
+            content = CONTROLLED_OUTPUT_RESPONSE
+        elif (
+            source == "compiled"
+            and isinstance(judge, Mapping)
+            and judge.get("status") != "approved"
+        ):
+            result = _controlled_correction(
                 "judge_not_approved",
                 "A resposta não foi aprovada pelas evidências disponíveis.",
-                status="blocked",
                 violations=["judge_not_approved"],
             )
+            content = CONTROLLED_OUTPUT_RESPONSE
+        else:
+            raw_content = response.get("content")
+            if not isinstance(raw_content, str):
+                result = _controlled_correction(
+                    "invalid_output_type",
+                    "A resposta final não possui conteúdo textual.",
+                )
+                content = CONTROLLED_OUTPUT_RESPONSE
+            else:
+                raw_evidences = state.get("evidences", [])
+                references = (
+                    [
+                        item["content"]
+                        for item in raw_evidences
+                        if isinstance(item, Mapping)
+                        and isinstance(item.get("content"), str)
+                    ]
+                    if isinstance(raw_evidences, list)
+                    else []
+                )
 
-            return {
-                "output_guardrail": result,
-                "status": "completed",
-            }
+                if not references:
+                    raw_results = state.get("agent_results", {})
+                    references = (
+                        [
+                            value[key]
+                            for value in raw_results.values()
+                            if isinstance(value, Mapping)
+                            for key in ("answer", "content")
+                            if isinstance(value.get(key), str)
+                        ]
+                        if isinstance(raw_results, Mapping)
+                        else []
+                    )
 
-    content = response.get("content")
+                validation_config = config or GuardrailConfig()
 
-    if not isinstance(content, str):
-        result = _result(
-            "invalid_output_type",
-            "A resposta final não possui conteúdo textual.",
-            status="blocked",
-        )
+                if isinstance(judge, Mapping) and judge.get("status") == "approved":
+                    validation_config = replace(
+                        validation_config,
+                        evaluate_compiled_support=False,
+                    )
 
-        return {
-            "output_guardrail": result,
-            "status": "completed",
-        }
+                result = validate_output(
+                    raw_content,
+                    config=validation_config,
+                    source=source,
+                    references=references,
+                    evaluator=evaluator,
+                )
+                sanitized_content = result.get("sanitized_content")
+                content = (
+                    sanitized_content
+                    if isinstance(sanitized_content, str)
+                    else raw_content
+                )
 
-    raw_evidences = state.get("evidences", [])
-    references = (
-        [
-            item["content"]
-            for item in raw_evidences
-            if isinstance(item, Mapping) and isinstance(item.get("content"), str)
-        ]
-        if isinstance(raw_evidences, list)
-        else []
+    raw_pii_map = state.get("pii_map", {})
+    pii_map = (
+        {str(key): str(value) for key, value in raw_pii_map.items()}
+        if isinstance(raw_pii_map, Mapping)
+        else {}
     )
-
-    if not references:
-        raw_results = state.get("agent_results", {})
-        references = (
-            [
-                value[key]
-                for value in raw_results.values()
-                if isinstance(value, Mapping)
-                for key in ("answer", "content")
-                if isinstance(value.get(key), str)
-            ]
-            if isinstance(raw_results, Mapping)
-            else []
-        )
-
-    validation_config = config or GuardrailConfig()
-
-    if isinstance(judge, Mapping) and judge.get("status") == "approved":
-        validation_config = replace(
-            validation_config,
-            evaluate_compiled_support=False,
-        )
-
-    result = validate_output(
-        content,
-        config=validation_config,
-        source=source,
-        references=references,
-        evaluator=evaluator,
-    )
-
-    update: dict[str, object] = {
-        "output_guardrail": result,
-        "status": ("in_progress" if result["status"] == "passed" else "completed"),
+    restored_content = restore_pii_placeholders(content, pii_map)
+    response_draft = {
+        **response,
+        "content": restored_content,
+        "status": "draft",
     }
 
-    sanitized_content = result.get("sanitized_content")
-
-    if isinstance(sanitized_content, str):
-        update[response_key] = {
-            **response,
-            "content": sanitized_content,
-        }
-
-    return update
+    return {
+        "output_guardrail": result,
+        "response_draft": response_draft,
+        "final_response": {
+            "content": restored_content,
+            "status": "success",
+        },
+        "status": "in_progress",
+    }
 
 
 def create_output_guardrail_node(

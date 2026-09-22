@@ -46,6 +46,10 @@ def test_sensitive_data_is_redacted_before_classifier_and_history() -> None:
     assert "123.456.789-09" not in result["sanitized_message"]
     assert "pessoa@example.com" not in result["sanitized_message"]
     assert received == [result["sanitized_message"]]
+    assert result["pii_map"] == {
+        "[DADO_SENSIVEL_CPF_1]": "123.456.789-09",
+        "[DADO_SENSIVEL_EMAIL_2]": "pessoa@example.com",
+    }
 
 
 def test_prompt_injection_is_blocked_before_classifier() -> None:

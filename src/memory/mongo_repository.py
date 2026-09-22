@@ -64,8 +64,8 @@ class MongoConversationRepository:
         conversation_id: str,
         user_id: str,
         ended_at: datetime,
-    ) -> None:
-        """Close a conversation once, leaving repeated close calls idempotent."""
+    ) -> datetime:
+        """Close a conversation and return its stable closure timestamp."""
         if not conversation_id.strip() or not user_id.strip():
             raise ValueError("conversation_id e user_id são obrigatórios")
         if ended_at.tzinfo is None or ended_at.utcoffset() is None:
@@ -85,14 +85,17 @@ class MongoConversationRepository:
             },
         )
         if result.matched_count == 1:
-            return
+            return ended_at
 
         existing = self._collection.find_one(
             {"_id": conversation_id, "user_id": user_id},
-            {"status": 1},
+            {"status": 1, "ended_at": 1},
         )
-        if existing is None or existing.get("status") != "ended":
+        if existing is None:
             raise ConversationNotFoundError(conversation_id)
+        if existing.get("status") != "ended":
+            raise ConversationNotFoundError(conversation_id)
+        return _as_aware_utc(existing.get("ended_at"))
 
     def get_summary_snapshot(
         self,
@@ -198,7 +201,7 @@ class MongoConversationRepository:
         documents = self._collection.find(
             {"user_id": user_id, "status": "ended"},
             {"_id": 1, "title": 1, "updated_at": 1},
-        )
+        ).sort([("updated_at", -1), ("_id", -1)])
         conversations: list[ConversationListItem] = []
         for document in documents:
             conversation_id = document.get("_id")

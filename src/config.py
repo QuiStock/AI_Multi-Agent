@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     postgres_password: str | None = None
     mongodb_uri: str | None = None
     mongodb_db: str | None = None
+    redis_url: str = "redis://localhost:6379/0"
+    summary_queue_stream: str = "quistock:conversation-summary"
+    summary_queue_group: str = "summary-workers"
+    summary_job_max_attempts: int = Field(default=3, ge=1, le=10)
 
     # FAQ RAG directories
     faq_data_dir: Path = PROJECT_ROOT / "src" / "data"
@@ -60,6 +64,7 @@ class Settings(BaseSettings):
         ge=0.0,
         le=1.0,
     )
+    faq_vectorstore_collection: str = "faq"
 
     # Conversational memory retrieval
     memory_summary_collection: str = "conversation_summaries"

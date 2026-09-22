@@ -27,10 +27,16 @@ class ConversationContextEnricher:
         graph_messages: list[AnyMessage] = []
         for message in stored_messages:
             message_type = HumanMessage if message.role == "user" else AIMessage
+            additional_kwargs: dict[str, object] = {
+                "created_at": message.created_at.isoformat(),
+            }
+            if message.consulted_agents is not None:
+                additional_kwargs["consulted_agents"] = message.consulted_agents
             graph_messages.append(
                 message_type(
                     id=message.message_id,
                     content=message.content,
+                    additional_kwargs=additional_kwargs,
                 )
             )
         return graph_messages
