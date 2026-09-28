@@ -47,7 +47,7 @@ def test_faq_executor_builds_compiled_graph(
     assert isinstance(executor.agent, CompiledStateGraph)
 
 
-def test_structured_model_binds_fast_and_fallback_paths(
+def test_structured_model_binds_fast_and_gemini_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FakeRunnable:
@@ -77,7 +77,7 @@ def test_structured_model_binds_fast_and_fallback_paths(
 
     assert isinstance(fast, FakeRunnable)
     assert isinstance(default, FakeRunnable)
-    assert default.fallbacks
+    assert default.fallbacks == []
 
 
 def test_agent_registry_rejects_unknown_agent() -> None:

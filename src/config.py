@@ -6,6 +6,7 @@ from typing import cast
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from qdrant_client import QdrantClient
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -44,6 +45,8 @@ class Settings(BaseSettings):
     postgres_password: str | None = None
     mongodb_uri: str | None = None
     mongodb_db: str | None = None
+    qdrant_url: str | None = None
+    qdrant_api_key: str | None = None
     redis_url: str = "redis://localhost:6379/0"
     summary_queue_stream: str = "quistock:conversation-summary"
     summary_queue_group: str = "summary-workers"
@@ -119,6 +122,22 @@ def validate_required_settings(
     return current_settings
 
 
+def create_qdrant_client(
+    current_settings: Settings | None = None,
+) -> QdrantClient:
+    """Create the Qdrant Cloud client from the configured URL and API key."""
+    current_settings = current_settings or get_settings()
+    if not current_settings.qdrant_url or not current_settings.qdrant_api_key:
+        raise SettingsError(
+            "QDRANT_URL e QDRANT_API_KEY são obrigatórios para o Qdrant Cloud"
+        )
+
+    return QdrantClient(
+        url=current_settings.qdrant_url,
+        api_key=current_settings.qdrant_api_key,
+    )
+
+
 settings = get_settings()
 
 # Compatibility aliases: existing modules can continue using config.CONSTANT.
@@ -139,6 +158,8 @@ MEMORY_SUMMARY_FALLBACK_LIMIT = settings.memory_summary_fallback_limit
 
 GEMINI_API_KEY = settings.gemini_api_key
 GROQ_API_KEY = settings.groq_api_key
+QDRANT_URL = settings.qdrant_url
+QDRANT_API_KEY = settings.qdrant_api_key
 
 GEMINI_CHAT_MODEL = settings.gemini_chat_model
 GEMINI_TITLE_MODEL = settings.gemini_title_model

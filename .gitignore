@@ -12,3 +12,4 @@
 
 # Generated vector store (rebuilt automatically when docs/ changes)
 src/data/vectorstore/
+src/data/faq_manifest.json

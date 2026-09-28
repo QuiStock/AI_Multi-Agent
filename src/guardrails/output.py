@@ -330,7 +330,7 @@ def validate_output(
 def output_guardrail_node(
     state: Mapping[str, object],
     *,
-    config: GuardrailConfig | None = None,
+    guardrail_config: GuardrailConfig | None = None,
     source: OutputSource,
     evaluator: Callable[[str, list[str]], SupportStatus] | None = None,
 ) -> dict[str, object]:
@@ -414,7 +414,7 @@ def output_guardrail_node(
                         else []
                     )
 
-                validation_config = config or GuardrailConfig()
+                validation_config = guardrail_config or GuardrailConfig()
 
                 if isinstance(judge, Mapping) and judge.get("status") == "approved":
                     validation_config = replace(
@@ -464,7 +464,7 @@ def create_output_guardrail_node(
     *,
     source: OutputSource,
     model: Any | None = None,
-    config: GuardrailConfig | None = None,
+    guardrail_config: GuardrailConfig | None = None,
 ) -> Callable[[Mapping[str, object]], dict[str, object]]:
     evaluator: Callable[[str, list[str]], SupportStatus] | None = None
 
@@ -475,5 +475,5 @@ def create_output_guardrail_node(
         output_guardrail_node,
         source=source,
         evaluator=evaluator,
-        config=config,
+        guardrail_config=guardrail_config,
     )

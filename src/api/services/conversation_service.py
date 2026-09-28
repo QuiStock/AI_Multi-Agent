@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from typing import Any, Protocol
 from uuid import uuid4
@@ -14,6 +15,8 @@ from src.memory.mongo_repository import (
     ConversationNotEndedError,
     ConversationNotFoundError,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ConversationGraph(Protocol):
@@ -74,6 +77,13 @@ class ConversationService:
         ):
             raise
         except Exception as exc:
+            logger.exception(
+                "conversation_graph_failed",
+                extra={
+                    "conversation_id": normalized_conversation_id,
+                    "request_id": request_id,
+                },
+            )
             raise GraphExecutionError from exc
 
         final_response = result.get("final_response")

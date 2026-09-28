@@ -7,7 +7,6 @@ from fastapi import Depends, Query
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 from pymongo import MongoClient
-from qdrant_client import QdrantClient
 
 from src import config
 from src.agents.compiler.executor import CompilerExecutor
@@ -30,6 +29,7 @@ from src.api.services.conversation_service import ConversationService
 from src.graphs.adapters import GraphNode, run_faq_node
 from src.graphs.agent_graph import create_agent_graph
 from src.graphs.state import RouteName
+from src.guardrails.config import GuardrailConfig
 from src.guardrails.input_guardrail import input_guardrail_node
 from src.guardrails.output_guardrail import create_output_guardrail_node
 from src.memory.checkpointer import create_local_checkpointer
@@ -98,7 +98,7 @@ def get_graph() -> CompiledStateGraph:
     settings = config.get_settings()
     repository = get_conversation_repository()
 
-    qdrant_client = QdrantClient(path=str(settings.faq_vectorstore_dir))
+    qdrant_client = config.create_qdrant_client(settings)
     embedding_provider = GoogleEmbeddingProvider()
     faq_store = QdrantStore(
         qdrant_client=qdrant_client,
@@ -121,7 +121,15 @@ def get_graph() -> CompiledStateGraph:
     }
 
     return create_agent_graph(
-        input_guardrail=cast(GraphNode, input_guardrail_node),
+        input_guardrail=cast(
+            GraphNode,
+            partial(
+                input_guardrail_node,
+                guardrail_config=GuardrailConfig(
+                    classify_semantically=False,
+                ),
+            ),
+        ),
         router=RouterExecutor(),
         capabilities=capabilities,
         compiler=CompilerExecutor(),

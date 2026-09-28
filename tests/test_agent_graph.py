@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import partial
 from typing import Any
 
-from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
+from langchain_core.messages import AnyMessage, HumanMessage
 
 from src.graphs.adapters import run_faq_node
 from src.graphs.agent_graph import create_agent_graph
@@ -55,10 +55,16 @@ class FakeRouter:
 class FakeFAQExecutor:
     def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
         return {
-            "messages": [
-                *state["messages"],
-                AIMessage(content="Resposta baseada na documentação."),
-            ]
+            "answer": "Resposta baseada na documentação.",
+            "evidences": [
+                {
+                    "evidence_id": "faq-1",
+                    "source_type": "faq_document",
+                    "source_id": "manual.md",
+                    "content": "Conteúdo da documentação.",
+                    "metadata": {},
+                }
+            ],
         }
 
 
