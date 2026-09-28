@@ -385,7 +385,7 @@ def input_guardrail_node(
     state: Mapping[str, Any],
     *,
     validator: Callable[[Mapping[str, Any]], InputGuardrailResult] | None = None,
-    config: GuardrailConfig | None = None,
+    guardrail_config: GuardrailConfig | None = None,
     classifier: Callable[[str], SemanticCategory] | None = None,
 ) -> dict[str, Any]:
     result = (
@@ -393,7 +393,7 @@ def input_guardrail_node(
         if validator is not None
         else validate_input(
             state,
-            config=config,
+            config=guardrail_config,
             classifier=classifier,
         )
     )

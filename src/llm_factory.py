@@ -38,18 +38,20 @@ llm_groq = ChatGroq(
     api_key=_secret(config.GROQ_API_KEY, "groq"),
 )
 
-# Gemini is the primary model. Groq is used when the primary invocation fails.
-llm = llm_gemini.with_fallbacks([llm_groq])
+# Temporary Gemini-only configuration for local flow testing. This prevents
+# the FAQ and guardrail paths from calling the unavailable Groq model.
+llm = llm_gemini
 
-llm_fast = ChatGroq(
-    model=config.GROQ_FAST_MODEL,
+llm_fast = ChatGoogleGenerativeAI(
+    model=config.GEMINI_CHAT_MODEL,
     temperature=0.0,
-    api_key=_secret(config.GROQ_API_KEY, "groq"),
+    google_api_key=config.GEMINI_API_KEY or "missing-gemini-api-key",
 )
 
 embeddings = GoogleGenerativeAIEmbeddings(
     model=config.GEMINI_EMBEDDING_MODEL,
     api_key=_secret(config.GEMINI_API_KEY, "gemini"),
+    output_dimensionality=768,
 )
 
 
@@ -72,9 +74,7 @@ def get_structured_model(
     if kind == "fast":
         return llm_fast.with_structured_output(schema)
 
-    primary = llm_gemini.with_structured_output(schema)
-    fallback = llm_groq.with_structured_output(schema)
-    return primary.with_fallbacks([fallback])
+    return llm_gemini.with_structured_output(schema)
 
 
 def get_title_model(schema: type[SchemaT]) -> Runnable[Any, Any]:

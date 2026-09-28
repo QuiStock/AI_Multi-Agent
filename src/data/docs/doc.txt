@@ -1,0 +1,15 @@
+FAQ de teste do Quistock
+
+O Quistock é um aplicativo de apoio à decisão de estoque para lojas Swift.
+Ele consulta análises publicadas pelo modelo de Machine Learning e apresenta
+informações sobre fluxo de vendas, sugestões de pedido e sugestões de promoção.
+
+As sugestões do Quistock são recomendações. O aplicativo não envia pedidos,
+não processa compras e não ativa promoções automaticamente.
+
+No MVP, um produto com fluxo alto pode gerar sugestão de pedido. Um produto com
+fluxo baixo e validade próxima pode gerar sugestão de promoção. Um produto com
+fluxo normal não gera sugestão comercial.
+
+O agente FAQ deve responder somente com informações encontradas nos documentos
+da base de conhecimento e deve informar a fonte utilizada.

@@ -19,20 +19,23 @@ class QdrantStore:
         self.qdrant_client = qdrant_client
         self.collection_name = collection_name
 
-    def ensure_collection(
-        self,
-        vector_size: int,
-    ) -> None:
-        if self.qdrant_client.collection_exists(self.collection_name):
-            return
+    def ensure_collection(self, vector_size: int) -> None:
+        if not self.qdrant_client.collection_exists(self.collection_name):
+            self.qdrant_client.create_collection(
+                collection_name=self.collection_name,
+                vectors_config=models.VectorParams(
+                    size=vector_size,
+                    distance=models.Distance.COSINE,
+                ),
+            )
 
-        self.qdrant_client.create_collection(
-            collection_name=self.collection_name,
-            vectors_config=models.VectorParams(
-                size=vector_size,
-                distance=models.Distance.COSINE,
-            ),
-        )
+        for field_name in ("doc_id", "source_hash"):
+            self.qdrant_client.create_payload_index(
+                collection_name=self.collection_name,
+                field_name=field_name,
+                field_schema=models.PayloadSchemaType.KEYWORD,
+                wait=True,
+            )
 
     def replace_document(
         self,

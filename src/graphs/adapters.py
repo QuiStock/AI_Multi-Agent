@@ -150,30 +150,25 @@ def run_faq_node(
         }
     )
 
-    messages: list[AnyMessage] = result.get(
-        "messages",
-        [],
+    answer = str(result.get("answer", "")).strip()
+    evidences = cast(
+        list[Evidence],
+        result.get("evidences", []),
     )
 
-    answer = next(
-        (
-            str(message.content).strip()
-            for message in reversed(messages)
-            if isinstance(message, AIMessage) and str(message.content).strip()
-        ),
-        "",
-    )
+    citation_ids = [evidence["evidence_id"] for evidence in evidences]
 
     faq_result: FAQResult = {
-        "status": "success" if answer else "unavailable",
+        "status": "success" if answer and evidences else "unavailable",
         "answer": answer,
-        "citation_ids": [],
+        "citation_ids": citation_ids,
     }
 
     return {
         "agent_results": {
             "faq": faq_result,
-        }
+        },
+        "evidences": evidences,
     }
 
 

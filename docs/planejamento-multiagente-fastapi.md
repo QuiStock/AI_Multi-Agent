@@ -938,6 +938,72 @@ Validar rotas, respostas com evidências, indisponibilidade, permissões e reten
 
 Somente após a definição de autorização, confirmação e execução de pedidos ou promoções.
 
+## Atualização de planejamento — 2026-09-23
+
+Os itens abaixo são direções confirmadas para as próximas revisões do sistema.
+Eles não ativam capacidades no grafo atual e não devem ser tratados como
+implementados até que seus contratos, critérios de aceite e testes sejam
+definidos.
+
+### Direções confirmadas
+
+- **PLAT-AUTH-001 — Autenticação do MVP:** o MVP precisará autenticar o usuário.
+  O mecanismo, claims, perfis, escopos e integração com a API ainda estão em
+  definição.
+- **A2A-001 — Rota para outro sistema multiagente:** o router deverá possuir
+  uma nova rota para um sistema externo, com comunicação A2A. O agent card,
+  endpoint/peer, autenticação, payload, timeout e fallback ainda precisam ser
+  especificados.
+- **AGT-WF-001 — Agente de workflow:** implementar o agente com acesso somente
+  consultivo à tabela de métricas publicada pelo ML e a tools relacionadas aos
+  cards de sugestões. A responsabilidade exata, permissões e formato das
+  respostas ainda estão abertos.
+- **OBS-001 — Observabilidade:** criar a etapa de observabilidade, métricas de
+  execução, latência, erros, custo/uso e rastreabilidade por request, turno,
+  agente e tool.
+- **QA-001 — Plataforma de homologação dos agentes:** manter um ambiente QA
+  isolado, com envs/modelos próprios, dedicado a testar agentes e o fluxo
+  conversacional completo. A plataforma deverá permitir inspecionar prompt e
+  tools, desabilitar uma tool, alterar prompt e repetir o teste de um agente
+  especialista; também deverá suportar testes do fluxo inteiro com modelos
+  inferiores configurados para QA.
+- **ENV-001 — Separação de ambientes:** definir configurações e credenciais
+  separadas para QA e produção. Segredos não podem ser versionados nem
+  compartilhados entre ambientes.
+- **LOG-001 — Consulta de logs em produção:** disponibilizar uma forma de
+  consultar a execução completa em produção, incluindo logs correlacionados,
+  sem expor PII, credenciais, prompts privados ou cadeia de pensamento. A
+  solução (por exemplo, OpenSearch ou alternativa) permanece uma decisão
+  aberta; não há escolha de produto registrada nesta atualização.
+- **MCP-001 — Tools via MCP:** algumas tools precisarão ser disponibilizadas
+  por MCP. A capacidade provável é o agente de workflow, mas o inventário e a
+  fronteira MCP ainda não foram definidos.
+- **ARCH-001 — Revisão do grafo:** revisar a topologia completa, rotas,
+  capacidades ativas, nós de memória, judge, compilador, guardrails e a nova
+  rota A2A antes de consolidar a arquitetura-alvo.
+- **PROMPT-001 — Revisão dos prompts:** revisar todos os prompts para
+  coerência entre papel, permissões, evidências, formato de saída, segurança e
+  comunicação entre agentes.
+- **QUEUE-001 — Revisão do processamento de resumos:** reavaliar o worker de
+  resumos sobre Redis, retries, idempotência, reconciliação e a possibilidade
+  de usar processamento assíncrono nativo do FastAPI. A revisão deve comparar
+  responsabilidades de API, worker e fila; não substituir Redis
+  automaticamente por `async` sem validar durabilidade e entrega.
+
+### Dependências de decisão
+
+Antes da implementação, registrar contratos para:
+
+1. autenticação e autorização por usuário, papel e loja;
+2. descoberta, autenticação e erros da comunicação A2A;
+3. responsabilidades e tools read-only do workflow;
+4. esquema de métricas, eventos e correlação da observabilidade;
+5. permissões da plataforma QA para alterar prompts/tools sem afetar produção;
+6. retenção, mascaramento e consulta de logs de produção;
+7. fronteira entre MCP, tools internas e integrações A2A;
+8. topologia revisada e matriz de prompts;
+9. semântica de entrega do resumo, retry e reconciliação do pipeline Redis/async.
+
 ## Questões ainda abertas
 
 - Qual é o formato real das tabelas produzidas pelo ML?

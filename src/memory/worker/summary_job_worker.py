@@ -210,7 +210,6 @@ class RedisSummaryJobWorker:
 def create_summary_job_worker() -> RedisSummaryJobWorker:
     """Build the production worker from the application settings."""
     from pymongo import MongoClient
-    from qdrant_client import QdrantClient
     from redis import Redis
 
     from src import config
@@ -240,7 +239,7 @@ def create_summary_job_worker() -> RedisSummaryJobWorker:
     job_repository = MongoSummaryJobRepository(database[SUMMARY_JOBS_COLLECTION_NAME])
     job_repository.ensure_indexes()
 
-    qdrant_client = QdrantClient(path=str(settings.faq_vectorstore_dir))
+    qdrant_client = config.create_qdrant_client(settings)
     embedding_provider = GoogleEmbeddingProvider()
     summary_indexer = QdrantSummaryIndexer(
         client=qdrant_client,

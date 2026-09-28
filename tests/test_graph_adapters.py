@@ -54,10 +54,16 @@ class FakeFAQExecutor:
     def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
         self.state = state
         return {
-            "messages": [
-                *state["messages"],
-                AIMessage(content="Resposta baseada na documentação."),
-            ]
+            "answer": "Resposta baseada na documentação.",
+            "evidences": [
+                {
+                    "evidence_id": "faq-1",
+                    "source_type": "faq_document",
+                    "source_id": "manual.md",
+                    "content": "Conteúdo da documentação.",
+                    "metadata": {},
+                }
+            ],
         }
 
 
@@ -216,7 +222,7 @@ def test_faq_adapter_calls_executor_and_normalizes_answer() -> None:
     assert result["agent_results"]["faq"] == {
         "status": "success",
         "answer": "Resposta baseada na documentação.",
-        "citation_ids": [],
+        "citation_ids": ["faq-1"],
     }
 
 

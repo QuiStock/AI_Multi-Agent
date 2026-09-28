@@ -79,7 +79,10 @@ def test_executor_forwards_agent_input_to_compiled_agent(
     }
     result = FAQExecutor(model="fake-model").invoke(agent_input)
 
-    assert result == agent_input
+    assert result == {
+        "answer": "",
+        "evidences": [],
+    }
     assert captured["agent_input"] == agent_input
 
 

@@ -34,25 +34,21 @@ def test_factory_uses_configured_provider_models() -> None:
     assert llm_factory.llm_gemini.model == config.GEMINI_CHAT_MODEL
     assert llm_factory.llm_groq.model == config.GROQ_CHAT_MODEL
     assert llm_factory.llm_gemini_title.model == config.GEMINI_TITLE_MODEL
-    assert llm_factory.llm_fast.model == config.GROQ_FAST_MODEL
+    assert llm_factory.llm_fast.model == config.GEMINI_CHAT_MODEL
     assert llm_factory.embeddings.model == config.GEMINI_EMBEDDING_MODEL
 
 
-def test_default_structured_model_binds_schema_before_fallback(
+def test_default_structured_model_binds_schema_to_gemini(
     monkeypatch: Any,
 ) -> None:
     primary = FakeModel()
-    fallback = FakeModel()
     monkeypatch.setattr(llm_factory, "llm_gemini", primary)
-    monkeypatch.setattr(llm_factory, "llm_groq", fallback)
 
     result = llm_factory.get_structured_model(RouteDecision)
 
     assert isinstance(result, FakeStructuredRunnable)
     assert primary.schemas == [RouteDecision]
-    assert fallback.schemas == [RouteDecision]
-    assert result.fallbacks
-    assert result.fallbacks[0].schema is RouteDecision
+    assert result.fallbacks == []
 
 
 def test_fast_structured_model_does_not_create_default_fallback(
