@@ -74,14 +74,18 @@ jobs:
           if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
               raise SystemExit(f"Unexpected image digest: {digest!r}")
 
-          path = Path("infra/clusters/expotech/apps/api-chatbot/deployment.yaml")
-          manifest = path.read_text(encoding="utf-8")
+          app_dir = Path("infra/clusters/expotech/apps/api-chatbot")
           image = f"ghcr.io/quistock/ai-multi-agent@{digest}"
           pattern = r"(?m)^([ \t]*image:[ \t]*)ghcr\.io/quistock/ai-multi-agent(?:[:@])[^\s]+$"
-          updated, count = re.subn(pattern, lambda match: match.group(1) + image, manifest)
-          if count != 1:
-              raise SystemExit(f"Expected one chatbot image, found {count}")
-          path.write_text(updated, encoding="utf-8")
+          for filename in ("deployment.yaml", "worker.yaml"):
+              path = app_dir / filename
+              manifest = path.read_text(encoding="utf-8")
+              updated, count = re.subn(
+                  pattern, lambda match: match.group(1) + image, manifest
+              )
+              if count != 1:
+                  raise SystemExit(f"Expected one chatbot image in {path}, found {count}")
+              path.write_text(updated, encoding="utf-8")
           PY
 
       - name: Open deployment PR in Infra
@@ -89,7 +93,7 @@ jobs:
         with:
           path: infra
           token: ${{ secrets.INFRA_REPO_TOKEN }}
-          add-paths: clusters/expotech/apps/api-chatbot/deployment.yaml
+          add-paths: clusters/expotech/apps/api-chatbot/*.yaml
           base: main
           branch: deploy/api-chatbot-${{ github.event.release.tag_name }}
           delete-branch: true
