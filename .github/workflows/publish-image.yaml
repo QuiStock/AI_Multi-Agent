@@ -77,7 +77,7 @@ jobs:
           path = Path("infra/clusters/expotech/apps/api-chatbot/deployment.yaml")
           manifest = path.read_text(encoding="utf-8")
           image = f"ghcr.io/quistock/ai-multi-agent@{digest}"
-          pattern = r"(?m)^([ \\t]*image:[ \\t]*)ghcr\\.io/quistock/ai-multi-agent(?:[:@])[^\\s]+$"
+          pattern = r"(?m)^([ \t]*image:[ \t]*)ghcr\.io/quistock/ai-multi-agent(?:[:@])[^\s]+$"
           updated, count = re.subn(pattern, lambda match: match.group(1) + image, manifest)
           if count != 1:
               raise SystemExit(f"Expected one chatbot image, found {count}")
