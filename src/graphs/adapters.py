@@ -37,7 +37,7 @@ class ConversationContextEnricherPort(Protocol):
     def restore_messages(
         self,
         *,
-        user_id: str,
+        email: str,
         conversation_id: str,
     ) -> list[AnyMessage]: ...
 
@@ -49,7 +49,7 @@ class MemoryMessagePersistencePort(Protocol):
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        email: str,
         request_id: str,
         sanitized_content: str,
     ) -> bool: ...
@@ -58,7 +58,7 @@ class MemoryMessagePersistencePort(Protocol):
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        email: str,
         request_id: str,
         content: str,
         consulted_agents: list[str],
@@ -68,7 +68,7 @@ class MemoryMessagePersistencePort(Protocol):
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        email: str,
         request_id: str,
         sanitized_user_content: str,
         assistant_content: str,
@@ -218,10 +218,10 @@ def run_context_enrichment_node(
     if not request or not request.get("is_resuming_conversation", False):
         return {}
 
-    user_id = request.get("user_id", "").strip()
+    email = request.get("email", "").strip()
     conversation_id = request.get("conversation_id", "").strip()
-    if not user_id or not conversation_id:
-        raise ValueError("user_id e conversation_id são necessários para retomada")
+    if not email or not conversation_id:
+        raise ValueError("email e conversation_id são necessários para retomada")
 
     sanitized_message = request.get("sanitized_message")
     if not isinstance(sanitized_message, str) or not sanitized_message.strip():
@@ -233,7 +233,7 @@ def run_context_enrichment_node(
 
     current_messages = list(state.get("messages", []))
     restored_messages = context_enricher.restore_messages(
-        user_id=user_id,
+        email=email,
         conversation_id=conversation_id,
     )
 
@@ -274,12 +274,12 @@ def _request_for_persistence(state: GraphState) -> tuple[str, str, str]:
 
     values = (
         request.get("conversation_id", "").strip(),
-        request.get("user_id", "").strip(),
+        request.get("email", "").strip(),
         request.get("request_id", "").strip(),
     )
     if not all(values):
         raise ValueError(
-            "conversation_id, user_id e request_id são necessários "
+            "conversation_id, email e request_id são necessários "
             "para persistir mensagens"
         )
     return values
@@ -299,7 +299,7 @@ def run_persist_user_message_node(
     if not isinstance(sanitized_message, str) or not sanitized_message.strip():
         raise ValueError("sanitized_message é necessário para persistir mensagem")
 
-    conversation_id, user_id, request_id = _request_for_persistence(state)
+    conversation_id, email, request_id = _request_for_persistence(state)
     message_id = f"{request_id}:user"
     current_messages = list(state.get("messages", []))
     latest_human = next(
@@ -317,7 +317,7 @@ def run_persist_user_message_node(
     if message_service is not None:
         message_service.save_user_message(
             conversation_id=conversation_id,
-            user_id=user_id,
+            email=email,
             request_id=request_id,
             sanitized_content=sanitized_message,
         )
@@ -352,7 +352,7 @@ def run_persist_turn_node(
     if not isinstance(sanitized_message, str) or not sanitized_message.strip():
         raise ValueError("sanitized_message é necessário para persistir o turno")
 
-    conversation_id, user_id, request_id = _request_for_persistence(state)
+    conversation_id, email, request_id = _request_for_persistence(state)
     target_agent = state.get("routing_decision", {}).get("target_agent")
     consulted_agents = [target_agent] if isinstance(target_agent, str) else []
     sent_at = request.get("sent_at") if request else None
@@ -364,7 +364,7 @@ def run_persist_turn_node(
         if callable(save_turn):
             save_turn(
                 conversation_id=conversation_id,
-                user_id=user_id,
+                email=email,
                 request_id=request_id,
                 sanitized_user_content=sanitized_message,
                 assistant_content=content,
@@ -374,13 +374,13 @@ def run_persist_turn_node(
         else:
             message_service.save_user_message(
                 conversation_id=conversation_id,
-                user_id=user_id,
+                email=email,
                 request_id=request_id,
                 sanitized_content=sanitized_message,
             )
             message_service.save_assistant_message(
                 conversation_id=conversation_id,
-                user_id=user_id,
+                email=email,
                 request_id=request_id,
                 content=content,
                 consulted_agents=consulted_agents,
@@ -415,14 +415,14 @@ def run_persist_assistant_message_node(
     if not content:
         raise ValueError("final_response.content não pode estar vazio")
 
-    conversation_id, user_id, request_id = _request_for_persistence(state)
+    conversation_id, email, request_id = _request_for_persistence(state)
     target_agent = state.get("routing_decision", {}).get("target_agent")
     consulted_agents = [target_agent] if isinstance(target_agent, str) else []
 
     if message_service is not None:
         message_service.save_assistant_message(
             conversation_id=conversation_id,
-            user_id=user_id,
+            email=email,
             request_id=request_id,
             content=content,
             consulted_agents=consulted_agents,

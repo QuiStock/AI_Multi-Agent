@@ -105,9 +105,7 @@ def _passing_output(state: GraphState) -> GraphState:
 
 
 class EmptyContextEnricher:
-    def restore_messages(
-        self, *, user_id: str, conversation_id: str
-    ) -> list[AnyMessage]:
+    def restore_messages(self, *, email: str, conversation_id: str) -> list[AnyMessage]:
         return []
 
 

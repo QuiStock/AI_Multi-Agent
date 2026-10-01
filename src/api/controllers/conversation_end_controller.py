@@ -12,9 +12,9 @@ class ConversationEndController:
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        email: str,
     ) -> ConversationEndResponse:
         return self._service.end(
             conversation_id=conversation_id,
-            user_id=user_id,
+            email=email,
         )

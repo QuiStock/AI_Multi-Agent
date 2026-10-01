@@ -14,7 +14,7 @@ def _job_document() -> dict[str, object]:
     return {
         "_id": str(uuid5(NAMESPACE_URL, 'summary-job:["conversation-1","close-1"]')),
         "conversation_id": "conversation-1",
-        "user_id": "user-1",
+        "email": "user-1",
         "closure_key": "close-1",
         "request_id": "request-1",
         "status": "queued",
@@ -54,14 +54,14 @@ def test_create_or_get_uses_the_stable_conversation_closure_key() -> None:
 
     first = repository.create_or_get(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         closure_key="close-1",
         request_id="request-1",
         now=NOW,
     )
     second = repository.create_or_get(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         closure_key="close-1",
         request_id="request-1",
         now=NOW,
@@ -238,12 +238,8 @@ def test_scheduler_derives_stable_backend_request_and_closure_ids() -> None:
         clock=lambda: NOW,
     )
 
-    first = scheduler.end_and_schedule(
-        conversation_id="conversation-1", user_id="user-1"
-    )
-    retry = scheduler.end_and_schedule(
-        conversation_id="conversation-1", user_id="user-1"
-    )
+    first = scheduler.end_and_schedule(conversation_id="conversation-1", email="user-1")
+    retry = scheduler.end_and_schedule(conversation_id="conversation-1", email="user-1")
 
     assert first.request_id == retry.request_id
     assert first.closure_key == retry.closure_key
@@ -318,7 +314,7 @@ def test_scheduler_keeps_job_durable_when_redis_publish_fails() -> None:
 
     result = scheduler.end_and_schedule(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         request_id="request-1",
     )
 

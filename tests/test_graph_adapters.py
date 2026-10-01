@@ -105,7 +105,7 @@ def test_router_adapter_sanitizes_state_before_calling_executor() -> None:
     state: GraphState = {
         "request": {
             "request_id": "req-1",
-            "user_id": "user-1",
+            "email": "user-1",
             "conversation_id": "conversation-1",
             "sanitized_message": "Mensagem sanitizada.",
         },
@@ -129,10 +129,10 @@ class FakeConversationEnricher:
     def restore_messages(
         self,
         *,
-        user_id: str,
+        email: str,
         conversation_id: str,
     ) -> list[AnyMessage]:
-        self.calls.append((user_id, conversation_id))
+        self.calls.append((email, conversation_id))
         return self.messages
 
 
@@ -141,7 +141,7 @@ def test_context_enrichment_does_not_load_history_for_new_conversation() -> None
     state: GraphState = {
         "request": {
             "request_id": "request-1",
-            "user_id": "user-1",
+            "email": "user-1",
             "conversation_id": "conversation-1",
             "sanitized_message": "O que comprei?",
             "is_new_conversation": True,
@@ -160,7 +160,7 @@ def test_context_enrichment_does_not_reopen_an_active_continuing_conversation() 
     state: GraphState = {
         "request": {
             "request_id": "request-2",
-            "user_id": "user-1",
+            "email": "user-1",
             "conversation_id": "conversation-1",
             "sanitized_message": "Próxima mensagem.",
             "is_new_conversation": False,
@@ -187,7 +187,7 @@ def test_context_enrichment_restores_history_before_current_sanitized_message() 
     state: GraphState = {
         "request": {
             "request_id": "request-1",
-            "user_id": "user-1",
+            "email": "user-1",
             "conversation_id": "conversation-1",
             "sanitized_message": "Mensagem atual sanitizada.",
             "is_resuming_conversation": True,

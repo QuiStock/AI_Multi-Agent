@@ -8,5 +8,5 @@ class ConversationListController:
     def __init__(self, service: ConversationListService) -> None:
         self._service = service
 
-    def list_ended(self, *, user_id: str) -> ConversationListResponse:
-        return self._service.list_ended(user_id=user_id)
+    def list_ended(self, *, email: str) -> ConversationListResponse:
+        return self._service.list_ended(email=email)

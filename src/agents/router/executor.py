@@ -71,7 +71,7 @@ class RouterExecutor:
                 tool = build_search_conversation_summaries_tool(
                     service=self.summary_search_service,
                     context=SummarySearchToolContext(
-                        user_id=tool_context["user_id"],
+                        email=tool_context["email"],
                         conversation_id=tool_context["conversation_id"],
                         query=tool_context["query"],
                         request_id=tool_context["request_id"],
@@ -110,11 +110,11 @@ class RouterExecutor:
     ) -> dict[str, str] | None:
         if request_context is None:
             return None
-        user_id = request_context.get("user_id")
+        email = request_context.get("email")
         conversation_id = request_context.get("conversation_id")
         request_id = request_context.get("request_id")
         query = request_context.get("sanitized_message")
-        if not isinstance(user_id, str) or not user_id.strip():
+        if not isinstance(email, str) or not email.strip():
             return None
         if not isinstance(conversation_id, str) or not conversation_id.strip():
             return None
@@ -129,7 +129,7 @@ class RouterExecutor:
             else request_id
         )
         return {
-            "user_id": user_id,
+            "email": email,
             "conversation_id": conversation_id,
             "request_id": request_id,
             "query": query,

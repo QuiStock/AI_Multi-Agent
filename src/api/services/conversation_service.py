@@ -38,6 +38,7 @@ class ConversationService:
         *,
         conversation_id: str,
         request: ConversationRequest,
+        email: str,
     ) -> ConversationResponse:
         normalized_conversation_id = conversation_id.strip()
         if not normalized_conversation_id:
@@ -47,7 +48,7 @@ class ConversationService:
         state: GraphState = {
             "request": {
                 "request_id": request_id,
-                "user_id": request.user_id,
+                "email": email,
                 "conversation_id": normalized_conversation_id,
                 "sent_at": request.sent_at,
                 "is_new_conversation": not request.is_resuming_conversation,

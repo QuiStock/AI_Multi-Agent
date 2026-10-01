@@ -25,7 +25,7 @@ TurnStatus = Literal[
 
 class RequestContext(TypedDict):
     request_id: str
-    user_id: str
+    email: str
     conversation_id: str
     sent_at: datetime
     sanitized_message: NotRequired[str]

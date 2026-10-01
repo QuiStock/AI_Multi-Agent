@@ -15,7 +15,7 @@ def _job() -> SummaryJob:
     return SummaryJob(
         job_id="conversation-1:close-1",
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         closure_key="close-1",
         status="processing",
         attempts=1,

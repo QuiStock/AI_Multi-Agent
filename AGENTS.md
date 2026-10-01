@@ -203,7 +203,7 @@ Ownership de escrita:
 `add_messages`; `agent_results` preserva resultados por agente; `evidences`
 faz merge por `evidence_id`. Não adicione chaves ad hoc.
 
-O router recebe `messages` sanitizadas e `request` com `request_id`, `user_id`,
+O router recebe `messages` sanitizadas e `request` com `request_id`, `email`,
 `conversation_id`, `sent_at` e `sanitized_message`. O compiler recebe todos os
 resultados/evidências disponíveis. O judge recebe o draft e as evidências. A
 resposta final é produzida pelo guardrail/finalização, não pelo judge.
@@ -216,14 +216,15 @@ Mensagem:
 
 ```json
 {
-  "user_id": "user-123",
   "message": "Como funciona o processo documentado?",
   "sent_at": "2026-09-23T12:00:00Z",
   "is_resuming_conversation": false
 }
 ```
 
-Endpoint: `POST /api/v1/conversations/{conversation_id}/messages`.
+Endpoint: `POST /api/v1/conversations/{conversation_id}/messages`, autenticado
+por `Authorization: Bearer <JWE>`; o email vem exclusivamente da claim JWE e é
+associado a `user_account` antes do grafo.
 `ConversationRequest` rejeita campos extras, mensagem vazia e mensagens acima
 de 4.000 caracteres. A resposta contém `conversation_id`, `request_id`,
 `response` e status `success`, `rejected`, `clarification_required`,
@@ -233,7 +234,7 @@ Memória:
 
 - `POST /api/v1/conversations/{conversation_id}/end` retorna `202` e enfileira
   um job de resumo.
-- `GET /api/v1/conversations/ended?user_id=...` lista conversas encerradas.
+- `GET /api/v1/conversations/ended` lista conversas encerradas da identidade autenticada.
 - A retomada autorizada restaura mensagens do MongoDB em ordem e não duplica a
   mensagem atual.
 
@@ -288,11 +289,12 @@ troca o conteúdo por resposta controlada; nunca expõe regra interna.
 
 ### Identidade e dados comerciais
 
-O código atual recebe `user_id` na requisição e ainda não compara esse valor
-com token autenticado. Isso é uma limitação explícita do MVP, não uma permissão
-para confiar em IDs enviados pelo modelo. Ao implementar tools comerciais,
-derive identidade/role/store scope no servidor, use queries parametrizadas,
-limite de linhas, timeout, logs de auditoria e credencial read-only. Cubra
+As rotas de conversa recebem um JWE Bearer e derivam o email autenticado do
+principal validado pela API antes de executar o grafo. A identidade não vem do
+body nem da query e é propagada em todo o fluxo de memória. Consultas de
+identidade ao PostgreSQL usam credencial somente de leitura e SQL parametrizado.
+Ao implementar tools comerciais, derive role/store scope no servidor, use
+queries parametrizadas, limite de linhas, timeout e logs de auditoria; cubra
 SQL arbitrário, injection e acesso entre lojas com casos negativos.
 
 ### Validação
@@ -325,7 +327,7 @@ Não faça retries ilimitados.
 
 - `enrich_context` só restaura histórico quando `is_resuming_conversation` está
   ativo; conversa nova não busca Qdrant automaticamente.
-- Resumos no Qdrant são filtrados por `user_id`, status encerrado, versão
+- Resumos no Qdrant são filtrados por `email`, status encerrado, versão
   validada no MongoDB e exclusão da conversa atual. O fallback permitido é de
   até três conversas encerradas recentes.
 - O encerramento é assíncrono: MongoDB registra o job, Redis Streams entrega,

@@ -15,14 +15,14 @@ class RecordingRepository:
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        email: str,
         message: StoredMessage,
     ) -> bool:
         key = (conversation_id, message.message_id)
         if key in self.message_ids:
             return False
         self.message_ids.add(key)
-        self.messages.append((conversation_id, user_id, message))
+        self.messages.append((conversation_id, email, message))
         return True
 
 
@@ -32,15 +32,15 @@ def test_user_message_is_saved_with_stable_id_and_user_role() -> None:
 
     inserted = service.save_user_message(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         request_id="request-1",
         sanitized_content="  Guardrail-approved message  ",
     )
 
     assert inserted is True
-    conversation_id, user_id, message = repository.messages[0]
+    conversation_id, email, message = repository.messages[0]
     assert conversation_id == "conversation-1"
-    assert user_id == "user-1"
+    assert email == "user-1"
     assert message.message_id == "request-1:user"
     assert message.role == "user"
     assert message.content == "  Guardrail-approved message  "
@@ -54,7 +54,7 @@ def test_assistant_message_stores_consulted_agents() -> None:
 
     service.save_assistant_message(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         request_id="request-1",
         content="Final response",
         consulted_agents=["product_workflow"],
@@ -73,7 +73,7 @@ def test_save_turn_uses_sent_at_for_the_user_message() -> None:
 
     service.save_turn(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         request_id="request-1",
         sanitized_user_content="Pergunta sanitizada",
         assistant_content="Resposta final",
@@ -92,7 +92,7 @@ def test_save_turn_keeps_user_assistant_order_and_retry_ids_idempotent() -> None
     for _ in range(2):
         service.save_turn(
             conversation_id="conversation-1",
-            user_id="user-1",
+            email="user-1",
             request_id="request-1",
             sanitized_user_content="Question",
             assistant_content="Answer",
@@ -117,7 +117,7 @@ def test_save_turn_keeps_user_assistant_order_and_retry_ids_idempotent() -> None
     ("field", "value"),
     [
         ("conversation_id", " "),
-        ("user_id", " "),
+        ("email", " "),
         ("request_id", " "),
     ],
 )
@@ -126,7 +126,7 @@ def test_user_message_requires_identifiers(field: str, value: str) -> None:
     service = MemoryMessageService(repository)
     identifiers = {
         "conversation_id": "conversation-1",
-        "user_id": "user-1",
+        "email": "user-1",
         "request_id": "request-1",
     }
     identifiers[field] = value
@@ -148,7 +148,7 @@ def test_user_message_rejects_blank_content(content: str) -> None:
     with pytest.raises(ValueError, match="content"):
         service.save_user_message(
             conversation_id="conversation-1",
-            user_id="user-1",
+            email="user-1",
             request_id="request-1",
             sanitized_content=content,
         )

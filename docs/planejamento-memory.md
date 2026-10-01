@@ -14,16 +14,16 @@ START -> input_guardrail -> enrich_context -> router
 ```
 
 - `enrich_context` roda depois do guardrail de entrada e antes do router.
-- Em conversa nova, a etapa não busca resumos. Em retomada, valida usuário e conversa no MongoDB, carrega o histórico ordenado e o coloca em `GraphState.messages`. A mensagem atual entra uma única vez.
+- Em conversa nova, a etapa não busca resumos. Em retomada, valida email autenticado e conversa no MongoDB, carrega o histórico ordenado e o coloca em `GraphState.messages`. A mensagem atual entra uma única vez.
 - O router decide pela verbalização sanitizada se precisa de memória anterior. Se precisar, chama `search_conversation_summaries`; a busca não é disparada automaticamente pelo grafo.
 - A tool retorna resumos estruturados para o router. Não os injeta como mensagens de usuário ou assistente nem os incorpora ao resumo durável da conversa atual.
 
 ## Ciclo de vida
 
-1. O app inicia uma conversa ativa e envia `conversation_id` e identidade autenticada (`user_id`) à API.
+1. O app inicia uma conversa ativa e envia `conversation_id` e a mensagem com `Authorization: Bearer <JWE>`; a API deriva o email autenticado.
 2. Enquanto ativa, a conversa continua no estado principal. O MongoDB mantém o histórico durável conforme o serviço de mensagens.
 3. Ao encerrar, o endpoint marca a conversa no MongoDB e cria um job em `conversation_summary_jobs`; o job é publicado em Redis Streams e a API responde `202 Accepted`. O worker garante as mensagens no MongoDB e seleciona as posteriores a `summarized_through_message_id`. No primeiro resumo, usa o histórico disponível; nos seguintes, atualiza o resumo anterior da mesma conversa usando apenas essa diferença de mensagens. Resumos recuperados de outras conversas nunca entram nessa atualização. Persiste nova versão e marcador. Se ainda não houver título, gera-o a partir do resumo com `gemini-2.5-flash-lite` (modelo estruturado centralizado em `llm_factory`) e salva-o uma única vez no MongoDB; depois gera embedding e faz upsert do ponto no Qdrant com o título persistido. Falha na geração do título não impede salvar/indexar o resumo e permite retry do job.
-4. A sessão encerrada aparece na lista do app por título. A API fornece essa lista em `GET /api/v1/conversations/ended?user_id=...`, usando uma consulta por `user_id`.
+4. A sessão encerrada aparece na lista do app por título. A API fornece essa lista em `GET /api/v1/conversations/ended`, filtrada pelo email autenticado.
 5. Ao selecionar uma sessão encerrada, a API sinaliza `is_resuming_conversation=true` no estado e usa o mesmo `conversation_id`. A memória valida propriedade, reabre a conversa e restaura `messages`. Mensagens de continuação normal não ativam essa etapa. A sessão ativa não é elegível na busca semântica.
 6. Ao encerrar novamente, o resumo e o mesmo ponto Qdrant são atualizados, sem criar uma conversa ou ponto duplicado.
 
@@ -33,12 +33,12 @@ A gravação e o fechamento devem ser idempotentes. MongoDB é a fonte durável;
 
 - `message_id`: único por mensagem, usado para deduplicar gravações.
 - `conversation_id`: estável durante retomadas; identifica o documento MongoDB e o ponto Qdrant.
-- `user_id`: identidade autenticada, aplicada pelo servidor em toda leitura, escrita e busca.
+- `email`: identidade autenticada extraída exclusivamente da claim JWE e aplicada pelo servidor em toda leitura, escrita e busca.
 - `summarized_through_message_id`: última mensagem incorporada ao resumo; delimita a diferença incremental sem comparar IDs lexicograficamente.
 - MongoDB: uma coleção `conversations`, um documento por conversa, com título, status, timestamps, mensagens, resumo e versão. Usar `conversation_id` como `_id`; não duplicar `session_id` sem necessidade contratual.
 - MongoDB: a collection separada `conversation_summary_jobs` guarda somente o estado, tentativas e identificadores do processamento assíncrono; mensagens e resumos permanecem na collection `conversations`.
 - Redis Streams: o stream `quistock:conversation-summary` entrega jobs ao consumer group `summary-workers`; falhas são reencaminhadas até o limite configurado.
-- Qdrant: coleção de memória separada do FAQ; um ponto por conversa, com `user_id`, `conversation_id`, `status`, `title`, `summary` e `summary_version` no payload.
+- Qdrant: coleção de memória separada do FAQ; um ponto por conversa, com `email`, `conversation_id`, `status`, `title`, `summary` e `summary_version` no payload.
 
 ## Busca semântica acionada pelo router
 
@@ -53,7 +53,7 @@ A gravação e o fechamento devem ser idempotentes. MongoDB é a fonte durável;
 
 **Branch `memory`:** contratos e repositórios MongoDB, restauração de histórico, serviço de busca Qdrant, integração de sumarização/indexação no encerramento e contrato da tool para o router.
 
-**Branch `api`:** endpoint inicial de conversa, health check, `POST /api/v1/conversations/{conversation_id}/end` e `GET /api/v1/conversations/ended`. O encerramento recebe `user_id`, remove o checkpoint, cria o job durável e publica no Redis; chamadas repetidas após publicação retornam `409`. Neste MVP, `user_id` é recebido na requisição sem comparação adicional com o token.
+**Branch `api`:** endpoint inicial de conversa, health check, `POST /api/v1/conversations/{conversation_id}/end` e `GET /api/v1/conversations/ended`. As rotas protegidas recebem JWE Bearer; o email é validado em `user_account` antes do fluxo e usado como identidade. O encerramento remove o checkpoint, cria o job durável e publica no Redis.
 
 ## Organização proposta
 

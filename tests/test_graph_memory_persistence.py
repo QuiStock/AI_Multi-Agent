@@ -41,7 +41,7 @@ class EmptyContextEnricher:
     def restore_messages(
         self,
         *,
-        user_id: str,
+        email: str,
         conversation_id: str,
     ) -> list[AnyMessage]:
         return []
@@ -54,10 +54,10 @@ class HistoricalContextEnricher:
     def restore_messages(
         self,
         *,
-        user_id: str,
+        email: str,
         conversation_id: str,
     ) -> list[AnyMessage]:
-        self.calls.append({"user_id": user_id, "conversation_id": conversation_id})
+        self.calls.append({"email": email, "conversation_id": conversation_id})
         return [
             HumanMessage(id="old:user", content="pergunta anterior"),
             AIMessage(id="old:assistant", content="resposta anterior"),
@@ -109,7 +109,7 @@ def _graph(
 def _request(request_id: str) -> dict[str, Any]:
     return {
         "request_id": request_id,
-        "user_id": "user-1",
+        "email": "user-1",
         "conversation_id": "conversation-1",
         "sanitized_message": "mensagem sanitizada",
     }
@@ -127,7 +127,7 @@ def test_accepted_turn_persists_user_and_assistant_messages() -> None:
     assert service.user_messages == [
         {
             "conversation_id": "conversation-1",
-            "user_id": "user-1",
+            "email": "user-1",
             "request_id": "request-1",
             "sanitized_content": "mensagem sanitizada",
         }
@@ -135,7 +135,7 @@ def test_accepted_turn_persists_user_and_assistant_messages() -> None:
     assert service.assistant_messages == [
         {
             "conversation_id": "conversation-1",
-            "user_id": "user-1",
+            "email": "user-1",
             "request_id": "request-1",
             "content": "Preciso de mais detalhes para continuar.",
             "consulted_agents": [],
@@ -219,9 +219,7 @@ def test_resumption_restores_history_before_current_turn() -> None:
         "request-resume:assistant",
     ]
     assert service.user_messages[0]["sanitized_content"] == "mensagem sanitizada"
-    assert enricher.calls == [
-        {"user_id": "user-1", "conversation_id": "conversation-1"}
-    ]
+    assert enricher.calls == [{"email": "user-1", "conversation_id": "conversation-1"}]
 
 
 def test_new_conversation_does_not_restore_any_history() -> None:

@@ -33,7 +33,7 @@ class SummaryProcessor(Protocol):
     def run(
         self,
         *,
-        user_id: str,
+        email: str,
         conversation_id: str,
         before_upsert: Callable[[], None] | None = None,
     ) -> object: ...
@@ -158,7 +158,7 @@ class SummaryJobWorker:
                 raise SummaryJobLeaseLostError("summary_job_lease_lost")
 
         self._processor.run(
-            user_id=job.user_id,
+            email=job.email,
             conversation_id=job.conversation_id,
             before_upsert=validate_lease_before_upsert,
         )

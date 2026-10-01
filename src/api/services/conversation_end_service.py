@@ -27,16 +27,16 @@ class ConversationEndService:
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        email: str,
     ) -> ConversationEndResponse:
         conversation_id = conversation_id.strip()
-        user_id = user_id.strip()
-        if not conversation_id or not user_id:
-            raise ValueError("conversation_id e user_id são obrigatórios")
+        email = email.strip()
+        if not conversation_id or not email:
+            raise ValueError("conversation_id e email são obrigatórios")
 
         job = self._scheduler.end_and_schedule(
             conversation_id=conversation_id,
-            user_id=user_id,
+            email=email,
         )
         try:
             self._checkpoint_cleanup.delete_thread(conversation_id)
