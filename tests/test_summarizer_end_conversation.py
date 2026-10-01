@@ -8,9 +8,7 @@ from langchain_core.messages import HumanMessage
 from src.memory.contracts import (
     ConversationSummarySnapshot,
     StoredMessage,
-    SummaryCommit,
 )
-from src.memory.mongo_repository import SummaryUpdateConflictError
 from src.memory.worker.summarizer_end_conversation import (
     EndConversationSummaryWorker,
     LLMSummaryUpdater,
@@ -33,7 +31,7 @@ def _snapshot(
     summary: str | None = None,
     version: int = 0,
     marker: str | None = None,
-    status: str = "active",
+    status: str = "ended",
     title: str | None = None,
 ) -> ConversationSummarySnapshot:
     return ConversationSummarySnapshot(
@@ -52,7 +50,7 @@ def _snapshot(
 class FakeRepository:
     def __init__(self, snapshot: ConversationSummarySnapshot) -> None:
         self.snapshot = snapshot
-        self.commits: list[tuple[str, str, int]] = []
+        self.mongo_summary_writes = 0
 
     def mark_ended(
         self, *, conversation_id: str, user_id: str, ended_at: datetime
@@ -62,48 +60,35 @@ class FakeRepository:
         self.snapshot = self.snapshot.model_copy(update={"status": "ended"})
 
     def get_summary_snapshot(
-        self, *, conversation_id: str, user_id: str
+        self,
+        *,
+        conversation_id: str,
+        user_id: str,
+        summary: str | None = None,
+        summary_version: int = 0,
+        summarized_through_message_id: str | None = None,
     ) -> ConversationSummarySnapshot:
         assert conversation_id == self.snapshot.conversation_id
         assert user_id == self.snapshot.user_id
-        return self.snapshot
-
-    def save_summary_if_current(self, commit: SummaryCommit) -> bool:
-        if (
-            self.snapshot.status != "ended"
-            or self.snapshot.summary_version != commit.expected_summary_version
-            or self.snapshot.summarized_through_message_id != commit.expected_message_id
-        ):
-            return False
-        self.snapshot = self.snapshot.model_copy(
+        return self.snapshot.model_copy(
             update={
-                "summary": commit.summary,
-                "summary_version": commit.expected_summary_version + 1,
-                "summarized_through_message_id": commit.summarized_through_message_id,
+                "summary": summary,
+                "summary_version": summary_version,
+                "summarized_through_message_id": summarized_through_message_id,
             }
         )
-        self.commits.append(
-            (
-                commit.summary,
-                commit.summarized_through_message_id,
-                commit.expected_summary_version + 1,
-            )
-        )
-        return True
 
     def save_title_if_missing(
         self,
         *,
         conversation_id: str,
         user_id: str,
-        expected_summary_version: int,
         title: str,
     ) -> bool:
         if (
             self.snapshot.conversation_id != conversation_id
             or self.snapshot.user_id != user_id
             or self.snapshot.status != "ended"
-            or self.snapshot.summary_version != expected_summary_version
             or self.snapshot.title is not None
         ):
             return False
@@ -141,12 +126,21 @@ class FakeIndexer:
     def __init__(self, *, fail_once: bool = False) -> None:
         self.fail_once = fail_once
         self.snapshots: list[ConversationSummarySnapshot] = []
+        self.payload: dict[str, object] | None = None
+
+    def get(self, _: str) -> dict[str, object] | None:
+        return self.payload
 
     def upsert(self, snapshot: ConversationSummarySnapshot) -> None:
         if self.fail_once:
             self.fail_once = False
             raise RuntimeError("temporary qdrant failure")
         self.snapshots.append(snapshot)
+        self.payload = {
+            "summary": snapshot.summary,
+            "summary_version": snapshot.summary_version,
+            "summarized_through_message_id": snapshot.summarized_through_message_id,
+        }
 
 
 def _worker(
@@ -155,12 +149,19 @@ def _worker(
     indexer: FakeIndexer,
     title_generator: FakeTitleGenerator | None = None,
 ) -> EndConversationSummaryWorker:
+    if repository.snapshot.summary is not None:
+        indexer.payload = {
+            "summary": repository.snapshot.summary,
+            "summary_version": repository.snapshot.summary_version,
+            "summarized_through_message_id": (
+                repository.snapshot.summarized_through_message_id
+            ),
+        }
     return EndConversationSummaryWorker(
         repository=repository,  # type: ignore[arg-type]
         summary_updater=updater,
         summary_indexer=indexer,
         title_generator=title_generator or FakeTitleGenerator(),
-        clock=lambda: datetime(2026, 9, 21, tzinfo=timezone.utc),
     )
 
 
@@ -219,7 +220,7 @@ def test_reopened_close_updates_only_messages_after_the_marker() -> None:
     assert result.title == "Existing title"
 
 
-def test_retry_after_index_failure_reuses_saved_summary_without_regenerating() -> None:
+def test_retry_after_index_failure_keeps_summary_out_of_mongo() -> None:
     messages = [_message("m1", "user", "Question")]
     repository = FakeRepository(_snapshot(messages=messages))
     updater = FakeSummaryUpdater()
@@ -231,12 +232,12 @@ def test_retry_after_index_failure_reuses_saved_summary_without_regenerating() -
 
     result = worker.run(user_id="user-1", conversation_id="conversation-1")
 
-    assert len(updater.calls) == 1
+    assert len(updater.calls) == 2
     assert result.title == "Generated title"
-    assert len(repository.commits) == 1
-    assert result.summary == "summary-1"
+    assert result.summary == "summary-2"
     assert result.summary_version == 1
     assert len(indexer.snapshots) == 1
+    assert repository.mongo_summary_writes == 0
 
 
 def test_missing_summary_marker_does_not_resummarize_old_messages() -> None:
@@ -258,24 +259,6 @@ def test_missing_summary_marker_does_not_resummarize_old_messages() -> None:
         )
 
     assert updater.calls == []
-    assert indexer.snapshots == []
-
-
-def test_summary_commit_conflict_does_not_index_uncommitted_summary() -> None:
-    repository = FakeRepository(
-        _snapshot(messages=[_message("m1", "user", "Question")])
-    )
-    repository.save_summary_if_current = lambda _: False  # type: ignore[method-assign]
-    updater = FakeSummaryUpdater()
-    indexer = FakeIndexer()
-
-    with pytest.raises(SummaryUpdateConflictError):
-        _worker(repository, updater, indexer).run(
-            user_id="user-1",
-            conversation_id="conversation-1",
-        )
-
-    assert len(updater.calls) == 1
     assert indexer.snapshots == []
 
 

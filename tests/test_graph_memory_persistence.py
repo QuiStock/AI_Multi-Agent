@@ -48,12 +48,16 @@ class EmptyContextEnricher:
 
 
 class HistoricalContextEnricher:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, str]] = []
+
     def restore_messages(
         self,
         *,
         user_id: str,
         conversation_id: str,
     ) -> list[AnyMessage]:
+        self.calls.append({"user_id": user_id, "conversation_id": conversation_id})
         return [
             HumanMessage(id="old:user", content="pergunta anterior"),
             AIMessage(id="old:assistant", content="resposta anterior"),
@@ -196,7 +200,8 @@ def test_memory_saver_keeps_messages_between_turns() -> None:
 
 def test_resumption_restores_history_before_current_turn() -> None:
     service = RecordingMessageService()
-    graph = _graph(service, context_enricher=HistoricalContextEnricher())
+    enricher = HistoricalContextEnricher()
+    graph = _graph(service, context_enricher=enricher)
     request = _request("request-resume")
     request["is_resuming_conversation"] = True
 
@@ -214,3 +219,20 @@ def test_resumption_restores_history_before_current_turn() -> None:
         "request-resume:assistant",
     ]
     assert service.user_messages[0]["sanitized_content"] == "mensagem sanitizada"
+    assert enricher.calls == [
+        {"user_id": "user-1", "conversation_id": "conversation-1"}
+    ]
+
+
+def test_new_conversation_does_not_restore_any_history() -> None:
+    service = RecordingMessageService()
+    enricher = HistoricalContextEnricher()
+
+    _graph(service, context_enricher=enricher).invoke(
+        {
+            "request": _request("request-new"),
+            "messages": [HumanMessage(content="pergunta nova")],
+        }
+    )
+
+    assert enricher.calls == []

@@ -9,6 +9,7 @@ from src.memory.message_service import MemoryMessageService
 class RecordingRepository:
     def __init__(self) -> None:
         self.messages: list[tuple[str, str, StoredMessage]] = []
+        self.message_ids: set[tuple[str, str]] = set()
 
     def append_message(
         self,
@@ -17,6 +18,10 @@ class RecordingRepository:
         user_id: str,
         message: StoredMessage,
     ) -> bool:
+        key = (conversation_id, message.message_id)
+        if key in self.message_ids:
+            return False
+        self.message_ids.add(key)
         self.messages.append((conversation_id, user_id, message))
         return True
 
@@ -78,6 +83,34 @@ def test_save_turn_uses_sent_at_for_the_user_message() -> None:
 
     assert repository.messages[0][2].created_at == sent_at
     assert repository.messages[1][2].role == "assistant"
+
+
+def test_save_turn_keeps_user_assistant_order_and_retry_ids_idempotent() -> None:
+    repository = RecordingRepository()
+    service = MemoryMessageService(repository)
+
+    for _ in range(2):
+        service.save_turn(
+            conversation_id="conversation-1",
+            user_id="user-1",
+            request_id="request-1",
+            sanitized_user_content="Question",
+            assistant_content="Answer",
+            consulted_agents=["faq"],
+        )
+
+    assert [message.role for _, _, message in repository.messages] == [
+        "user",
+        "assistant",
+    ]
+    assert [message.message_id for _, _, message in repository.messages] == [
+        "request-1:user",
+        "request-1:assistant",
+    ]
+    assert [message.content for _, _, message in repository.messages] == [
+        "Question",
+        "Answer",
+    ]
 
 
 @pytest.mark.parametrize(

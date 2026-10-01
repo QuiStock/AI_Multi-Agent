@@ -43,7 +43,8 @@ from src.memory.summary_job_repository import (
     SUMMARY_JOBS_COLLECTION_NAME,
     MongoSummaryJobRepository,
 )
-from src.memory.summary_queue import RedisSummaryJobPublisher
+from src.memory.summary_queue import RedisSummaryQueue
+from src.memory.summary_scheduler import ConversationSummaryScheduler
 
 
 def _database_name() -> str:
@@ -70,8 +71,10 @@ def get_conversation_repository() -> MongoConversationRepository:
 
 @lru_cache
 def get_summary_job_repository() -> MongoSummaryJobRepository:
+    settings = config.get_settings()
     repository = MongoSummaryJobRepository(
-        get_mongo_client()[_database_name()][SUMMARY_JOBS_COLLECTION_NAME]
+        get_mongo_client()[_database_name()][SUMMARY_JOBS_COLLECTION_NAME],
+        max_attempts=settings.summary_job_max_attempts,
     )
     repository.ensure_indexes()
     return repository
@@ -83,13 +86,23 @@ def get_checkpointer() -> MemorySaver:
 
 
 @lru_cache
-def get_summary_job_publisher() -> RedisSummaryJobPublisher:
+def get_summary_queue() -> RedisSummaryQueue:
     settings = config.get_settings()
     from redis import Redis
 
-    return RedisSummaryJobPublisher(
+    return RedisSummaryQueue(
         client=Redis.from_url(settings.redis_url),
         stream_name=settings.summary_queue_stream,
+        consumer_group=settings.summary_queue_group,
+    )
+
+
+@lru_cache
+def get_conversation_summary_scheduler() -> ConversationSummaryScheduler:
+    return ConversationSummaryScheduler(
+        conversations=get_conversation_repository(),
+        jobs=get_summary_job_repository(),
+        queue=get_summary_queue(),
     )
 
 
@@ -153,9 +166,7 @@ def get_conversation_controller(
 def get_conversation_end_controller() -> ConversationEndController:
     return ConversationEndController(
         ConversationEndService(
-            conversation_repository=get_conversation_repository(),
-            job_repository=get_summary_job_repository(),
-            job_publisher=get_summary_job_publisher(),
+            scheduler=get_conversation_summary_scheduler(),
             checkpoint_cleanup=get_checkpointer(),
         )
     )

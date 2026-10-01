@@ -1,129 +1,187 @@
-from __future__ import annotations
+from datetime import datetime, timedelta, timezone
 
-from datetime import datetime, timezone
+from src.memory.mongo_repository import ConversationNotEndedError
+from src.memory.summary_jobs import SummaryJob
+from src.memory.summary_lock_repository import ConversationSummaryLease
+from src.memory.worker.summary_job_worker import (
+    SummaryJobWorker,
+    SummaryJobWorkerSettings,
+)
 
-from src.memory.worker.summary_job_worker import RedisSummaryJobWorker
+NOW = datetime(2026, 10, 1, tzinfo=timezone.utc)
 
 
-class FakeRedis:
+def _job() -> SummaryJob:
+    return SummaryJob(
+        job_id="conversation-1:close-1",
+        conversation_id="conversation-1",
+        user_id="user-1",
+        closure_key="close-1",
+        status="processing",
+        attempts=1,
+        created_at=NOW,
+        updated_at=NOW,
+        lease_owner="worker-1",
+        lease_until=NOW + timedelta(minutes=5),
+    )
+
+
+class FakeJobRepository:
+    def __init__(self) -> None:
+        self.events: list[str] = []
+
+    def claim(self, **_: object) -> SummaryJob:
+        self.events.append("claim")
+        return _job()
+
+    def renew_lease(self, **_: object) -> bool:
+        self.events.append("renew")
+        return True
+
+    def complete(self, **_: object) -> bool:
+        self.events.append("complete")
+        return True
+
+    def mark_superseded(self, **_: object) -> bool:
+        self.events.append("superseded")
+        return True
+
+    def schedule_retry(self, **_: object) -> str:
+        self.events.append("retry")
+        return "queued"
+
+    def mark_expired_jobs_failed(self, **_: object) -> int:
+        return 0
+
+
+class FakeQueue:
     def __init__(self) -> None:
         self.acks: list[str] = []
-        self.requeued: list[dict[str, str]] = []
 
-    def xack(self, stream: str, group: str, entry_id: str) -> None:
-        assert stream == "summary-stream"
-        assert group == "summary-workers"
+    def ensure_consumer_group(self) -> None:
+        pass
+
+    def reclaim_pending(self, **_: object) -> list[tuple[str, str]]:
+        return []
+
+    def read_new(self, **_: object) -> list[tuple[str, str]]:
+        return [("1-0", "conversation-1:close-1")]
+
+    def acknowledge(self, *, entry_id: str) -> None:
         self.acks.append(entry_id)
 
-    def xadd(self, stream: str, fields: dict[str, str]) -> str:
-        assert stream == "summary-stream"
-        self.requeued.append(fields)
-        return "2-0"
+    def refresh_pending(self, **_: object) -> bool:
+        return True
 
 
-class FakeJobs:
-    def __init__(self, *, claimed: bool = True, retry: bool = False) -> None:
-        self.claimed = claimed
-        self.retry = retry
-        self.processing: list[str] = []
-        self.completed: list[str] = []
-        self.failed: list[str] = []
+class FakeLockRepository:
+    def acquire(self, **kwargs: object) -> ConversationSummaryLease:
+        return ConversationSummaryLease(
+            conversation_id="conversation-1",
+            owner="worker-1",
+            expires_at=NOW + timedelta(seconds=30),
+            fencing_token=1,
+        )
 
-    def mark_processing(self, *, job_id: str, updated_at: datetime) -> bool:
-        self.processing.append(job_id)
-        return self.claimed
+    def renew(self, **_: object) -> bool:
+        return True
 
-    def mark_completed(self, *, job_id: str, updated_at: datetime) -> None:
-        self.completed.append(job_id)
-
-    def mark_failed(
-        self,
-        *,
-        job_id: str,
-        updated_at: datetime,
-        error: str,
-        max_attempts: int,
-    ) -> str:
-        self.failed.append(job_id)
-        return "queued" if self.retry else "failed"
+    def release(self, **_: object) -> bool:
+        return True
 
 
-class FakeSummaryWorker:
-    def __init__(self, *, fail: bool = False) -> None:
-        self.fail = fail
-        self.calls: list[tuple[str, str]] = []
+class BusyLockRepository(FakeLockRepository):
+    def acquire(self, **_: object) -> None:
+        return None
 
-    def run(self, *, conversation_id: str, user_id: str) -> None:
-        self.calls.append((conversation_id, user_id))
-        if self.fail:
-            raise RuntimeError("summary failed")
+
+class FakeProcessor:
+    def __init__(self, *, fail_after_upsert: bool = False) -> None:
+        self.fail_after_upsert = fail_after_upsert
+        self.upserted = False
+
+    def run(self, *, before_upsert: object, **_: object) -> None:
+        before_upsert()  # type: ignore[operator]
+        self.upserted = True
+        if self.fail_after_upsert:
+            raise RuntimeError("failure after Qdrant upsert")
+
+
+class ResumedConversationProcessor:
+    def run(self, **_: object) -> None:
+        raise ConversationNotEndedError("conversation resumed")
 
 
 def _worker(
-    *,
-    jobs: FakeJobs,
-    summary: FakeSummaryWorker,
-    redis: FakeRedis,
-) -> RedisSummaryJobWorker:
-    return RedisSummaryJobWorker(
-        client=redis,  # type: ignore[arg-type]
-        stream_name="summary-stream",
-        group_name="summary-workers",
-        consumer_name="worker-1",
-        job_repository=jobs,  # type: ignore[arg-type]
-        summary_worker=summary,  # type: ignore[arg-type]
-        clock=lambda: datetime(2026, 9, 22, 17, 30, tzinfo=timezone.utc),
+    repository: FakeJobRepository, queue: FakeQueue, processor: FakeProcessor
+) -> SummaryJobWorker:
+    return SummaryJobWorker(
+        repository=repository,  # type: ignore[arg-type]
+        conversation_locks=FakeLockRepository(),  # type: ignore[arg-type]
+        queue=queue,  # type: ignore[arg-type]
+        processor=processor,  # type: ignore[arg-type]
+        settings=SummaryJobWorkerSettings(
+            worker_id="worker-1", clock=lambda: NOW, lease_seconds=30
+        ),
     )
 
 
-def _fields() -> dict[str, str]:
-    return {
-        "job_id": "job-1",
-        "conversation_id": "conversation-1",
-        "user_id": "user-1",
-    }
+def test_worker_completes_only_after_processor_and_then_acks_stream_entry() -> None:
+    repository = FakeJobRepository()
+    queue = FakeQueue()
+    processor = FakeProcessor()
+
+    assert _worker(repository, queue, processor).run_once(block_ms=0) == 1
+
+    assert processor.upserted
+    assert repository.events.index("complete") > repository.events.index("renew")
+    assert queue.acks == ["1-0"]
 
 
-def test_worker_acknowledges_only_after_summary_success() -> None:
-    redis = FakeRedis()
-    jobs = FakeJobs()
-    summary = FakeSummaryWorker()
+def test_failure_after_qdrant_write_schedules_durable_retry_before_ack() -> None:
+    repository = FakeJobRepository()
+    queue = FakeQueue()
+    processor = FakeProcessor(fail_after_upsert=True)
 
-    _worker(jobs=jobs, summary=summary, redis=redis).process_entry(
-        entry_id="1-0",
-        fields=_fields(),
+    _worker(repository, queue, processor).run_once(block_ms=0)
+
+    assert processor.upserted
+    assert repository.events.index("retry") > repository.events.index("renew")
+    assert queue.acks == ["1-0"]
+
+
+def test_worker_does_not_process_two_jobs_for_same_conversation_concurrently() -> None:
+    repository = FakeJobRepository()
+    queue = FakeQueue()
+    processor = FakeProcessor()
+    worker = SummaryJobWorker(
+        repository=repository,  # type: ignore[arg-type]
+        conversation_locks=BusyLockRepository(),  # type: ignore[arg-type]
+        queue=queue,  # type: ignore[arg-type]
+        processor=processor,  # type: ignore[arg-type]
+        settings=SummaryJobWorkerSettings(
+            worker_id="worker-1", clock=lambda: NOW, lease_seconds=30
+        ),
     )
 
-    assert summary.calls == [("conversation-1", "user-1")]
-    assert jobs.completed == ["job-1"]
-    assert redis.acks == ["1-0"]
-    assert redis.requeued == []
+    worker.run_once(block_ms=0)
+
+    assert not processor.upserted
+    assert "retry" in repository.events
+    assert queue.acks == ["1-0"]
 
 
-def test_worker_requeues_retryable_failure_and_acknowledges_original_entry() -> None:
-    redis = FakeRedis()
-    jobs = FakeJobs(retry=True)
-    summary = FakeSummaryWorker(fail=True)
-
-    _worker(jobs=jobs, summary=summary, redis=redis).process_entry(
-        entry_id="1-0",
-        fields=_fields(),
+def test_job_is_superseded_if_the_conversation_was_resumed() -> None:
+    repository = FakeJobRepository()
+    queue = FakeQueue()
+    worker = _worker(
+        repository,
+        queue,
+        ResumedConversationProcessor(),  # type: ignore[arg-type]
     )
 
-    assert jobs.failed == ["job-1"]
-    assert redis.acks == ["1-0"]
-    assert redis.requeued == [_fields()]
+    worker.run_once(block_ms=0)
 
-
-def test_worker_acknowledges_duplicate_without_running_summary_again() -> None:
-    redis = FakeRedis()
-    jobs = FakeJobs(claimed=False)
-    summary = FakeSummaryWorker()
-
-    _worker(jobs=jobs, summary=summary, redis=redis).process_entry(
-        entry_id="1-0",
-        fields=_fields(),
-    )
-
-    assert summary.calls == []
-    assert redis.acks == ["1-0"]
+    assert "superseded" in repository.events
+    assert "retry" not in repository.events
+    assert queue.acks == ["1-0"]

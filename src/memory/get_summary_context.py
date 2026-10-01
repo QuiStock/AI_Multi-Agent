@@ -76,6 +76,7 @@ def _has_valid_summary(payload: Mapping[str, Any]) -> bool:
     title = payload.get("title")
     summary = payload.get("summary")
     version = payload.get("summary_version")
+    watermark = payload.get("summarized_through_message_id")
     return (
         (title is None or isinstance(title, str))
         and isinstance(summary, str)
@@ -83,6 +84,8 @@ def _has_valid_summary(payload: Mapping[str, Any]) -> bool:
         and isinstance(version, int)
         and not isinstance(version, bool)
         and version >= 1
+        and isinstance(watermark, str)
+        and bool(watermark.strip())
     )
 
 
