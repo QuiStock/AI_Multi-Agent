@@ -54,7 +54,7 @@ requires-dist = [
     { name = "pypdf", specifier = ">=5.0.0" },
     { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "qdrant-client", specifier = ">=1.0.0" },
-    { name = "redis", specifier = ">=5.0.0" },
+    { name = "redis", specifier = ">=5.0,<9" },
     { name = "uvicorn", specifier = ">=0.53.0" },
 ]
 

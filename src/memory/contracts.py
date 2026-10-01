@@ -35,24 +35,21 @@ class StoredMessage(BaseModel):
 
 
 class ConversationDocument(TypedDict):
-    """Initial persisted shape for a conversation document."""
+    """Persisted conversation shape; summary state belongs to Qdrant."""
 
     _id: str
     user_id: str
     started_at: datetime
     updated_at: datetime
     ended_at: datetime | None
-    status: Literal["active", "ended"]
+    status: Literal["active", "ended", "deleting"]
     title: str | None
-    summary: str | None
-    summary_version: int
-    summarized_through_message_id: str | None
     messages: list[dict[str, object]]
     total_turns: int
 
 
 class ConversationSummarySnapshot(BaseModel):
-    """MongoDB fields needed for an incremental summary update."""
+    """Runtime summary context assembled from Mongo messages and Qdrant point."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -75,7 +72,7 @@ class ConversationSummarySnapshot(BaseModel):
 
 
 class SummaryCommit(BaseModel):
-    """Optimistic-concurrency payload for committing a summary revision."""
+    """Runtime summary revision; it must only be persisted in Qdrant."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -100,7 +97,7 @@ class SummarySearchRequest:
 
 
 class ConversationSummary(TypedDict):
-    """Summary fields shared by MongoDB, Qdrant, and graph memory context."""
+    """Summary fields returned to graph memory context from Qdrant."""
 
     conversation_id: str
     title: str | None
@@ -109,9 +106,17 @@ class ConversationSummary(TypedDict):
 
 
 class VersionedConversationSummary(ConversationSummary):
-    """Authoritative MongoDB summary and version for a Qdrant candidate."""
+    """Summary point returned by Qdrant after Mongo ownership validation."""
 
     summary_version: int
+
+
+class ConversationMetadata(TypedDict):
+    """Mongo metadata used only to validate owner and ended status."""
+
+    conversation_id: str
+    title: str | None
+    updated_at: str
 
 
 class ConversationListItem(TypedDict):

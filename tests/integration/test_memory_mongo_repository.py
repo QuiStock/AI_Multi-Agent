@@ -7,7 +7,6 @@ from pymongo import MongoClient
 from pymongo.collection import Collection
 from testcontainers.community.mongodb import MongoDbContainer
 
-from src.memory.contracts import SummaryCommit
 from src.memory.message_service import MemoryMessageService
 from src.memory.mongo_repository import (
     ConversationClosedError,
@@ -61,9 +60,6 @@ def test_first_user_message_creates_the_single_conversation_document(
     assert document["user_id"] == "user-1"
     assert document["status"] == "active"
     assert document["title"] is None
-    assert document["summary"] is None
-    assert document["summary_version"] == 0
-    assert document["summarized_through_message_id"] is None
     assert document["total_turns"] == 0
     assert len(document["messages"]) == 1
     assert document["messages"][0]["content"] == "$2 milk"
@@ -72,6 +68,43 @@ def test_first_user_message_creates_the_single_conversation_document(
     assert document["messages"][0]["created_at"].replace(
         tzinfo=timezone.utc
     ) == document["started_at"].replace(tzinfo=timezone.utc)
+
+
+def test_conversation_document_keeps_ordered_messages_without_summary_fields(
+    conversation_collection: Collection,
+    message_service: MemoryMessageService,
+) -> None:
+    message_service.save_user_message(
+        conversation_id="conversation-ordered",
+        user_id="user-1",
+        request_id="request-1",
+        sanitized_content="Question",
+    )
+    message_service.save_assistant_message(
+        conversation_id="conversation-ordered",
+        user_id="user-1",
+        request_id="request-1",
+        content="Answer",
+        consulted_agents=["faq"],
+    )
+
+    documents = list(conversation_collection.find({"_id": "conversation-ordered"}))
+
+    assert len(documents) == 1
+    document = documents[0]
+    assert [message["role"] for message in document["messages"]] == [
+        "user",
+        "assistant",
+    ]
+    assert [message["message_id"] for message in document["messages"]] == [
+        "request-1:user",
+        "request-1:assistant",
+    ]
+    assert not {
+        "summary",
+        "summary_version",
+        "summarized_through_message_id",
+    }.intersection(document)
 
 
 def test_assistant_reply_appends_and_increments_turns_once(
@@ -235,7 +268,7 @@ def test_stored_dates_are_utc_and_updated_at_tracks_latest_message(
     assert updated_at == max(user_time, assistant_time)
 
 
-def test_summary_commit_advances_version_and_marker_only_once(
+def test_summary_snapshot_accepts_qdrant_state_without_persisting_it_in_mongo(
     conversation_collection: Collection,
     message_service: MemoryMessageService,
 ) -> None:
@@ -262,6 +295,9 @@ def test_summary_commit_advances_version_and_marker_only_once(
     snapshot = repository.get_summary_snapshot(
         conversation_id="conversation-1",
         user_id="user-1",
+        summary="Question and answer.",
+        summary_version=1,
+        summarized_through_message_id="request-1:assistant",
     )
 
     assert snapshot.status == "ended"
@@ -270,36 +306,14 @@ def test_summary_commit_advances_version_and_marker_only_once(
         "request-1:assistant",
     ]
     assert snapshot.messages[0].created_at.tzinfo == timezone.utc
-    committed = repository.save_summary_if_current(
-        SummaryCommit(
-            conversation_id="conversation-1",
-            user_id="user-1",
-            expected_summary_version=snapshot.summary_version,
-            expected_message_id=snapshot.summarized_through_message_id,
-            summary="Question and answer.",
-            summarized_through_message_id="request-1:assistant",
-        )
-    )
-    stale_retry = repository.save_summary_if_current(
-        SummaryCommit(
-            conversation_id="conversation-1",
-            user_id="user-1",
-            expected_summary_version=snapshot.summary_version,
-            expected_message_id=snapshot.summarized_through_message_id,
-            summary="Duplicate summary.",
-            summarized_through_message_id="request-1:assistant",
-        )
-    )
-    updated = repository.get_summary_snapshot(
-        conversation_id="conversation-1",
-        user_id="user-1",
-    )
-
-    assert committed is True
-    assert stale_retry is False
-    assert updated.summary == "Question and answer."
-    assert updated.summary_version == 1
-    assert updated.summarized_through_message_id == "request-1:assistant"
+    assert snapshot.summary == "Question and answer."
+    assert snapshot.summary_version == 1
+    assert snapshot.summarized_through_message_id == "request-1:assistant"
+    document = conversation_collection.find_one({"_id": "conversation-1"})
+    assert document is not None
+    assert "summary" not in document
+    assert "summary_version" not in document
+    assert "summarized_through_message_id" not in document
 
 
 def test_ended_conversation_is_listed_and_reopened_with_existing_history(
@@ -348,3 +362,34 @@ def test_ended_conversation_is_listed_and_reopened_with_existing_history(
     assert document is not None
     assert document["status"] == "active"
     assert document["ended_at"] is None
+
+
+def test_conversation_history_cannot_be_resumed_by_another_user(
+    conversation_collection: Collection,
+    message_service: MemoryMessageService,
+) -> None:
+    repository = MongoConversationRepository(conversation_collection)
+    message_service.save_user_message(
+        conversation_id="private-conversation",
+        user_id="owner",
+        request_id="request-1",
+        sanitized_content="Private question",
+    )
+    repository.mark_ended(
+        conversation_id="private-conversation",
+        user_id="owner",
+        ended_at=datetime.now(timezone.utc),
+    )
+
+    with pytest.raises(ConversationNotFoundError):
+        repository.resume_conversation(
+            conversation_id="private-conversation",
+            user_id="another-user",
+            resumed_at=datetime.now(timezone.utc),
+        )
+
+    document = conversation_collection.find_one({"_id": "private-conversation"})
+    assert document is not None
+    assert document["user_id"] == "owner"
+    assert document["status"] == "ended"
+    assert document["messages"][0]["content"] == "Private question"

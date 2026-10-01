@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     summary_queue_stream: str = "quistock:conversation-summary"
     summary_queue_group: str = "summary-workers"
-    summary_job_max_attempts: int = Field(default=3, ge=1, le=10)
+    summary_job_max_attempts: int = Field(default=5, ge=1, le=10)
 
     # FAQ RAG directories
     faq_data_dir: Path = PROJECT_ROOT / "src" / "data"

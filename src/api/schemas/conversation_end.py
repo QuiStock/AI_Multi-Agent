@@ -25,4 +25,4 @@ class ConversationEndResponse(BaseModel):
     request_id: str
     job_id: str
     status: Literal["ended"]
-    summary_status: Literal["queued"]
+    summary_status: Literal["queued", "processing", "completed", "failed", "superseded"]

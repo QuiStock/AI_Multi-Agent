@@ -1,7 +1,9 @@
 # Planejamento do módulo de memória
 
-**Status:** arquitetura-alvo definida para a branch `memory`; o encerramento assíncrono inicial foi implementado na branch `api`.
-**Atualizado:** 2026-09-22
+**Status:** documento histórico; decisões atuais e tarefas executáveis estão em `specs/003-memoria-resumos-qdrant/`.
+**Atualizado:** 2026-10-01
+
+> As seções abaixo antecedem decisões aprovadas de manter o conteúdo do resumo somente no Qdrant e usar jobs duráveis/outbox/worker. Em caso de divergência, prevalecem `spec.md`, `plan.md`, `contracts/memory-persistence.md` e `tasks.md` da feature 003.
 
 ## Fluxo
 

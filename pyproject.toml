@@ -17,10 +17,13 @@ dependencies = [
     "pydantic-settings>=2.0.0",
     "python-dotenv>=1.0.0",
     "pymongo>=4.13,<5",
-    "redis>=5.0.0",
+    "redis>=5.0,<9",
     "fastapi>=0.141.1",
     "uvicorn>=0.53.0",
 ]
+
+[project.scripts]
+quistock-summary-worker = "src.memory.worker.run_summary_worker:main"
 
 [dependency-groups]
 dev = [

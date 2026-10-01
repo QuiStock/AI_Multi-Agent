@@ -22,9 +22,9 @@ Snapshot atual:
 - Agentes, cards, executores e tools em `src/agents/`.
 - Guardrails de entrada/saída em `src/guardrails/`.
 - Memória de conversa em `src/memory/`.
-- MongoDB mantém mensagens e resumos; Redis Streams transporta jobs de
-  resumo; Qdrant atende FAQ e índice de resumos; o checkpointer local é
-  `MemorySaver` para desenvolvimento/testes.
+- MongoDB mantém mensagens e metadados de jobs; Redis Streams transporta IDs
+  de jobs de resumo; Qdrant mantém o conteúdo dos resumos e atende FAQ. O
+  checkpointer local é `MemorySaver` para desenvolvimento/testes.
 - `src/observability/{audit,metrics,traces}.py` ainda é placeholder.
 - A composição de produção em `src/api/dependencies.py` ativa somente a rota
   `faq`. Os papéis `router`, `faq_rag`, `evidence_judge` e `compiler` estão
@@ -178,7 +178,6 @@ Detalhes de wiring importantes:
 
 Não há chamadas diretas entre agentes. A comunicação passa por `GraphState` e
 pelos adapters em `src/graphs/adapters.py`.
-
 ```text
 input_guardrail
   -> context_enrichment -> normalize_user_message -> router
@@ -332,7 +331,7 @@ Não faça retries ilimitados.
 - O encerramento é assíncrono: MongoDB registra o job, Redis Streams entrega,
   o worker faz retry limitado e o resumo incremental usa
   `summarized_through_message_id`. O mesmo `conversation_id` recebe upsert no
-  índice de resumos.
+  índice de resumos no Qdrant; MongoDB não armazena o conteúdo do resumo.
 - Checkpoints locais são efêmeros; o histórico durável é o MongoDB.
 - Preserve `request_id`, `tool_call_id` e `trace_id` nas fronteiras existentes.
   Não registre conteúdo sensível, credenciais, PII ou prompts privados.

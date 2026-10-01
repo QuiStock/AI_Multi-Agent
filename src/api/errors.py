@@ -7,10 +7,6 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from src.api.schemas.conversation import ConversationResponse
-from src.api.services.conversation_end_service import (
-    ConversationAlreadyEndedError,
-    SummaryQueueUnavailableError,
-)
 from src.api.services.conversation_list_service import ConversationListValidationError
 from src.memory.mongo_repository import (
     ConversationClosedError,
@@ -99,33 +95,6 @@ async def handle_graph_execution_error(
     )
 
 
-async def handle_conversation_already_ended(
-    _: Request,
-    exc: Exception,
-) -> JSONResponse:
-    cast(ConversationAlreadyEndedError, exc)
-    return _error_response(
-        status_code=409,
-        code="CONVERSATION_ALREADY_ENDED",
-        message="A conversa já foi encerrada.",
-    )
-
-
-async def handle_summary_queue_unavailable(
-    _: Request,
-    exc: Exception,
-) -> JSONResponse:
-    cast(SummaryQueueUnavailableError, exc)
-    return _error_response(
-        status_code=503,
-        code="SUMMARY_QUEUE_UNAVAILABLE",
-        message=(
-            "A conversa foi encerrada, mas o processamento do resumo "
-            "aguarda nova tentativa."
-        ),
-    )
-
-
 async def handle_conversation_list_validation(
     _: Request,
     exc: Exception,
@@ -153,14 +122,6 @@ def register_exception_handlers(app: FastAPI) -> None:
     )
     app.add_exception_handler(InputRejectedError, handle_input_rejected)
     app.add_exception_handler(GraphExecutionError, handle_graph_execution_error)
-    app.add_exception_handler(
-        ConversationAlreadyEndedError,
-        handle_conversation_already_ended,
-    )
-    app.add_exception_handler(
-        SummaryQueueUnavailableError,
-        handle_summary_queue_unavailable,
-    )
     app.add_exception_handler(
         ConversationListValidationError,
         handle_conversation_list_validation,
