@@ -67,12 +67,18 @@ def test_decoder_accepts_both_keys_during_rotation() -> None:
     new_key = jwk.JWK.generate(kty="RSA", size=2048)
     decoder = JWEEmailDecoder({"old": old_key, "new": new_key})
 
-    assert decoder.decode_email(
-        _token(old_key, claims={"email": "old@example.test"}, kid="old")
-    ) == "old@example.test"
-    assert decoder.decode_email(
-        _token(new_key, claims={"email": "new@example.test"}, kid="new")
-    ) == "new@example.test"
+    assert (
+        decoder.decode_email(
+            _token(old_key, claims={"email": "old@example.test"}, kid="old")
+        )
+        == "old@example.test"
+    )
+    assert (
+        decoder.decode_email(
+            _token(new_key, claims={"email": "new@example.test"}, kid="new")
+        )
+        == "new@example.test"
+    )
 
 
 def test_decoder_rejects_wrong_algorithms(rsa_key: jwk.JWK) -> None:

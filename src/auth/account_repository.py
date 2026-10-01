@@ -21,18 +21,16 @@ class PostgresAccountRepository:
 
     def find_by_email(self, email: str) -> UserAccount | None:
         try:
-            with self._pool.connection() as connection:
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        "SELECT set_config('statement_timeout', %s, true)",
-                        (f"{self._statement_timeout_ms}ms",),
-                    )
-                    cursor.execute(
-                        "SELECT email, role_id FROM user_account "
-                        "WHERE email = %s LIMIT 1",
-                        (email,),
-                    )
-                    row = cursor.fetchone()
+            with self._pool.connection() as connection, connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT set_config('statement_timeout', %s, true)",
+                    (f"{self._statement_timeout_ms}ms",),
+                )
+                cursor.execute(
+                    "SELECT email, role_id FROM user_account WHERE email = %s LIMIT 1",
+                    (email,),
+                )
+                row = cursor.fetchone()
             if row is None:
                 return None
             return UserAccount(email=str(row[0]), role_id=int(row[1]))
