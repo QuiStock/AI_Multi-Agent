@@ -8,6 +8,8 @@ from jwcrypto import jwe, jwk  # type: ignore[import-untyped]
 
 from src.auth.errors import AuthenticationConfigurationError, InvalidCredentialError
 
+RSA_MINIMUM_KEY_BITS = 2048
+
 
 class JWEEmailDecoder:
     """Decrypt compact JWE credentials and consume only their email claim."""
@@ -62,7 +64,7 @@ def decoder_from_json_keyring(serialized_keyring: str | None) -> JWEEmailDecoder
             key = jwk.JWK.from_pem(pem.replace("\\n", "\n").encode("utf-8"))
             private_key = key.get_op_key("decrypt")
             private_key.private_numbers()
-            if private_key.key_size < 2048:
+            if private_key.key_size < RSA_MINIMUM_KEY_BITS:
                 raise ValueError
             keys[kid] = key
         return JWEEmailDecoder(keys)

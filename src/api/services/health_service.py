@@ -72,16 +72,18 @@ class HealthService:
     def _probe_postgresql(self) -> None:
         if self._postgres_pool is None:
             raise RuntimeError("PostgreSQL pool is not configured")
-        with self._postgres_pool.connection(
-            timeout=self._settings.health_probe_timeout_seconds
-        ) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "SELECT set_config('statement_timeout', %s, true)",
-                    (f"{int(self._settings.health_probe_timeout_seconds * 1000)}ms",),
-                )
-                cursor.execute("SELECT 1")
-                cursor.fetchone()
+        with (
+            self._postgres_pool.connection(
+                timeout=self._settings.health_probe_timeout_seconds
+            ) as connection,
+            connection.cursor() as cursor,
+        ):
+            cursor.execute(
+                "SELECT set_config('statement_timeout', %s, true)",
+                (f"{int(self._settings.health_probe_timeout_seconds * 1000)}ms",),
+            )
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
 
     def _probe_mongodb(self) -> None:
         if self._mongo_client is None:
