@@ -104,7 +104,7 @@ class EndConversationSummaryWorker:
     def run(
         self,
         *,
-        user_id: str,
+        email: str,
         conversation_id: str,
         before_upsert: Callable[[], None] | None = None,
     ) -> ConversationSummarySnapshot:
@@ -118,7 +118,7 @@ class EndConversationSummaryWorker:
         previous_marker = point.get("summarized_through_message_id") if point else None
         snapshot = self._repository.get_summary_snapshot(
             conversation_id=conversation_id,
-            user_id=user_id,
+            email=email,
             summary=previous_summary,
             summary_version=previous_version,
             summarized_through_message_id=(
@@ -137,7 +137,7 @@ class EndConversationSummaryWorker:
 
             snapshot = self._repository.get_summary_snapshot(
                 conversation_id=conversation_id,
-                user_id=user_id,
+                email=email,
                 summary=updated_summary,
                 summary_version=snapshot.summary_version + 1,
                 summarized_through_message_id=new_messages[-1].message_id,
@@ -172,12 +172,12 @@ class EndConversationSummaryWorker:
 
         self._repository.save_title_if_missing(
             conversation_id=snapshot.conversation_id,
-            user_id=snapshot.user_id,
+            email=snapshot.email,
             title=title,
         )
         return self._repository.get_summary_snapshot(
             conversation_id=snapshot.conversation_id,
-            user_id=snapshot.user_id,
+            email=snapshot.email,
             summary=snapshot.summary,
             summary_version=snapshot.summary_version,
             summarized_through_message_id=snapshot.summarized_through_message_id,

@@ -51,7 +51,7 @@ class FakeSummaryRepository:
     def get_ended_conversation_metadata_by_ids(
         self,
         *,
-        user_id: str,
+        email: str,
         conversation_ids: list[str],
     ) -> dict[str, VersionedConversationSummary]:
         self.requested_ids = conversation_ids
@@ -108,7 +108,7 @@ def _candidate(
 def _qdrant_payload(candidate: SummaryCandidate) -> dict[str, Any]:
     return {
         **candidate,
-        "user_id": "user-1",
+        "email": "user-1",
         "memory_type": "conversation_summary",
         "status": "ended",
     }
@@ -148,7 +148,7 @@ def test_qdrant_search_filters_ended_user_summaries_and_reads_payload() -> None:
                 score=0.8,
                 payload={
                     "conversation_id": "previous-1",
-                    "user_id": "user-1",
+                    "email": "user-1",
                     "status": "ended",
                     "memory_type": "conversation_summary",
                     "title": "Past conversation",
@@ -164,7 +164,7 @@ def test_qdrant_search_filters_ended_user_summaries_and_reads_payload() -> None:
 
     results = get_summary_context(
         request=SummarySearchRequest(
-            user_id="user-1",
+            email="user-1",
             conversation_id="current-1",
             query="O que comprei?",
             collection_name="conversation_summaries",
@@ -183,7 +183,7 @@ def test_qdrant_search_filters_ended_user_summaries_and_reads_payload() -> None:
     assert qdrant.query["score_threshold"] == 0.5
     filters = qdrant.query["query_filter"]
     assert {condition.key for condition in filters.must} == {
-        "user_id",
+        "email",
         "memory_type",
         "status",
     }
@@ -223,7 +223,7 @@ def test_service_uses_qdrant_text_after_mongo_owner_status_validation() -> None:
     assert repository.requested_ids == ["valid", "stale"]
     assert repository.fallback_arguments is None
     selection = _service(qdrant, repository).search_context(
-        user_id="user-1",
+        email="user-1",
         conversation_id="current-1",
         query="O que comprei?",
     )
@@ -252,7 +252,7 @@ def test_service_falls_back_to_recent_qdrant_payload() -> None:
     assert summaries[0]["conversation_id"] == "low"
     assert summaries[0]["summary"] == "Summary for low."
     selection = _service(qdrant, repository).search_context(
-        user_id="user-1",
+        email="user-1",
         conversation_id="current-1",
         query="O que comprei?",
     )
@@ -276,14 +276,14 @@ def test_mongo_owner_status_validation_never_projects_summary_fields() -> None:
     repository = MongoConversationRepository(collection)  # type: ignore[arg-type]
 
     summaries = repository.get_ended_conversation_metadata_by_ids(
-        user_id="user-1",
+        email="user-1",
         conversation_ids=["recent-1"],
     )
 
     assert summaries["recent-1"]["conversation_id"] == "recent-1"
     assert collection.query_filter == {
         "_id": {"$in": ["recent-1"]},
-        "user_id": "user-1",
+        "email": "user-1",
         "status": "ended",
     }
     assert "summary" not in collection.last_projection
@@ -302,7 +302,7 @@ def test_mongo_candidate_validation_returns_metadata_without_summary() -> None:
     repository = MongoConversationRepository(collection)  # type: ignore[arg-type]
 
     summaries = repository.get_ended_conversation_metadata_by_ids(
-        user_id="user-1",
+        email="user-1",
         conversation_ids=["previous-1"],
     )
 
@@ -315,6 +315,6 @@ def test_mongo_candidate_validation_returns_metadata_without_summary() -> None:
     }
     assert collection.query_filter == {
         "_id": {"$in": ["previous-1"]},
-        "user_id": "user-1",
+        "email": "user-1",
         "status": "ended",
     }

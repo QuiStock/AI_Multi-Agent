@@ -103,7 +103,7 @@ async def handle_conversation_list_validation(
     return _error_response(
         status_code=422,
         code="INVALID_CONVERSATION_LIST_REQUEST",
-        message="user_id é obrigatório.",
+        message="email é obrigatório.",
     )
 
 

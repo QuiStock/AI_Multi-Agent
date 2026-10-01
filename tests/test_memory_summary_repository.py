@@ -14,7 +14,7 @@ from src.memory.mongo_repository import (
 def _mongo_document() -> dict[str, object]:
     return {
         "_id": "conversation-1",
-        "user_id": "user-1",
+        "email": "user-1",
         "title": "Title",
         "status": "ended",
         "summary": "Previous summary",
@@ -39,7 +39,7 @@ def test_summary_snapshot_uses_qdrant_runtime_state_not_mongo_fields() -> None:
 
     snapshot = repository.get_summary_snapshot(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         summary="Qdrant summary",
         summary_version=3,
         summarized_through_message_id="m1",
@@ -47,7 +47,7 @@ def test_summary_snapshot_uses_qdrant_runtime_state_not_mongo_fields() -> None:
 
     assert collection.find_one.call_args.args[0] == {
         "_id": "conversation-1",
-        "user_id": "user-1",
+        "email": "user-1",
     }
     assert snapshot.summary == "Qdrant summary"
     assert snapshot.summary_version == 3
@@ -70,7 +70,7 @@ def test_summary_snapshot_rejects_a_conversation_resumed_before_job_execution() 
     with pytest.raises(ConversationNotEndedError):
         repository.get_summary_snapshot(
             conversation_id="conversation-1",
-            user_id="user-1",
+            email="user-1",
         )
 
 
@@ -82,13 +82,13 @@ def test_mark_ended_updates_only_an_active_owned_conversation() -> None:
 
     repository.mark_ended(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         ended_at=ended_at,
     )
 
     assert collection.update_one.call_args.args[0] == {
         "_id": "conversation-1",
-        "user_id": "user-1",
+        "email": "user-1",
         "status": "active",
     }
     assert collection.update_one.call_args.args[1] == {
@@ -120,13 +120,13 @@ def test_resume_reopens_owned_conversation_and_returns_ordered_message_ids() -> 
 
     messages = repository.resume_conversation(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         resumed_at=resumed_at,
     )
 
     assert collection.update_one.call_args.args[0] == {
         "_id": "conversation-1",
-        "user_id": "user-1",
+        "email": "user-1",
         "status": "ended",
     }
     assert collection.update_one.call_args.args[1] == {
@@ -145,7 +145,7 @@ def test_resume_rejects_other_user_and_already_active_conversations() -> None:
     with pytest.raises(ConversationNotFoundError):
         repository.resume_conversation(
             conversation_id="conversation-1",
-            user_id="other-user",
+            email="other-user",
             resumed_at=datetime(2026, 9, 21, tzinfo=timezone.utc),
         )
 
@@ -153,7 +153,7 @@ def test_resume_rejects_other_user_and_already_active_conversations() -> None:
     with pytest.raises(ConversationNotEndedError):
         repository.resume_conversation(
             conversation_id="conversation-1",
-            user_id="user-1",
+            email="user-1",
             resumed_at=datetime(2026, 9, 21, tzinfo=timezone.utc),
         )
 
@@ -171,10 +171,10 @@ def test_list_ended_conversations_only_queries_authenticated_user() -> None:
     collection.find.return_value = cursor
     repository = MongoConversationRepository(collection)
 
-    result = repository.list_ended_conversations(user_id="user-1")
+    result = repository.list_ended_conversations(email="user-1")
 
     assert collection.find.call_args.args[0] == {
-        "user_id": "user-1",
+        "email": "user-1",
         "status": "ended",
     }
     assert cursor.sort.call_args.args[0] == [
@@ -203,7 +203,7 @@ def test_candidate_validation_reads_metadata_without_summary_content() -> None:
     repository = MongoConversationRepository(collection)
 
     metadata = repository.get_ended_conversation_metadata_by_ids(
-        user_id="user-1", conversation_ids=["conversation-1"]
+        email="user-1", conversation_ids=["conversation-1"]
     )
 
     assert metadata == {
@@ -223,14 +223,14 @@ def test_title_write_requires_missing_title_without_summary_marker() -> None:
 
     saved = repository.save_title_if_missing(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         title="Conversation title",
     )
 
     query, update = collection.update_one.call_args.args
     assert query == {
         "_id": "conversation-1",
-        "user_id": "user-1",
+        "email": "user-1",
         "status": "ended",
         "$or": [{"title": None}, {"title": {"$exists": False}}],
     }

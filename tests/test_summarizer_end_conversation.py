@@ -36,7 +36,7 @@ def _snapshot(
 ) -> ConversationSummarySnapshot:
     return ConversationSummarySnapshot(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         title=title,
         status=status,
         summary=summary,
@@ -53,23 +53,23 @@ class FakeRepository:
         self.mongo_summary_writes = 0
 
     def mark_ended(
-        self, *, conversation_id: str, user_id: str, ended_at: datetime
+        self, *, conversation_id: str, email: str, ended_at: datetime
     ) -> None:
         assert conversation_id == self.snapshot.conversation_id
-        assert user_id == self.snapshot.user_id
+        assert email == self.snapshot.email
         self.snapshot = self.snapshot.model_copy(update={"status": "ended"})
 
     def get_summary_snapshot(
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        email: str,
         summary: str | None = None,
         summary_version: int = 0,
         summarized_through_message_id: str | None = None,
     ) -> ConversationSummarySnapshot:
         assert conversation_id == self.snapshot.conversation_id
-        assert user_id == self.snapshot.user_id
+        assert email == self.snapshot.email
         return self.snapshot.model_copy(
             update={
                 "summary": summary,
@@ -82,12 +82,12 @@ class FakeRepository:
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        email: str,
         title: str,
     ) -> bool:
         if (
             self.snapshot.conversation_id != conversation_id
-            or self.snapshot.user_id != user_id
+            or self.snapshot.email != email
             or self.snapshot.status != "ended"
             or self.snapshot.title is not None
         ):
@@ -176,7 +176,7 @@ def test_first_close_summarizes_the_full_message_history() -> None:
     title_generator = FakeTitleGenerator()
 
     result = _worker(repository, updater, indexer, title_generator).run(
-        user_id="user-1",
+        email="user-1",
         conversation_id="conversation-1",
     )
 
@@ -209,7 +209,7 @@ def test_reopened_close_updates_only_messages_after_the_marker() -> None:
     indexer = FakeIndexer()
 
     result = _worker(repository, updater, indexer).run(
-        user_id="user-1",
+        email="user-1",
         conversation_id="conversation-1",
     )
 
@@ -228,9 +228,9 @@ def test_retry_after_index_failure_keeps_summary_out_of_mongo() -> None:
     worker = _worker(repository, updater, indexer)
 
     with pytest.raises(RuntimeError, match="qdrant"):
-        worker.run(user_id="user-1", conversation_id="conversation-1")
+        worker.run(email="user-1", conversation_id="conversation-1")
 
-    result = worker.run(user_id="user-1", conversation_id="conversation-1")
+    result = worker.run(email="user-1", conversation_id="conversation-1")
 
     assert len(updater.calls) == 2
     assert result.title == "Generated title"
@@ -254,7 +254,7 @@ def test_missing_summary_marker_does_not_resummarize_old_messages() -> None:
 
     with pytest.raises(ValueError, match="marcador"):
         _worker(repository, updater, indexer).run(
-            user_id="user-1",
+            email="user-1",
             conversation_id="conversation-1",
         )
 
@@ -318,7 +318,7 @@ def test_title_generation_failure_does_not_block_summary_indexing() -> None:
     title_generator = FakeTitleGenerator(fail=True)
 
     result = _worker(repository, updater, indexer, title_generator).run(
-        user_id="user-1",
+        email="user-1",
         conversation_id="conversation-1",
     )
 

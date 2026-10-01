@@ -16,12 +16,12 @@ class ConversationContextEnricher:
     def restore_messages(
         self,
         *,
-        user_id: str,
+        email: str,
         conversation_id: str,
     ) -> list[AnyMessage]:
         stored_messages = self._repository.resume_conversation(
             conversation_id=conversation_id,
-            user_id=user_id,
+            email=email,
             resumed_at=datetime.now(UTC),
         )
         graph_messages: list[AnyMessage] = []

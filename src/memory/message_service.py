@@ -16,13 +16,13 @@ class MemoryMessageService:
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        email: str,
         request_id: str,
         sanitized_content: str,
         sent_at: datetime | None = None,
     ) -> bool:
         """Persist input after the input guardrail has produced its safe text."""
-        self._validate_identifiers(conversation_id, user_id, request_id)
+        self._validate_identifiers(conversation_id, email, request_id)
         message = self._build_message(
             request_id=request_id,
             role="user",
@@ -31,7 +31,7 @@ class MemoryMessageService:
         )
         return self._persist(
             conversation_id=conversation_id,
-            user_id=user_id,
+            email=email,
             message=message,
         )
 
@@ -39,13 +39,13 @@ class MemoryMessageService:
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        email: str,
         request_id: str,
         content: str,
         consulted_agents: list[str],
     ) -> bool:
         """Persist the final response, not intermediate agent/tool messages."""
-        self._validate_identifiers(conversation_id, user_id, request_id)
+        self._validate_identifiers(conversation_id, email, request_id)
         message = self._build_message(
             request_id=request_id,
             role="assistant",
@@ -54,7 +54,7 @@ class MemoryMessageService:
         )
         return self._persist(
             conversation_id=conversation_id,
-            user_id=user_id,
+            email=email,
             message=message,
         )
 
@@ -62,7 +62,7 @@ class MemoryMessageService:
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        email: str,
         request_id: str,
         sanitized_user_content: str,
         assistant_content: str,
@@ -72,14 +72,14 @@ class MemoryMessageService:
         """Persist both messages of one completed turn."""
         self.save_user_message(
             conversation_id=conversation_id,
-            user_id=user_id,
+            email=email,
             request_id=request_id,
             sanitized_content=sanitized_user_content,
             sent_at=sent_at,
         )
         self.save_assistant_message(
             conversation_id=conversation_id,
-            user_id=user_id,
+            email=email,
             request_id=request_id,
             content=assistant_content,
             consulted_agents=consulted_agents,
@@ -88,11 +88,11 @@ class MemoryMessageService:
     @staticmethod
     def _validate_identifiers(
         conversation_id: str,
-        user_id: str,
+        email: str,
         request_id: str,
     ) -> None:
-        if not conversation_id.strip() or not user_id.strip() or not request_id.strip():
-            raise ValueError("conversation_id, user_id e request_id são obrigatórios")
+        if not conversation_id.strip() or not email.strip() or not request_id.strip():
+            raise ValueError("conversation_id, email e request_id são obrigatórios")
 
     @staticmethod
     def _build_message(
@@ -118,11 +118,11 @@ class MemoryMessageService:
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        email: str,
         message: StoredMessage,
     ) -> bool:
         return self._repository.append_message(
             conversation_id=conversation_id,
-            user_id=user_id,
+            email=email,
             message=message,
         )

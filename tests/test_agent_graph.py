@@ -136,9 +136,7 @@ def _passing_output(state: dict[str, Any]) -> dict[str, Any]:
 
 
 class EmptyContextEnricher:
-    def restore_messages(
-        self, *, user_id: str, conversation_id: str
-    ) -> list[AnyMessage]:
+    def restore_messages(self, *, email: str, conversation_id: str) -> list[AnyMessage]:
         return []
 
 
@@ -176,7 +174,7 @@ def test_graph_dispatches_to_faq_compiler_and_judge() -> None:
         {
             "request": {
                 "request_id": "request-1",
-                "user_id": "user-1",
+                "email": "user-1",
                 "conversation_id": "conversation-1",
                 "sanitized_message": "pergunta original",
                 "is_new_conversation": True,

@@ -138,7 +138,7 @@ def test_input_node_propagates_sanitized_message_to_request_context() -> None:
         **_state(original),
         "request": {
             "request_id": "request-1",
-            "user_id": "user-1",
+            "email": "user-1",
             "conversation_id": "conversation-1",
         },
     }

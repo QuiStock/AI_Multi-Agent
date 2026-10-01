@@ -38,7 +38,7 @@ class ConversationDocument(TypedDict):
     """Persisted conversation shape; summary state belongs to Qdrant."""
 
     _id: str
-    user_id: str
+    email: str
     started_at: datetime
     updated_at: datetime
     ended_at: datetime | None
@@ -54,7 +54,7 @@ class ConversationSummarySnapshot(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     conversation_id: str = Field(min_length=1)
-    user_id: str = Field(min_length=1)
+    email: str = Field(min_length=1)
     title: str | None = None
     status: Literal["active", "ended"]
     summary: str | None = None
@@ -77,7 +77,7 @@ class SummaryCommit(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     conversation_id: str = Field(min_length=1)
-    user_id: str = Field(min_length=1)
+    email: str = Field(min_length=1)
     expected_summary_version: int = Field(ge=0)
     expected_message_id: str | None
     summary: str = Field(min_length=1)
@@ -88,7 +88,7 @@ class SummaryCommit(BaseModel):
 class SummarySearchRequest:
     """Inputs for one semantic summary search."""
 
-    user_id: str
+    email: str
     conversation_id: str
     query: str
     collection_name: str
@@ -148,7 +148,7 @@ class ConversationRepository(Protocol):
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        email: str,
         message: StoredMessage,
     ) -> bool:
         """Return True if inserted, or False if this message was already stored."""

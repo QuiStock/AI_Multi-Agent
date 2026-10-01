@@ -53,7 +53,7 @@ class MongoSummaryJobRepository:
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        email: str,
         closure_key: str,
         request_id: str | None,
         now: datetime,
@@ -61,7 +61,7 @@ class MongoSummaryJobRepository:
         if not self._indexes_ready:
             self.ensure_indexes()
         self._validate_key(conversation_id, "conversation_id")
-        self._validate_key(user_id, "user_id")
+        self._validate_key(email, "email")
         self._validate_key(closure_key, "closure_key")
         self._require_aware(now)
         identity = json.dumps([conversation_id, closure_key], separators=(",", ":"))
@@ -69,7 +69,7 @@ class MongoSummaryJobRepository:
         document = {
             "_id": job_id,
             "conversation_id": conversation_id,
-            "user_id": user_id,
+            "email": email,
             "closure_key": closure_key,
             "request_id": request_id,
             "status": "queued",
@@ -95,7 +95,7 @@ class MongoSummaryJobRepository:
         )
         if stored is None:
             raise RuntimeError("Job de resumo não foi persistido")
-        if stored.get("user_id") != user_id:
+        if stored.get("email") != email:
             raise ValueError("A chave de encerramento já pertence a outro usuário")
         return self._parse(stored)
 

@@ -18,12 +18,12 @@ class FakeSummarySearchService:
     def search_context(
         self,
         *,
-        user_id: str,
+        email: str,
         conversation_id: str,
         query: str,
     ) -> SummaryContextSelection:
         self.arguments = {
-            "user_id": user_id,
+            "email": email,
             "conversation_id": conversation_id,
             "query": query,
         }
@@ -34,7 +34,7 @@ def _tool(service: FakeSummarySearchService):
     return build_search_conversation_summaries_tool(
         service=service,
         context=SummarySearchToolContext(
-            user_id="authenticated-user",
+            email="authenticated-user",
             conversation_id="current-conversation",
             query="O que combinamos na conversa anterior?",
             request_id="request-1",
@@ -63,7 +63,7 @@ def test_router_memory_tool_uses_bound_identity_and_returns_typed_results() -> N
 
     assert tool.args == {}
     assert service.arguments == {
-        "user_id": "authenticated-user",
+        "email": "authenticated-user",
         "conversation_id": "current-conversation",
         "query": "O que combinamos na conversa anterior?",
     }

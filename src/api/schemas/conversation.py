@@ -10,12 +10,11 @@ class ConversationRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    user_id: str = Field(min_length=1)
     message: str = Field(min_length=1, max_length=4_000)
     sent_at: AwareDatetime
     is_resuming_conversation: bool = False
 
-    @field_validator("user_id", "message")
+    @field_validator("message")
     @classmethod
     def reject_blank_values(cls, value: str) -> str:
         if not value.strip():
