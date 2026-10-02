@@ -32,4 +32,5 @@ def converse(
         conversation_id=conversation_id,
         request=request,
         email=principal.email,
+        role_id=principal.role_id,
     )

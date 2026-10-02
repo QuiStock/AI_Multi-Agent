@@ -76,18 +76,22 @@ def _setup(
         "src.auth.token", fromlist=["decoder_from_json_keyring"]
     )
     decoder_module.decoder_from_json_keyring.cache_clear()
-    FakeAccountRepository.result = (
+    monkeypatch.setattr(
+        FakeAccountRepository,
+        "result",
         None
         if missing_account
-        else UserAccount(email="person@example.test", role_id=role_id)
+        else UserAccount(email="person@example.test", role_id=role_id),
     )
-    FakeAccountRepository.fail = database_error
+    monkeypatch.setattr(FakeAccountRepository, "fail", database_error)
     monkeypatch.setattr(
         "src.api.dependencies.PostgresAccountRepository", FakeAccountRepository
     )
+    monkeypatch.setattr(
+        "src.api.dependencies.get_postgres_pool", lambda request: object()
+    )
     graph = GraphSpy()
     app = create_app()
-    app.state.postgres_pool = object()
     app.dependency_overrides[api.dependencies.get_graph] = lambda: graph
     return app, graph
 

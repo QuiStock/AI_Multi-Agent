@@ -39,6 +39,7 @@ class ConversationService:
         conversation_id: str,
         request: ConversationRequest,
         email: str,
+        role_id: int,
     ) -> ConversationResponse:
         normalized_conversation_id = conversation_id.strip()
         if not normalized_conversation_id:
@@ -49,10 +50,14 @@ class ConversationService:
             "request": {
                 "request_id": request_id,
                 "email": email,
+                "role_id": role_id,
                 "conversation_id": normalized_conversation_id,
                 "sent_at": request.sent_at,
                 "is_new_conversation": not request.is_resuming_conversation,
                 "is_resuming_conversation": request.is_resuming_conversation,
+                "product_card": request.product_card.model_dump(mode="json")
+                if request.product_card
+                else None,
             },
             "messages": [
                 HumanMessage(

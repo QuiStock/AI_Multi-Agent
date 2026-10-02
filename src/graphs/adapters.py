@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
-from typing import Any, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 
 from langchain_core.messages import (
     AIMessage,
@@ -16,6 +16,7 @@ from src.graphs.state import (
     FAQResult,
     GraphState,
     JudgeResult,
+    ProductWorkFlowResult,
     ResponseDraft,
     RoutingDecision,
 )
@@ -78,6 +79,10 @@ class MemoryMessagePersistencePort(Protocol):
 
 
 class FAQExecutorPort(Protocol):
+    def invoke(self, state: dict[str, Any]) -> dict[str, Any]: ...
+
+
+class ProductWorkflowExecutorPort(Protocol):
     def invoke(self, state: dict[str, Any]) -> dict[str, Any]: ...
 
 
@@ -168,6 +173,40 @@ def run_faq_node(
         "agent_results": {
             "faq": faq_result,
         },
+        "evidences": evidences,
+    }
+
+
+def run_product_workflow_node(
+    state: GraphState,
+    *,
+    executor: ProductWorkflowExecutorPort,
+) -> GraphUpdate:
+    current_state = sanitized_state(state)
+    result = executor.invoke(
+        {
+            "messages": current_state.get("messages", []),
+            "request": current_state.get("request", {}),
+        }
+    )
+    answer = str(result.get("answer", "")).strip()
+    evidences = cast(list[Evidence], result.get("evidences", []))
+    raw_status = result.get("status", "unavailable")
+    status = cast(
+        Literal["success", "unavailable", "error"],
+        raw_status
+        if raw_status in {"success", "unavailable", "error"}
+        else "unavailable",
+    )
+    product_result: ProductWorkFlowResult = {
+        "status": status,
+        "answer": answer,
+        "evidence_ids": [item["evidence_id"] for item in evidences],
+    }
+    if status == "error":
+        product_result["error_code"] = "PRODUCT_WORKFLOW_UNAVAILABLE"
+    return {
+        "agent_results": {"product_workflow": product_result},
         "evidences": evidences,
     }
 

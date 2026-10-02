@@ -19,6 +19,10 @@ from src.agents.faq.ingestion.vectorstore.qdrant_store import QdrantStore
 from src.agents.faq.retrieval.qdrant_retriever import QdrantRetriever
 from src.agents.faq.tools.faq_tool import create_faq_search_tool
 from src.agents.judge.executor import JudgeExecutor
+from src.agents.product_workflow.executor import ProductWorkflowExecutor
+from src.agents.product_workflow.tools.product_card_repository import (
+    ProductCardRepository,
+)
 from src.agents.router.executor import RouterExecutor
 from src.agents.tool_registry import TOOL_REGISTRY
 from src.api.controllers.conversation_controller import ConversationController
@@ -37,7 +41,7 @@ from src.auth.errors import (
 from src.auth.models import AuthenticatedPrincipal
 from src.auth.service import AuthenticationService
 from src.auth.token import decoder_from_json_keyring
-from src.graphs.adapters import GraphNode, run_faq_node
+from src.graphs.adapters import GraphNode, run_faq_node, run_product_workflow_node
 from src.graphs.agent_graph import create_agent_graph
 from src.graphs.state import RouteName
 from src.guardrails.config import GuardrailConfig
@@ -187,8 +191,10 @@ def get_conversation_summary_scheduler() -> ConversationSummaryScheduler:
     )
 
 
-@lru_cache
-def get_graph() -> CompiledStateGraph:
+def get_graph(request: Request) -> CompiledStateGraph:
+    cached = getattr(request.app.state, "conversation_graph", None)
+    if cached is not None:
+        return cast(CompiledStateGraph, cached)
     settings = config.get_settings()
     repository = get_conversation_repository()
 
@@ -213,8 +219,19 @@ def get_graph() -> CompiledStateGraph:
             executor=faq_executor,
         )
     }
+    pool = getattr(request.app.state, "postgres_pool", None)
+    if pool is not None:
+        product_executor = ProductWorkflowExecutor(
+            ProductCardRepository(
+                pool,
+                statement_timeout_ms=int(settings.postgres_pool_timeout_seconds * 1000),
+            )
+        )
+        capabilities["product_workflow"] = partial(
+            run_product_workflow_node, executor=product_executor
+        )
 
-    return create_agent_graph(
+    graph = create_agent_graph(
         input_guardrail=cast(
             GraphNode,
             partial(
@@ -236,6 +253,8 @@ def get_graph() -> CompiledStateGraph:
         message_service=MemoryMessageService(repository),
         checkpointer=get_checkpointer(),
     )
+    request.app.state.conversation_graph = graph
+    return graph
 
 
 def get_conversation_controller(

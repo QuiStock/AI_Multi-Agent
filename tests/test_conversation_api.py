@@ -83,6 +83,7 @@ def test_conversation_endpoint_invokes_graph_and_returns_metadata(app_client) ->
 
     assert graph.state is not None
     assert graph.state["request"]["email"] == "user-1"
+    assert graph.state["request"]["role_id"] == 2
     assert graph.state["request"]["sent_at"] == datetime(
         2026,
         9,
@@ -110,6 +111,26 @@ def test_conversation_endpoint_propagates_resume_flag(app_client) -> None:
     assert graph.state is not None
     assert graph.state["request"]["is_resuming_conversation"] is True
     assert graph.state["request"]["is_new_conversation"] is False
+
+
+def test_conversation_endpoint_propagates_card_snapshot(app_client) -> None:
+    client, graph = app_client
+    response = client.post(
+        "/api/v1/conversations/conversation-1/messages",
+        json=_payload(product_card={"product_name": "Leite Integral", "sku": "SKU-1"}),
+    )
+    assert response.status_code == 200
+    assert graph.state is not None
+    assert graph.state["request"]["product_card"]["product_name"] == "Leite Integral"
+
+
+def test_conversation_endpoint_rejects_unknown_card_fields(app_client) -> None:
+    client, _ = app_client
+    response = client.post(
+        "/api/v1/conversations/conversation-1/messages",
+        json=_payload(product_card={"product_name": "Leite", "store_id": 7}),
+    )
+    assert response.status_code == 422
 
 
 def test_conversation_endpoint_rejects_timestamp_without_timezone(app_client) -> None:

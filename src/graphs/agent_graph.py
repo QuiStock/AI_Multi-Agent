@@ -88,6 +88,29 @@ def judge_blocked_node(state: GraphState) -> GraphState:
     }
 
 
+def product_workflow_unavailable_node(state: GraphState) -> GraphState:
+    result = state.get("agent_results", {}).get("product_workflow", {})
+    content = result.get("answer") or (
+        "Não consegui consultar os dados do produto agora. Tente novamente mais tarde."
+    )
+    return {
+        "final_response": {
+            "content": content,
+            "status": "error",
+        },
+        "status": "completed",
+    }
+
+
+def decide_after_product_workflow(state: GraphState) -> str:
+    result = state.get("agent_results", {}).get("product_workflow", {})
+    return (
+        "product_workflow_unavailable"
+        if result.get("status") == "error"
+        else "compiler"
+    )
+
+
 def _as_runnable(
     node: GraphNode,
 ) -> RunnableLambda[GraphState, GraphState]:
@@ -198,6 +221,12 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
     )
 
     graph.add_node(
+        "product_workflow_unavailable",
+        _as_runnable(product_workflow_unavailable_node),
+        input_schema=GraphState,
+    )
+
+    graph.add_node(
         "persist_turn",
         _as_runnable(
             partial(
@@ -244,7 +273,17 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
     )
 
     for route in capabilities:
-        graph.add_edge(route, "compiler")
+        if route == "product_workflow":
+            graph.add_conditional_edges(
+                route,
+                decide_after_product_workflow,
+                {
+                    "compiler": "compiler",
+                    "product_workflow_unavailable": "product_workflow_unavailable",
+                },
+            )
+        else:
+            graph.add_edge(route, "compiler")
 
     graph.add_edge(
         "compiler",
@@ -269,6 +308,7 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
         "clarification_required",
         "out_of_scope",
         "judge_blocked",
+        "product_workflow_unavailable",
     ):
         graph.add_edge(terminal_node, "persist_turn")
 

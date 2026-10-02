@@ -45,6 +45,13 @@ class RouterExecutor:
                 "outcome": "dispatch",
                 "reason": decision.reason,
             }
+        if decision.route == "product_workflow":
+            return {
+                "route": "product_workflow",
+                "target_agent": "product_workflow",
+                "outcome": "dispatch",
+                "reason": decision.reason,
+            }
         if decision.route == "clarification_required":
             return {
                 "route": "clarification_required",

@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
+from src.agents.product_workflow.schemas import ProductCard
+
 
 class ConversationRequest(BaseModel):
     """Input required to process one user message."""
@@ -13,6 +15,7 @@ class ConversationRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4_000)
     sent_at: AwareDatetime
     is_resuming_conversation: bool = False
+    product_card: ProductCard | None = None
 
     @field_validator("message")
     @classmethod

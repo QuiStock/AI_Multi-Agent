@@ -26,10 +26,11 @@ Snapshot atual:
   de jobs de resumo; Qdrant mantém o conteúdo dos resumos e atende FAQ. O
   checkpointer local é `MemorySaver` para desenvolvimento/testes.
 - `src/observability/{audit,metrics,traces}.py` ainda é placeholder.
-- A composição de produção em `src/api/dependencies.py` ativa somente a rota
-  `faq`. Os papéis `router`, `faq_rag`, `evidence_judge` e `compiler` estão
-  registrados; `product_workflow` existe no tipo de rota, mas ainda não tem
-  card/executor registrado nem tool comercial.
+- A composição de produção em `src/api/dependencies.py` ativa as rotas `faq` e
+  `product_workflow` quando PostgreSQL está configurado. O Product Workflow
+  recebe snapshot de card como evidência de origem cliente e tem lookup fixo,
+  parametrizado e somente leitura, restrito a role 2/3, lojas ativas e itens
+  sem evento `EXPIRED`. Grants efetivos ainda precisam de validação no ambiente.
 - MCP e A2A são requisitos acadêmicos futuros; não são capacidades ativas
   nesta implementação.
 - O roadmap confirmado para autenticação, rota A2A, `product_workflow`, MCP,
@@ -65,7 +66,7 @@ Fluxo executável atual:
 
 ```text
 HTTP -> input_guardrail -> context_enrichment -> normalize_user_message
-     -> router -> faq (única capacidade ativa)
+     -> router -> faq | product_workflow
      -> compiler -> evidence_judge -> output_guardrail
      -> persist_turn -> resposta HTTP
 ```
@@ -82,8 +83,8 @@ Guardrails não são agentes: são controles obrigatórios do fluxo.
 | Agente | Papel | Estado atual |
 |---|---|---|
 | `router` | Classificar a intenção e escolher uma rota permitida. | Registrado e usado pelo grafo. |
-| `faq_rag` | Responder em português usando apenas documentos recuperados. | Registrado e única capacidade de domínio ativa. |
-| `product_workflow` | Consultar e explicar métricas, análises ML, sugestões e decisões comerciais. | Papel previsto; não implementado/registrado nesta branch. |
+| `faq_rag` | Responder em português usando apenas documentos recuperados. | Registrado e ativo. |
+| `product_workflow` | Explicar snapshot/card e consultar sugestão vigente para outro produto. | Registrado; read-only; requer PostgreSQL e grants autorizados. |
 | `evidence_judge` | Avaliar se o rascunho está sustentado pelas evidências e citações. | Registrado e usado após o compiler. |
 | `response_compiler` (`compiler`) | Sintetizar os resultados especializados em uma resposta candidata. | Registrado e usado antes do judge. |
 
@@ -103,10 +104,12 @@ recalcula regras do ML e deve recusar quando não houver suporte suficiente.
 
 ### Product Workflow
 
-Quando implementado, será somente leitura: consultará dados publicados e
-explicará o resultado do ML. Não poderá recalcular fluxo, alterar sugestões,
-criar pedidos, ativar promoções ou escrever no banco. Até lá, qualquer pedido
-de recomendação ou operação deve cair em rota controlada.
+É somente leitura: usa o snapshot recebido para o produto do card ou consulta
+outra sugestão por query fixa parametrizada. O escopo de loja vem de `email` e
+`role_id` autenticados: role 3 vê `available_for_triage`; role 2 vê
+`SENT_TO_MANAGER`; ambas excluem `suggestion_log.event = 'EXPIRED'`. Snapshot
+tem proveniência cliente, nunca banco. Não recalcula ML, altera sugestões,
+cria pedidos, ativa promoções ou escreve no PostgreSQL.
 
 ### Evidence Judge
 
@@ -152,14 +155,17 @@ está registrado e `src/api/dependencies.py` define o que entra no grafo.
 |---|---|---|
 | Router | `search_conversation_summaries` | Somente memória do próprio usuário; até 3 resumos encerrados, score inicial `>= 0.5`, conversa atual excluída e validação posterior no MongoDB. |
 | FAQ/RAG | `faq_search` | Consulta apenas o Qdrant da coleção FAQ; `top_k=4`, relevância mínima padrão `0.30`; sem busca externa. |
-| Product Workflow | Nenhuma ativa | Futuras tools devem ser queries/repositórios predefinidos, read-only, parametrizados e com escopo de loja aplicado no servidor. |
+| Product Workflow | `product_card_lookup` | Query predefinida e parametrizada; email/cargo são vinculados pelo runtime, não são argumentos do modelo. |
 | Judge | Nenhuma | Validação pura do payload recebido. |
 | Compiler | Nenhuma | Usa somente resultados e evidências já presentes no estado. |
 
 Detalhes de wiring importantes:
 
 - `TOOL_REGISTRY` começa vazio. A composição registra `faq_search` antes de
-  construir o `FAQExecutor`; IDs ausentes devem falhar explicitamente.
+  construir o `FAQExecutor`; IDs ausentes devem falhar explicitamente. O
+  `product_card_lookup` é ligado por requisição ao pool e ao principal
+  autenticado e injetado diretamente no AgentCard; não pode ser guardado em
+  registry global com identidade de usuário.
 - O card do router declara a tool de memória, mas o `get_graph()` atual cria
   `RouterExecutor()` sem `summary_search_service`; portanto essa tool não está
   ativa no caminho HTTP padrão. Testes podem injetá-la.
