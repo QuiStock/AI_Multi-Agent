@@ -37,6 +37,7 @@ ROUTER_CARD = AgentCard(
     tags=["router", "classification"],
     routing_intents=[
         "faq",
+        "product_workflow",
         "clarification_required",
         "out_of_scope",
     ],

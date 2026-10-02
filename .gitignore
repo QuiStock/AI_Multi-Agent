@@ -5,6 +5,10 @@
 
 .coverage
 .venv
+venv/
+dist/
+*.egg-info/
+*.pyc
 .vscode/
 
 # Secrets

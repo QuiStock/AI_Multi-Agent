@@ -17,6 +17,8 @@ def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         settings = config.get_settings()
+        application.state.conversation_graph = None
+        application.state.postgres_pool = None
         pool: ConnectionPool | None = None
         if settings.postgres_dsn:
             pool = create_postgres_pool(
@@ -28,8 +30,10 @@ def create_app() -> FastAPI:
         try:
             yield
         finally:
+            application.state.conversation_graph = None
             if pool is not None:
                 pool.close()
+            application.state.postgres_pool = None
 
     app = FastAPI(
         title="Quistock AI API",
