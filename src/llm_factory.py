@@ -38,7 +38,14 @@ llm_groq = ChatGroq(
     api_key=_secret(config.GROQ_API_KEY, "groq"),
 )
 
-# Temporary Gemini-only configuration for local flow testing. This prevents
+
+llm_guardrail = ChatGroq(
+    model=config.GROQ_FAST_MODEL,
+    temperature=0.0,
+    api_key=_secret(config.GROQ_API_KEY, "groq"),
+)
+
+# Temporary Gemini-only configuration for local FAQ flow testing. This prevents
 # the FAQ and guardrail paths from calling the unavailable Groq model.
 llm = llm_gemini
 
@@ -90,5 +97,6 @@ __all__ = [
     "llm_fast",
     "llm_gemini",
     "llm_gemini_title",
+    "llm_guardrail",
     "llm_groq",
 ]
