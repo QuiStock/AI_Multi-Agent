@@ -4,6 +4,8 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage
 
+from src.guardrails import input as input_module
+
 from src.guardrails.input_guardrail import (
     CONTROLLED_INPUT_RESPONSE,
     input_guardrail_node,
@@ -119,6 +121,30 @@ def test_classifier_failure_fails_closed() -> None:
 
     assert result["status"] == "blocked"
     assert result["reason_code"] == "classifier_unavailable"
+
+
+def test_semantic_classifier_uses_groq_policy_and_separate_user_message(
+    monkeypatch: Any,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    class FakeGuardrailModel:
+        def invoke(self, messages: list[Any]) -> Any:
+            captured["messages"] = messages
+            return type("Result", (), {"content": "CATEGORIA: APROVADO"})()
+
+    monkeypatch.setattr(
+        "src.llm_factory.llm_guardrail",
+        FakeGuardrailModel(),
+    )
+    message = "Como funciona a segurança do sistema?"
+
+    result = input_module._classify_semantically(message)
+
+    assert result == "APROVADO"
+    system_message, user_message = captured["messages"]
+    assert system_message.content == input_module._SEMANTIC_PROMPT
+    assert user_message.content == message
 
 
 def test_input_node_writes_guardrail_result_and_processing_status() -> None:
