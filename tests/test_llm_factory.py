@@ -33,6 +33,7 @@ class FakeModel:
 def test_factory_uses_configured_provider_models() -> None:
     assert llm_factory.llm_gemini.model == config.GEMINI_CHAT_MODEL
     assert llm_factory.llm_groq.model == config.GROQ_CHAT_MODEL
+    assert llm_factory.llm_guardrail.model == config.GROQ_FAST_MODEL
     assert llm_factory.llm_gemini_title.model == config.GEMINI_TITLE_MODEL
     assert llm_factory.llm_fast.model == config.GEMINI_CHAT_MODEL
     assert llm_factory.embeddings.model == config.GEMINI_EMBEDDING_MODEL
