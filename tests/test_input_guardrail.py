@@ -5,7 +5,6 @@ from typing import Any
 from langchain_core.messages import HumanMessage
 
 from src.guardrails import input as input_module
-
 from src.guardrails.input_guardrail import (
     CONTROLLED_INPUT_RESPONSE,
     input_guardrail_node,
