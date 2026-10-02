@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     gemini_title_model: str = "gemini-2.5-flash-lite"
     gemini_embedding_model: str = "gemini-embedding-2-preview"
     groq_chat_model: str = "llama-3.3-70b-versatile"
-    groq_fast_model: str = "llama-3.3-70b-versatile"
+    groq_fast_model: str = "openai/gpt-oss-safeguard-20b"
 
     # Model parameters
     llm_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
