@@ -220,7 +220,7 @@ def get_graph() -> CompiledStateGraph:
             partial(
                 input_guardrail_node,
                 guardrail_config=GuardrailConfig(
-                    classify_semantically=False,
+                    classify_semantically=True,
                 ),
             ),
         ),
