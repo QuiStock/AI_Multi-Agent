@@ -18,7 +18,7 @@ class SummaryJob(BaseModel):
 
     job_id: str = Field(min_length=1)
     conversation_id: str = Field(min_length=1)
-    user_id: str = Field(min_length=1)
+    email: str = Field(min_length=1)
     closure_key: str = Field(min_length=1)
     request_id: str | None = None
     status: SummaryJobStatus = "queued"

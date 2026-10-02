@@ -48,7 +48,7 @@ def test_first_user_message_creates_the_single_conversation_document(
 ) -> None:
     created = message_service.save_user_message(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         request_id="request-1",
         sanitized_content="$2 milk",
     )
@@ -57,7 +57,7 @@ def test_first_user_message_creates_the_single_conversation_document(
     assert created is True
     assert document is not None
     assert "session_id" not in document
-    assert document["user_id"] == "user-1"
+    assert document["email"] == "user-1"
     assert document["status"] == "active"
     assert document["title"] is None
     assert document["total_turns"] == 0
@@ -76,13 +76,13 @@ def test_conversation_document_keeps_ordered_messages_without_summary_fields(
 ) -> None:
     message_service.save_user_message(
         conversation_id="conversation-ordered",
-        user_id="user-1",
+        email="user-1",
         request_id="request-1",
         sanitized_content="Question",
     )
     message_service.save_assistant_message(
         conversation_id="conversation-ordered",
-        user_id="user-1",
+        email="user-1",
         request_id="request-1",
         content="Answer",
         consulted_agents=["faq"],
@@ -113,21 +113,21 @@ def test_assistant_reply_appends_and_increments_turns_once(
 ) -> None:
     message_service.save_user_message(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         request_id="request-1",
         sanitized_content="Question",
     )
 
     inserted = message_service.save_assistant_message(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         request_id="request-1",
         content="$Answer",
         consulted_agents=["product_workflow"],
     )
     retry_inserted = message_service.save_assistant_message(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         request_id="request-1",
         content="$Answer",
         consulted_agents=["product_workflow"],
@@ -152,7 +152,7 @@ def test_repeated_user_request_does_not_duplicate_message(
 ) -> None:
     arguments = {
         "conversation_id": "conversation-1",
-        "user_id": "user-1",
+        "email": "user-1",
         "request_id": "request-1",
         "sanitized_content": "Question",
     }
@@ -171,7 +171,7 @@ def test_conversation_is_scoped_to_its_user(
 ) -> None:
     message_service.save_user_message(
         conversation_id="conversation-1",
-        user_id="owner",
+        email="owner",
         request_id="request-1",
         sanitized_content="Private",
     )
@@ -179,14 +179,14 @@ def test_conversation_is_scoped_to_its_user(
     with pytest.raises(ConversationNotFoundError):
         message_service.save_user_message(
             conversation_id="conversation-1",
-            user_id="another-user",
+            email="another-user",
             request_id="request-2",
             sanitized_content="Do not append",
         )
 
     document = conversation_collection.find_one({"_id": "conversation-1"})
     assert document is not None
-    assert document["user_id"] == "owner"
+    assert document["email"] == "owner"
     assert len(document["messages"]) == 1
 
 
@@ -196,7 +196,7 @@ def test_assistant_cannot_create_a_conversation(
     with pytest.raises(ConversationNotFoundError):
         message_service.save_assistant_message(
             conversation_id="missing-conversation",
-            user_id="user-1",
+            email="user-1",
             request_id="request-1",
             content="Orphan response",
             consulted_agents=[],
@@ -209,7 +209,7 @@ def test_ended_conversation_rejects_new_messages_but_accepts_retry(
 ) -> None:
     message_service.save_user_message(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         request_id="request-1",
         sanitized_content="Question",
     )
@@ -221,7 +221,7 @@ def test_ended_conversation_rejects_new_messages_but_accepts_retry(
     assert (
         message_service.save_user_message(
             conversation_id="conversation-1",
-            user_id="user-1",
+            email="user-1",
             request_id="request-1",
             sanitized_content="Question",
         )
@@ -230,7 +230,7 @@ def test_ended_conversation_rejects_new_messages_but_accepts_retry(
     with pytest.raises(ConversationClosedError):
         message_service.save_user_message(
             conversation_id="conversation-1",
-            user_id="user-1",
+            email="user-1",
             request_id="request-2",
             sanitized_content="New message",
         )
@@ -246,13 +246,13 @@ def test_stored_dates_are_utc_and_updated_at_tracks_latest_message(
 ) -> None:
     message_service.save_user_message(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         request_id="request-1",
         sanitized_content="Question",
     )
     message_service.save_assistant_message(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         request_id="request-1",
         content="Answer",
         consulted_agents=[],
@@ -275,13 +275,13 @@ def test_summary_snapshot_accepts_qdrant_state_without_persisting_it_in_mongo(
     repository = MongoConversationRepository(conversation_collection)
     message_service.save_user_message(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         request_id="request-1",
         sanitized_content="Question",
     )
     message_service.save_assistant_message(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         request_id="request-1",
         content="Answer",
         consulted_agents=[],
@@ -289,12 +289,12 @@ def test_summary_snapshot_accepts_qdrant_state_without_persisting_it_in_mongo(
 
     repository.mark_ended(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         ended_at=datetime.now(timezone.utc),
     )
     snapshot = repository.get_summary_snapshot(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         summary="Question and answer.",
         summary_version=1,
         summarized_through_message_id="request-1:assistant",
@@ -323,13 +323,13 @@ def test_ended_conversation_is_listed_and_reopened_with_existing_history(
     repository = MongoConversationRepository(conversation_collection)
     message_service.save_user_message(
         conversation_id="conversation-resume",
-        user_id="user-1",
+        email="user-1",
         request_id="request-1",
         sanitized_content="Question",
     )
     message_service.save_assistant_message(
         conversation_id="conversation-resume",
-        user_id="user-1",
+        email="user-1",
         request_id="request-1",
         content="Answer",
         consulted_agents=[],
@@ -340,14 +340,14 @@ def test_ended_conversation_is_listed_and_reopened_with_existing_history(
     )
     repository.mark_ended(
         conversation_id="conversation-resume",
-        user_id="user-1",
+        email="user-1",
         ended_at=datetime.now(timezone.utc),
     )
 
-    listed = repository.list_ended_conversations(user_id="user-1")
+    listed = repository.list_ended_conversations(email="user-1")
     messages = repository.resume_conversation(
         conversation_id="conversation-resume",
-        user_id="user-1",
+        email="user-1",
         resumed_at=datetime.now(timezone.utc),
     )
 
@@ -371,25 +371,25 @@ def test_conversation_history_cannot_be_resumed_by_another_user(
     repository = MongoConversationRepository(conversation_collection)
     message_service.save_user_message(
         conversation_id="private-conversation",
-        user_id="owner",
+        email="owner",
         request_id="request-1",
         sanitized_content="Private question",
     )
     repository.mark_ended(
         conversation_id="private-conversation",
-        user_id="owner",
+        email="owner",
         ended_at=datetime.now(timezone.utc),
     )
 
     with pytest.raises(ConversationNotFoundError):
         repository.resume_conversation(
             conversation_id="private-conversation",
-            user_id="another-user",
+            email="another-user",
             resumed_at=datetime.now(timezone.utc),
         )
 
     document = conversation_collection.find_one({"_id": "private-conversation"})
     assert document is not None
-    assert document["user_id"] == "owner"
+    assert document["email"] == "owner"
     assert document["status"] == "ended"
     assert document["messages"][0]["content"] == "Private question"

@@ -15,12 +15,12 @@ class FakeConversationRepository:
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        email: str,
         resumed_at: datetime,
     ) -> list[StoredMessage]:
         self.arguments = {
             "conversation_id": conversation_id,
-            "user_id": user_id,
+            "email": email,
             "resumed_at": resumed_at,
         }
         return [
@@ -45,12 +45,12 @@ def test_context_enricher_reopens_and_preserves_stored_message_ids() -> None:
     enricher = ConversationContextEnricher(repository)  # type: ignore[arg-type]
 
     messages = enricher.restore_messages(
-        user_id="user-1",
+        email="user-1",
         conversation_id="conversation-1",
     )
 
     assert repository.arguments is not None
-    assert repository.arguments["user_id"] == "user-1"
+    assert repository.arguments["email"] == "user-1"
     assert repository.arguments["conversation_id"] == "conversation-1"
     assert repository.arguments["resumed_at"].tzinfo == timezone.utc
     assert isinstance(messages[0], HumanMessage)

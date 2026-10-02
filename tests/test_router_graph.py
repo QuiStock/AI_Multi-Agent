@@ -98,12 +98,12 @@ def test_router_can_call_summary_search_tool_from_authenticated_request_context(
         def search_context(
             self,
             *,
-            user_id: str,
+            email: str,
             conversation_id: str,
             query: str,
         ) -> dict[str, Any]:
             self.arguments = {
-                "user_id": user_id,
+                "email": email,
                 "conversation_id": conversation_id,
                 "query": query,
             }
@@ -140,7 +140,7 @@ def test_router_can_call_summary_search_tool_from_authenticated_request_context(
         {
             "request": {
                 "request_id": "request-1",
-                "user_id": "authenticated-user",
+                "email": "authenticated-user",
                 "conversation_id": "current-conversation",
                 "sanitized_message": "O que combinamos antes?",
             },
@@ -150,7 +150,7 @@ def test_router_can_call_summary_search_tool_from_authenticated_request_context(
     )
 
     assert service.arguments == {
-        "user_id": "authenticated-user",
+        "email": "authenticated-user",
         "conversation_id": "current-conversation",
         "query": "O que combinamos antes?",
     }

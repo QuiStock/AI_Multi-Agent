@@ -56,7 +56,7 @@ def test_summary_upsert_uses_a_stable_point_and_versioned_payload() -> None:
     )
     snapshot = ConversationSummarySnapshot(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         title="Title",
         status="ended",
         summary="Summary",
@@ -78,7 +78,7 @@ def test_summary_upsert_uses_a_stable_point_and_versioned_payload() -> None:
     assert first_point.vector == [0.1, 0.2]
     assert first_point.payload == {
         "memory_type": "conversation_summary",
-        "user_id": "user-1",
+        "email": "user-1",
         "conversation_id": "conversation-1",
         "status": "ended",
         "title": "Title",
@@ -98,7 +98,7 @@ def test_read_and_delete_use_the_stable_conversation_point_id() -> None:
     )
     snapshot = ConversationSummarySnapshot(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         title=None,
         status="ended",
         summary="Summary",
@@ -126,7 +126,7 @@ def test_upsert_does_not_regress_a_later_qdrant_watermark() -> None:
     )
     later = ConversationSummarySnapshot(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         title=None,
         status="ended",
         summary="Later summary",

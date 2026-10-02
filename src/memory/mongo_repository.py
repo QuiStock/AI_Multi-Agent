@@ -59,19 +59,19 @@ class MongoConversationRepository:
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        email: str,
         ended_at: datetime,
     ) -> datetime:
         """Close a conversation and return its stable closure timestamp."""
-        if not conversation_id.strip() or not user_id.strip():
-            raise ValueError("conversation_id e user_id são obrigatórios")
+        if not conversation_id.strip() or not email.strip():
+            raise ValueError("conversation_id e email são obrigatórios")
         if ended_at.tzinfo is None or ended_at.utcoffset() is None:
             raise ValueError("ended_at precisa incluir timezone")
 
         result = self._collection.update_one(
             {
                 "_id": conversation_id,
-                "user_id": user_id,
+                "email": email,
                 "status": "active",
             },
             {
@@ -85,7 +85,7 @@ class MongoConversationRepository:
             return ended_at
 
         existing = self._collection.find_one(
-            {"_id": conversation_id, "user_id": user_id},
+            {"_id": conversation_id, "email": email},
             {"status": 1, "ended_at": 1},
         )
         if existing is None:
@@ -98,20 +98,20 @@ class MongoConversationRepository:
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        email: str,
         summary: str | None = None,
         summary_version: int = 0,
         summarized_through_message_id: str | None = None,
     ) -> ConversationSummarySnapshot:
         """Assemble runtime summary state from Mongo messages and Qdrant data."""
-        if not conversation_id.strip() or not user_id.strip():
-            raise ValueError("conversation_id e user_id são obrigatórios")
+        if not conversation_id.strip() or not email.strip():
+            raise ValueError("conversation_id e email são obrigatórios")
 
         document = self._collection.find_one(
-            {"_id": conversation_id, "user_id": user_id},
+            {"_id": conversation_id, "email": email},
             {
                 "_id": 1,
-                "user_id": 1,
+                "email": 1,
                 "title": 1,
                 "status": 1,
                 "messages": 1,
@@ -131,7 +131,7 @@ class MongoConversationRepository:
 
         return ConversationSummarySnapshot(
             conversation_id=document["_id"],
-            user_id=document["user_id"],
+            email=document["email"],
             title=document.get("title"),
             status=document["status"],
             summary=summary,
@@ -145,19 +145,19 @@ class MongoConversationRepository:
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        email: str,
         resumed_at: datetime,
     ) -> list[StoredMessage]:
         """Reopen an owned ended conversation and return its ordered history."""
-        if not conversation_id.strip() or not user_id.strip():
-            raise ValueError("conversation_id e user_id são obrigatórios")
+        if not conversation_id.strip() or not email.strip():
+            raise ValueError("conversation_id e email são obrigatórios")
         if resumed_at.tzinfo is None or resumed_at.utcoffset() is None:
             raise ValueError("resumed_at precisa incluir timezone")
 
         result = self._collection.update_one(
             {
                 "_id": conversation_id,
-                "user_id": user_id,
+                "email": email,
                 "status": "ended",
             },
             {
@@ -170,7 +170,7 @@ class MongoConversationRepository:
         )
         if result.matched_count != 1:
             existing = self._collection.find_one(
-                {"_id": conversation_id, "user_id": user_id},
+                {"_id": conversation_id, "email": email},
                 {"status": 1},
             )
             if existing is None:
@@ -178,7 +178,7 @@ class MongoConversationRepository:
             raise ConversationNotEndedError(conversation_id)
 
         document = self._collection.find_one(
-            {"_id": conversation_id, "user_id": user_id, "status": "active"},
+            {"_id": conversation_id, "email": email, "status": "active"},
             {"messages": 1},
         )
         if document is None:
@@ -192,13 +192,13 @@ class MongoConversationRepository:
 
         return sorted(messages, key=lambda message: message.created_at)
 
-    def list_ended_conversations(self, *, user_id: str) -> list[ConversationListItem]:
+    def list_ended_conversations(self, *, email: str) -> list[ConversationListItem]:
         """Return IDs and titles of this user's ended conversations for the API."""
-        if not user_id.strip():
-            raise ValueError("user_id é obrigatório")
+        if not email.strip():
+            raise ValueError("email é obrigatório")
 
         documents = self._collection.find(
-            {"user_id": user_id, "status": "ended"},
+            {"email": email, "status": "ended"},
             {"_id": 1, "title": 1, "updated_at": 1},
         ).sort([("updated_at", -1), ("_id", -1)])
         conversations: list[ConversationListItem] = []
@@ -225,7 +225,7 @@ class MongoConversationRepository:
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        email: str,
         title: str,
     ) -> bool:
         """Save a generated title only while its source summary is current."""
@@ -234,7 +234,7 @@ class MongoConversationRepository:
         result = self._collection.update_one(
             {
                 "_id": conversation_id,
-                "user_id": user_id,
+                "email": email,
                 "status": "ended",
                 "$or": [{"title": None}, {"title": {"$exists": False}}],
             },
@@ -245,19 +245,19 @@ class MongoConversationRepository:
     def get_ended_conversation_metadata_by_ids(
         self,
         *,
-        user_id: str,
+        email: str,
         conversation_ids: list[str],
     ) -> dict[str, ConversationMetadata]:
         """Validate ownership/status and return metadata, never summary text."""
-        if not user_id.strip():
-            raise ValueError("user_id é obrigatório")
+        if not email.strip():
+            raise ValueError("email é obrigatório")
         if not conversation_ids:
             return {}
 
         documents = self._collection.find(
             {
                 "_id": {"$in": conversation_ids},
-                "user_id": user_id,
+                "email": email,
                 "status": "ended",
             },
             {"_id": 1, "title": 1, "updated_at": 1},
@@ -282,21 +282,21 @@ class MongoConversationRepository:
 
         return metadata
 
-    def mark_deleting(self, *, conversation_id: str, user_id: str) -> bool:
+    def mark_deleting(self, *, conversation_id: str, email: str) -> bool:
         """Transition an owned conversation to deleting before cross-store cleanup."""
         result = self._collection.update_one(
             {
                 "_id": conversation_id,
-                "user_id": user_id,
+                "email": email,
                 "status": {"$in": ["active", "ended", "deleting"]},
             },
             {"$set": {"status": "deleting"}},
         )
         return result.matched_count == 1
 
-    def delete_conversation(self, *, conversation_id: str, user_id: str) -> bool:
+    def delete_conversation(self, *, conversation_id: str, email: str) -> bool:
         result = self._collection.delete_one(
-            {"_id": conversation_id, "user_id": user_id, "status": "deleting"}
+            {"_id": conversation_id, "email": email, "status": "deleting"}
         )
         return result.deleted_count == 1
 
@@ -304,7 +304,7 @@ class MongoConversationRepository:
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        email: str,
         message: StoredMessage,
     ) -> bool:
         """Append one message atomically and idempotently.
@@ -315,7 +315,7 @@ class MongoConversationRepository:
         if message.role == "user":
             created = self._create_if_missing(
                 conversation_id=conversation_id,
-                user_id=user_id,
+                email=email,
                 first_message=message,
             )
             if created:
@@ -386,7 +386,7 @@ class MongoConversationRepository:
         result = self._collection.update_one(
             {
                 "_id": conversation_id,
-                "user_id": user_id,
+                "email": email,
                 "status": "active",
             },
             append_pipeline,
@@ -397,7 +397,7 @@ class MongoConversationRepository:
             return False
 
         conversation = self._collection.find_one(
-            {"_id": conversation_id, "user_id": user_id},
+            {"_id": conversation_id, "email": email},
             {"status": 1, "messages.message_id": 1},
         )
         if conversation is None:
@@ -418,12 +418,12 @@ class MongoConversationRepository:
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        email: str,
         first_message: StoredMessage,
     ) -> bool:
         document: ConversationDocument = {
             "_id": conversation_id,
-            "user_id": user_id,
+            "email": email,
             "started_at": first_message.created_at,
             "updated_at": first_message.created_at,
             "ended_at": None,

@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     # Optional settings already present in the local .env file
     database_url: str | None = None
     postgres_password: str | None = None
+    postgres_dsn: str | None = None
+    jwe_private_keys_json: str | None = None
+    postgres_pool_timeout_seconds: float = Field(default=2.0, gt=0)
+    health_probe_timeout_seconds: float = Field(default=2.0, gt=0)
     mongodb_uri: str | None = None
     mongodb_db: str | None = None
     qdrant_url: str | None = None
@@ -124,6 +128,8 @@ def validate_required_settings(
 
 def create_qdrant_client(
     current_settings: Settings | None = None,
+    *,
+    timeout: int | None = None,
 ) -> QdrantClient:
     """Create the Qdrant Cloud client from the configured URL and API key."""
     current_settings = current_settings or get_settings()
@@ -135,6 +141,7 @@ def create_qdrant_client(
     return QdrantClient(
         url=current_settings.qdrant_url,
         api_key=current_settings.qdrant_api_key,
+        timeout=timeout,
     )
 
 

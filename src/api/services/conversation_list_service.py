@@ -15,13 +15,13 @@ class ConversationListService:
     def __init__(self, repository: MongoConversationRepository) -> None:
         self._repository = repository
 
-    def list_ended(self, *, user_id: str) -> ConversationListResponse:
-        normalized_user_id = user_id.strip()
-        if not normalized_user_id:
-            raise ConversationListValidationError("user_id é obrigatório")
+    def list_ended(self, *, email: str) -> ConversationListResponse:
+        normalized_email = email.strip()
+        if not normalized_email:
+            raise ConversationListValidationError("email é obrigatório")
 
         conversations = self._repository.list_ended_conversations(
-            user_id=normalized_user_id,
+            email=normalized_email,
         )
         return ConversationListResponse(
             conversations=[

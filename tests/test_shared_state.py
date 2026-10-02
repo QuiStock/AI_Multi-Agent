@@ -71,7 +71,7 @@ def test_memory_is_optional_in_shared_state() -> None:
     state_without_memory: GraphState = {
         "request": {
             "request_id": "request-1",
-            "user_id": "user-1",
+            "email": "user-1",
             "conversation_id": "conversation-1",
         },
         "messages": [HumanMessage(content="Olá")],

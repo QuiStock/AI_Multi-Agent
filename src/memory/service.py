@@ -51,12 +51,12 @@ class SummaryContextService:
 
     def get_context(
         self,
-        user_id: str,
+        email: str,
         conversation_id: str,
         query: str,
     ) -> list[ConversationSummary]:
         return self.search_context(
-            user_id=user_id,
+            email=email,
             conversation_id=conversation_id,
             query=query,
         )["results"]
@@ -64,14 +64,14 @@ class SummaryContextService:
     def search_context(
         self,
         *,
-        user_id: str,
+        email: str,
         conversation_id: str,
         query: str,
     ) -> SummaryContextSelection:
         """Return semantic matches or the established recent-summary fallback."""
         candidates = get_summary_context(
             request=SummarySearchRequest(
-                user_id=user_id,
+                email=email,
                 conversation_id=conversation_id,
                 query=query,
                 collection_name=self._search_config.collection_name,
@@ -89,7 +89,7 @@ class SummaryContextService:
             and candidate["conversation_id"] != conversation_id
         ]
         current_summaries = self._repository.get_ended_conversation_metadata_by_ids(
-            user_id=user_id,
+            email=email,
             conversation_ids=list(
                 dict.fromkeys(candidate["conversation_id"] for candidate in relevant)
             ),
@@ -117,12 +117,12 @@ class SummaryContextService:
         return {
             "source": "fallback",
             "results": self._recent_qdrant_summaries(
-                user_id=user_id, exclude_conversation_id=conversation_id
+                email=email, exclude_conversation_id=conversation_id
             ),
         }
 
     def _recent_qdrant_summaries(
-        self, *, user_id: str, exclude_conversation_id: str
+        self, *, email: str, exclude_conversation_id: str
     ) -> list[ConversationSummary]:
         """Fallback uses Qdrant payload text; Mongo is only an owner/status gate."""
         if not self._qdrant.collection_exists(self._search_config.collection_name):
@@ -138,7 +138,7 @@ class SummaryContextService:
             scroll_filter=models.Filter(
                 must=[
                     models.FieldCondition(
-                        key="user_id", match=models.MatchValue(value=user_id)
+                        key="email", match=models.MatchValue(value=email)
                     ),
                     models.FieldCondition(
                         key="memory_type",
@@ -169,7 +169,7 @@ class SummaryContextService:
             and point.payload.get("summary", "").strip()
         ]
         metadata = self._repository.get_ended_conversation_metadata_by_ids(
-            user_id=user_id,
+            email=email,
             conversation_ids=[str(item["conversation_id"]) for item in candidates],
         )
         return [

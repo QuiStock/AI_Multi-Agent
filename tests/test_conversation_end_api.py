@@ -6,8 +6,12 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from src.api.controllers.conversation_end_controller import ConversationEndController
-from src.api.dependencies import get_conversation_end_controller
+from src.api.dependencies import (
+    get_authenticated_principal,
+    get_conversation_end_controller,
+)
 from src.api.services.conversation_end_service import ConversationEndService
+from src.auth.models import AuthenticatedPrincipal
 from src.main import create_app
 from src.memory.mongo_repository import ConversationNotFoundError
 from src.memory.summary_jobs import SummaryJob
@@ -21,7 +25,7 @@ class FakeScheduler:
         self.job = SummaryJob(
             job_id="job-1",
             conversation_id="conversation-1",
-            user_id="user-1",
+            email="user-1",
             closure_key="closure-1",
             request_id="stable-request-1",
             status=status,  # type: ignore[arg-type]
@@ -32,7 +36,7 @@ class FakeScheduler:
 
     def end_and_schedule(self, **kwargs: str) -> SummaryJob:
         self.calls.append(kwargs)
-        if kwargs["user_id"] != "user-1":
+        if kwargs["email"] != "user-1":
             raise ConversationNotFoundError(kwargs["conversation_id"])
         return self.job
 
@@ -59,18 +63,22 @@ def _controller(
     return controller, scheduler, checkpoint
 
 
-def _post_end(app: Any, *, user_id: str = "user-1") -> Any:
+def _post_end(app: Any, *, body: dict[str, str] | None = None) -> Any:
     with TestClient(app) as client:
-        return client.post(
-            "/api/v1/conversations/conversation-1/end",
-            json={"user_id": user_id},
-        )
+        return client.post("/api/v1/conversations/conversation-1/end", json=body)
+
+
+def _override_principal(app: Any, email: str = "user-1") -> None:
+    app.dependency_overrides[get_authenticated_principal] = lambda: (
+        AuthenticatedPrincipal(email=email, role_id=2)
+    )
 
 
 def test_end_conversation_returns_202_after_durable_scheduling() -> None:
     controller, scheduler, checkpoint = _controller()
     app = create_app()
     app.dependency_overrides[get_conversation_end_controller] = lambda: controller
+    _override_principal(app)
 
     response = _post_end(app)
 
@@ -83,9 +91,7 @@ def test_end_conversation_returns_202_after_durable_scheduling() -> None:
         "status": "ended",
         "summary_status": "queued",
     }
-    assert scheduler.calls == [
-        {"conversation_id": "conversation-1", "user_id": "user-1"}
-    ]
+    assert scheduler.calls == [{"conversation_id": "conversation-1", "email": "user-1"}]
     assert checkpoint.deleted == ["conversation-1"]
 
 
@@ -93,6 +99,7 @@ def test_repeated_end_returns_the_same_durable_job_idempotently() -> None:
     controller, scheduler, _ = _controller()
     app = create_app()
     app.dependency_overrides[get_conversation_end_controller] = lambda: controller
+    _override_principal(app)
 
     first = _post_end(app)
     second = _post_end(app)
@@ -108,6 +115,7 @@ def test_end_response_reports_current_durable_job_state() -> None:
     controller, _, _ = _controller(status="completed")
     app = create_app()
     app.dependency_overrides[get_conversation_end_controller] = lambda: controller
+    _override_principal(app)
 
     response = _post_end(app)
 
@@ -116,15 +124,16 @@ def test_end_response_reports_current_durable_job_state() -> None:
     assert response.json()["summary_status"] == "completed"
 
 
-def test_end_conversation_rejects_blank_user_id() -> None:
+def test_end_conversation_does_not_need_identity_in_body() -> None:
     app = create_app()
     controller, _, _ = _controller()
     app.dependency_overrides[get_conversation_end_controller] = lambda: controller
+    _override_principal(app)
 
-    response = _post_end(app, user_id=" ")
+    response = _post_end(app)
 
     app.dependency_overrides.clear()
-    assert response.status_code == 422
+    assert response.status_code == 202
 
 
 def test_end_conversation_does_not_cross_user_boundary() -> None:
@@ -132,7 +141,8 @@ def test_end_conversation_does_not_cross_user_boundary() -> None:
     controller, _, _ = _controller()
     app.dependency_overrides[get_conversation_end_controller] = lambda: controller
 
-    response = _post_end(app, user_id="other-user")
+    _override_principal(app, email="other-user")
+    response = _post_end(app)
 
     app.dependency_overrides.clear()
     assert response.status_code == 404

@@ -32,7 +32,7 @@ class ConversationSummaryScheduler:
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        email: str,
         closure_key: str | None = None,
         request_id: str | None = None,
     ) -> SummaryJob:
@@ -44,7 +44,7 @@ class ConversationSummaryScheduler:
         now = self._clock()
         ended_at = self._conversations.mark_ended(
             conversation_id=conversation_id,
-            user_id=user_id,
+            email=email,
             ended_at=now,
         )
         stable_request_id = request_id or self.request_id_for_closure(
@@ -57,7 +57,7 @@ class ConversationSummaryScheduler:
         )
         job = self._jobs.create_or_get(
             conversation_id=conversation_id,
-            user_id=user_id,
+            email=email,
             closure_key=closure_key,
             request_id=stable_request_id,
             now=now,

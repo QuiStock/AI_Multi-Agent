@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from functools import lru_cache, partial
-from typing import Annotated, Any, cast
+from typing import Any, cast
 
-from fastapi import Depends, Query
+from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 from pymongo import MongoClient
@@ -26,6 +27,16 @@ from src.api.controllers.conversation_list_controller import ConversationListCon
 from src.api.services.conversation_end_service import ConversationEndService
 from src.api.services.conversation_list_service import ConversationListService
 from src.api.services.conversation_service import ConversationService
+from src.api.services.health_service import HealthService
+from src.auth.account_repository import PostgresAccountRepository
+from src.auth.errors import (
+    AccountLookupError,
+    AuthenticationConfigurationError,
+    InvalidCredentialError,
+)
+from src.auth.models import AuthenticatedPrincipal
+from src.auth.service import AuthenticationService
+from src.auth.token import decoder_from_json_keyring
 from src.graphs.adapters import GraphNode, run_faq_node
 from src.graphs.agent_graph import create_agent_graph
 from src.graphs.state import RouteName
@@ -45,6 +56,70 @@ from src.memory.summary_job_repository import (
 )
 from src.memory.summary_queue import RedisSummaryQueue
 from src.memory.summary_scheduler import ConversationSummaryScheduler
+from src.observability.audit import record_authentication_denial
+
+_bearer_scheme = HTTPBearer(auto_error=False)
+
+
+def get_postgres_pool(request: Request) -> Any:
+    pool = getattr(request.app.state, "postgres_pool", None)
+    if pool is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Serviço temporariamente indisponível.",
+        )
+    return pool
+
+
+def get_authenticated_principal(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+) -> AuthenticatedPrincipal:
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        record_authentication_denial("credential_missing")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credencial inválida.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    settings = config.get_settings()
+    try:
+        decoder = decoder_from_json_keyring(settings.jwe_private_keys_json)
+        email = decoder.decode_email(credentials.credentials)
+        pool = get_postgres_pool(request)
+        service = AuthenticationService(
+            decoder,
+            PostgresAccountRepository(
+                pool,
+                statement_timeout_ms=int(settings.postgres_pool_timeout_seconds * 1000),
+            ),
+        )
+        return service.authenticate_email(email)
+    except InvalidCredentialError:
+        record_authentication_denial("credential_invalid")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credencial inválida.",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from None
+    except AuthenticationConfigurationError:
+        record_authentication_denial("authentication_misconfigured")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Serviço temporariamente indisponível.",
+        ) from None
+    except PermissionError:
+        record_authentication_denial("role_forbidden")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso não permitido.",
+        ) from None
+    except AccountLookupError:
+        record_authentication_denial("account_lookup_failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Serviço temporariamente indisponível.",
+        ) from None
 
 
 def _database_name() -> str:
@@ -59,7 +134,13 @@ def get_mongo_client() -> MongoClient[Any]:
     settings = config.get_settings()
     if not settings.mongodb_uri or not settings.mongodb_db:
         raise RuntimeError("MONGODB_URI e MONGODB_DB são obrigatórios")
-    return MongoClient(settings.mongodb_uri)
+    timeout_ms = int(settings.health_probe_timeout_seconds * 1000)
+    return MongoClient(
+        settings.mongodb_uri,
+        serverSelectionTimeoutMS=timeout_ms,
+        connectTimeoutMS=timeout_ms,
+        socketTimeoutMS=timeout_ms,
+    )
 
 
 @lru_cache
@@ -172,9 +253,24 @@ def get_conversation_end_controller() -> ConversationEndController:
     )
 
 
-def get_conversation_list_controller(
-    _: Annotated[str, Query(alias="user_id", min_length=1)],
-) -> ConversationListController:
+def get_conversation_list_controller() -> ConversationListController:
     return ConversationListController(
         ConversationListService(get_conversation_repository())
     )
+
+
+def get_health_service(request: Request) -> HealthService:
+    settings = config.get_settings()
+    return HealthService(
+        settings=settings,
+        postgres_pool=getattr(request.app.state, "postgres_pool", None),
+        mongo_client=get_mongo_client_if_configured(settings),
+    )
+
+
+def get_mongo_client_if_configured(
+    settings: config.Settings,
+) -> MongoClient[Any] | None:
+    if not settings.mongodb_uri or not settings.mongodb_db:
+        return None
+    return get_mongo_client()

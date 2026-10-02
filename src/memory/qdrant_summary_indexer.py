@@ -69,7 +69,7 @@ class QdrantSummaryIndexer:
                     vector=vector,
                     payload={
                         "memory_type": "conversation_summary",
-                        "user_id": snapshot.user_id,
+                        "email": snapshot.email,
                         "conversation_id": snapshot.conversation_id,
                         "status": snapshot.status,
                         "title": snapshot.title,
@@ -115,7 +115,7 @@ class QdrantSummaryIndexer:
         )
 
     def get_latest_ended(
-        self, *, user_id: str, exclude_conversation_id: str, limit: int
+        self, *, email: str, exclude_conversation_id: str, limit: int
     ) -> list[dict[str, object]]:
         """Return recent summary payloads; updated_at must have a payload index."""
         if not self._client.collection_exists(self._collection_name):
@@ -131,7 +131,7 @@ class QdrantSummaryIndexer:
             scroll_filter=models.Filter(
                 must=[
                     models.FieldCondition(
-                        key="user_id", match=models.MatchValue(value=user_id)
+                        key="email", match=models.MatchValue(value=email)
                     ),
                     models.FieldCondition(
                         key="memory_type",
