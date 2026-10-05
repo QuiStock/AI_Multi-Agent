@@ -7,15 +7,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src import api, config
-from src.api.dependencies import get_trace_repository
 from src.auth.errors import AccountLookupError
 from src.auth.models import UserAccount
 from src.main import create_app
-
-
-class FakeTraceRepository:
-    def save_trace(self, trace: dict[str, Any]) -> None:
-        pass
 
 
 class GraphSpy:
@@ -75,11 +69,11 @@ def _setup(
     monkeypatch.setattr(
         "src.api.dependencies.PostgresAccountRepository", FakeAccountRepository
     )
+    monkeypatch.setattr("src.api.dependencies.get_postgres_pool", lambda _: object())
     graph = GraphSpy()
     app = create_app()
     app.state.postgres_pool = object()
     app.dependency_overrides[api.dependencies.get_graph] = lambda: graph
-    app.dependency_overrides[get_trace_repository] = FakeTraceRepository
     return app, graph
 
 

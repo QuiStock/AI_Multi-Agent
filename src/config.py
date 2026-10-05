@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal, cast
+from typing import cast
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -25,25 +25,16 @@ class Settings(BaseSettings):
         extra="forbid",
     )
 
-    # Deployment metadata
-    app_environment: Literal["development", "qa", "production"] = "development"
-
     # Credentials
-    openai_api_key: str | None = None
     gemini_api_key: str | None = None
-
-    # Legacy .env values are accepted for compatibility but are unused at runtime.
     groq_api_key: str | None = None
-    hf_token: str | None = None
 
     # Models
-    openai_model: str = "gpt-6-luna"
-    gemini_embedding_model: str = "gemini-embedding-2"
-    gemini_embedding_tier: Literal["free", "paid"] = "free"
-    # Legacy .env values are accepted for compatibility but are unused at runtime.
     gemini_chat_model: str = "gemini-3.6-flash"
-    groq_chat_model: str = "qwen/qwen3.8-27b"
-    hf_title_model: str = "openai/gpt-oss-20b:fastest"
+    gemini_title_model: str = "gemini-2.5-flash-lite"
+    gemini_embedding_model: str = "gemini-embedding-2-preview"
+    groq_chat_model: str = "llama-3.3-70b-versatile"
+    groq_fast_model: str = "openai/gpt-oss-safeguard-20b"
 
     # Model parameters
     llm_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
@@ -54,9 +45,6 @@ class Settings(BaseSettings):
     postgres_password: str | None = None
     postgres_dsn: str | None = None
     jwt_secret: str | None = None
-    auth_bypass_local_tests: bool = False
-    auth_bypass_email: str = "jwt-bypass@localhost.invalid"
-    auth_bypass_role_id: int = 2
     postgres_pool_timeout_seconds: float = Field(default=2.0, gt=0)
     health_probe_timeout_seconds: float = Field(default=2.0, gt=0)
     mongodb_uri: str | None = None
@@ -67,21 +55,6 @@ class Settings(BaseSettings):
     summary_queue_stream: str = "quistock:conversation-summary"
     summary_queue_group: str = "summary-workers"
     summary_job_max_attempts: int = Field(default=5, ge=1, le=10)
-    summary_reconciliation_interval_seconds: int = Field(default=60, ge=1)
-    memory_conversations_collection: str = "conversations"
-    memory_summary_jobs_collection: str = "conversation_summary_jobs"
-    memory_summary_locks_collection: str = "conversation_summary_locks"
-    a2a_responses_collection: str = "a2a_responses"
-    a2a_public_url: str = "http://localhost:8000/a2a"
-    a2a_inbound_client_id: str = "trusted_a2a_client"
-    a2a_inbound_service_token: str | None = None
-    a2a_inbound_store_id: int | None = Field(default=None, ge=1, le=2_147_483_647)
-    a2a_context_secret: str | None = None
-    a2a_truck_mode: Literal["mock", "remote"] = "mock"
-    a2a_truck_card_url: str | None = None
-    a2a_truck_endpoint_url: str | None = None
-    a2a_truck_service_token: str | None = None
-    a2a_timeout_seconds: float = Field(default=8.0, gt=0, le=30)
 
     # FAQ RAG directories
     faq_data_dir: Path = PROJECT_ROOT / "src" / "data"
@@ -98,7 +71,7 @@ class Settings(BaseSettings):
         ge=0.0,
         le=1.0,
     )
-    faq_vectorstore_collection: str = "faq_v2"
+    faq_vectorstore_collection: str = "faq"
 
     # Conversational memory retrieval
     memory_summary_collection: str = "conversation_summaries"
@@ -133,21 +106,18 @@ def get_settings() -> Settings:
 def validate_required_settings(
     current_settings: Settings | None = None,
 ) -> Settings:
-    """Validate chat and embedding provider credentials."""
+    """Validate the credentials required by the configured LLM providers."""
     current_settings = current_settings or get_settings()
     missing_variables: list[str] = []
-
-    if (
-        not current_settings.openai_api_key
-        or not current_settings.openai_api_key.strip()
-    ):
-        missing_variables.append("OPENAI_API_KEY")
 
     if (
         not current_settings.gemini_api_key
         or not current_settings.gemini_api_key.strip()
     ):
         missing_variables.append("GEMINI_API_KEY")
+
+    if not current_settings.groq_api_key or not current_settings.groq_api_key.strip():
+        missing_variables.append("GROQ_API_KEY")
 
     if missing_variables:
         variables = ", ".join(missing_variables)
@@ -193,10 +163,15 @@ MEMORY_SUMMARY_TOP_K = settings.memory_summary_top_k
 MEMORY_SUMMARY_MIN_SCORE = settings.memory_summary_min_score
 MEMORY_SUMMARY_FALLBACK_LIMIT = settings.memory_summary_fallback_limit
 
-OPENAI_API_KEY = settings.openai_api_key
-OPENAI_MODEL = settings.openai_model
 GEMINI_API_KEY = settings.gemini_api_key
+GROQ_API_KEY = settings.groq_api_key
 QDRANT_URL = settings.qdrant_url
 QDRANT_API_KEY = settings.qdrant_api_key
 
+GEMINI_CHAT_MODEL = settings.gemini_chat_model
+GEMINI_TITLE_MODEL = settings.gemini_title_model
 GEMINI_EMBEDDING_MODEL = settings.gemini_embedding_model
+GROQ_CHAT_MODEL = settings.groq_chat_model
+GROQ_FAST_MODEL = settings.groq_fast_model
+LLM_TEMPERATURE = settings.llm_temperature
+LLM_TOP_P = settings.llm_top_p
