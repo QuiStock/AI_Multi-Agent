@@ -229,8 +229,8 @@ Mensagem:
 ```
 
 Endpoint: `POST /api/v1/conversations/{conversation_id}/messages`, autenticado
-por `Authorization: Bearer <JWE>`; o email vem exclusivamente da claim JWE e é
-associado a `user_account` antes do grafo.
+por `Authorization: Bearer <JWT>` assinado com HS256; o email vem da claim
+`email` e é associado a `user_account` antes do grafo.
 `ConversationRequest` rejeita campos extras, mensagem vazia e mensagens acima
 de 4.000 caracteres. A resposta contém `conversation_id`, `request_id`,
 `response` e status `success`, `rejected`, `clarification_required`,
@@ -295,8 +295,8 @@ troca o conteúdo por resposta controlada; nunca expõe regra interna.
 
 ### Identidade e dados comerciais
 
-As rotas de conversa recebem um JWE Bearer e derivam o email autenticado do
-principal validado pela API antes de executar o grafo. A identidade não vem do
+As rotas de conversa recebem um JWT Bearer HS256 e derivam o email autenticado
+da claim `email`, validado pela API antes de executar o grafo. A identidade não vem do
 body nem da query e é propagada em todo o fluxo de memória. Consultas de
 identidade ao PostgreSQL usam credencial somente de leitura e SQL parametrizado.
 Ao implementar tools comerciais, derive role/store scope no servidor, use

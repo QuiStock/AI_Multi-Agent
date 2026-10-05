@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
+import jwt
 import pytest
 from fastapi.testclient import TestClient
-from jwcrypto import jwe, jwk
 
 from src import api, config
 from src.auth.errors import AccountLookupError
@@ -42,64 +41,46 @@ class FakeAccountRepository:
         return UserAccount(email=email, role_id=self.result.role_id)
 
 
-@pytest.fixture
-def rsa_key() -> jwk.JWK:
-    return jwk.JWK.generate(kty="RSA", size=2048)
+JWT_SECRET = "a-long-test-only-shared-secret-for-hs256"
 
 
-def _compact_jwe(key: jwk.JWK, email: str = "person@example.test") -> str:
-    encrypted = jwe.JWE(
-        plaintext=json.dumps({"email": email, "role_id": 1}),
-        protected={"alg": "RSA-OAEP-256", "enc": "A256GCM", "kid": "current"},
-    )
-    encrypted.add_recipient(key)
-    return encrypted.serialize(compact=True)
+def _compact_jwt(email: str = "person@example.test") -> str:
+    return jwt.encode({"email": email, "role_id": 1}, JWT_SECRET, algorithm="HS256")
 
 
 def _setup(
     monkeypatch: pytest.MonkeyPatch,
-    key: jwk.JWK,
     *,
     role_id: int = 2,
     missing_account: bool = False,
     database_error: bool = False,
 ) -> tuple[Any, GraphSpy]:
-    keyring = json.dumps(
-        {"current": key.export_to_pem(private_key=True, password=None).decode()}
-    )
     monkeypatch.setattr(
         config,
         "get_settings",
-        lambda: config.Settings(jwe_private_keys_json=keyring),
+        lambda: config.Settings(jwt_secret=JWT_SECRET),
     )
-    decoder_module = __import__(
-        "src.auth.token", fromlist=["decoder_from_json_keyring"]
-    )
-    decoder_module.decoder_from_json_keyring.cache_clear()
-    monkeypatch.setattr(
-        FakeAccountRepository,
-        "result",
+    FakeAccountRepository.result = (
         None
         if missing_account
-        else UserAccount(email="person@example.test", role_id=role_id),
+        else UserAccount(email="person@example.test", role_id=role_id)
     )
-    monkeypatch.setattr(FakeAccountRepository, "fail", database_error)
+    FakeAccountRepository.fail = database_error
     monkeypatch.setattr(
         "src.api.dependencies.PostgresAccountRepository", FakeAccountRepository
     )
-    monkeypatch.setattr(
-        "src.api.dependencies.get_postgres_pool", lambda request: object()
-    )
+    monkeypatch.setattr("src.api.dependencies.get_postgres_pool", lambda _: object())
     graph = GraphSpy()
     app = create_app()
+    app.state.postgres_pool = object()
     app.dependency_overrides[api.dependencies.get_graph] = lambda: graph
     return app, graph
 
 
 def test_missing_bearer_returns_401_without_running_graph(
-    monkeypatch: pytest.MonkeyPatch, rsa_key: jwk.JWK
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    app, graph = _setup(monkeypatch, rsa_key)
+    app, graph = _setup(monkeypatch)
 
     with TestClient(app) as client:
         response = client.post(
@@ -112,15 +93,15 @@ def test_missing_bearer_returns_401_without_running_graph(
     assert graph.calls == []
 
 
-def test_malformed_jwe_returns_401_without_running_graph(
-    monkeypatch: pytest.MonkeyPatch, rsa_key: jwk.JWK
+def test_malformed_jwt_returns_401_without_running_graph(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    app, graph = _setup(monkeypatch, rsa_key)
+    app, graph = _setup(monkeypatch)
 
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/conversations/conversation-1/messages",
-            headers={"Authorization": "Bearer not-a-jwe"},
+            headers={"Authorization": "Bearer not-a-jwt"},
             json={"message": "hello", "sent_at": "2026-09-22T14:30:00-03:00"},
         )
 
@@ -134,7 +115,6 @@ def test_malformed_jwe_returns_401_without_running_graph(
 )
 def test_authentication_failures_do_not_enter_graph(
     monkeypatch: pytest.MonkeyPatch,
-    rsa_key: jwk.JWK,
     role_id: int,
     missing_account: bool,
     database_error: bool,
@@ -142,7 +122,6 @@ def test_authentication_failures_do_not_enter_graph(
 ) -> None:
     app, graph = _setup(
         monkeypatch,
-        rsa_key,
         role_id=role_id,
         missing_account=missing_account,
         database_error=database_error,
@@ -151,7 +130,7 @@ def test_authentication_failures_do_not_enter_graph(
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/conversations/conversation-1/messages",
-            headers={"Authorization": f"Bearer {_compact_jwe(rsa_key)}"},
+            headers={"Authorization": f"Bearer {_compact_jwt()}"},
             json={"message": "hello", "sent_at": "2026-09-22T14:30:00-03:00"},
         )
 
@@ -159,15 +138,15 @@ def test_authentication_failures_do_not_enter_graph(
     assert graph.calls == []
 
 
-def test_valid_jwe_email_becomes_graph_identity(
-    monkeypatch: pytest.MonkeyPatch, rsa_key: jwk.JWK
+def test_valid_jwt_email_becomes_graph_identity(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    app, graph = _setup(monkeypatch, rsa_key)
+    app, graph = _setup(monkeypatch)
 
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/conversations/conversation-1/messages",
-            headers={"Authorization": f"Bearer {_compact_jwe(rsa_key)}"},
+            headers={"Authorization": f"Bearer {_compact_jwt()}"},
             json={"message": "hello", "sent_at": "2026-09-22T14:30:00-03:00"},
         )
 
@@ -176,14 +155,14 @@ def test_valid_jwe_email_becomes_graph_identity(
 
 
 def test_client_email_or_user_id_cannot_be_sent_as_identity(
-    monkeypatch: pytest.MonkeyPatch, rsa_key: jwk.JWK
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    app, graph = _setup(monkeypatch, rsa_key)
+    app, graph = _setup(monkeypatch)
 
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/conversations/conversation-1/messages",
-            headers={"Authorization": f"Bearer {_compact_jwe(rsa_key)}"},
+            headers={"Authorization": f"Bearer {_compact_jwt()}"},
             json={
                 "email": "attacker@example.test",
                 "user_id": "attacker",
