@@ -23,34 +23,14 @@ Snapshot atual:
 - Guardrails de entrada/saída em `src/guardrails/`.
 - Memória de conversa em `src/memory/`.
 - MongoDB mantém mensagens e metadados de jobs; Redis Streams transporta IDs
-  de jobs de resumo/exclusão; Qdrant mantém o conteúdo dos resumos e atende
-  FAQ. O checkpointer local é `MemorySaver` para desenvolvimento/testes.
-- `src/observability/audit.py` ainda é placeholder. `traces.py` coleta spans
-  por turno, incluindo `attributes.agent_id` nos nós de agentes, e
-  `trace_repository.py` os persiste no MongoDB. `metrics.py` agrega
-  latência, erros e uso de tokens; custos dependem de uma tabela de preços
-  fornecida pelo chamador e a taxa de fallback depende de sinal explícito no
-  trace. As rotas GET de métricas, traces e conversas em
-  `/api/v1/observability` são públicas, sem autenticação. O protótipo também
-  expõe `POST /api/v1/observability/lab/run` publicamente; ele faz uma chamada
-  direta a um modelo de chat configurado, sem executar o grafo, agentes ou
-  tools e sem alterar a conversa de produção. `GET
-  /api/v1/observability/agents/{agent_id}` entrega metadados do `AgentCard` e o
-  prompt de sistema, sem incluir tools. Logs Python INFO+ emitidos durante um
-  turno são bufferizados com `span_id` e `agent_id` no documento do trace, na
-  coleção `agent_traces`, e retornados em
-  `GET /api/v1/observability/traces/{trace_id}`. Durante a execução, spans e
-  logs também são publicados por `GET /api/v1/observability/traces/live`, um
-  feed incremental com cursor mantido em memória por processo (buffer limitado;
-  não compartilhado entre workers). `src/observability/front-observer/` é o
-  frontend Vite independente que consulta esse feed a cada quatro segundos; workers
-  ainda não têm captura de logs. O readiness `/health` registra nos logs do
-  container um aviso `health_probe_failed` por dependência indisponível, com
-  tipo e resumo sanitizado da exceção. `GET /health` retorna HTTP 503 quando
-  uma dependência falha e inclui no JSON o status (`ok`/`unavailable`) de cada check.
-- A composição de produção em `src/api/dependencies.py` registra `faq` e
-  `product_workflow`. O Product Workflow tem card, tools e repositório
-  PostgreSQL direto, com consultas parametrizadas e somente leitura.
+  de jobs de resumo; Qdrant mantém o conteúdo dos resumos e atende FAQ. O
+  checkpointer local é `MemorySaver` para desenvolvimento/testes.
+- `src/observability/{audit,metrics,traces}.py` ainda é placeholder.
+- A composição de produção em `src/api/dependencies.py` ativa as rotas `faq` e
+  `product_workflow` quando PostgreSQL está configurado. O Product Workflow
+  recebe snapshot de card como evidência de origem cliente e tem lookup fixo,
+  parametrizado e somente leitura, restrito a role 2/3, lojas ativas e itens
+  sem evento `EXPIRED`. Grants efetivos ainda precisam de validação no ambiente.
 - MCP e A2A são requisitos acadêmicos futuros; não são capacidades ativas
   nesta implementação.
 - O roadmap confirmado para autenticação, rota A2A, `product_workflow`, MCP,
@@ -78,8 +58,6 @@ src/agents/schemas/                 # AgentCard, ToolBinding e ToolResult
 src/agents/tooling/                 # factories e projeções de ToolResult
 src/guardrails/                     # segurança de entrada e saída
 src/memory/                         # MongoDB, Qdrant, Redis e retomada
-src/observability/                  # traces, métricas e logs correlacionados
-  front-observer/                   # frontend Vite executado separado da API
 src/llm_factory.py                  # modelos, embeddings e structured output
 tests/                              # contratos, unitários e integração
 ```
@@ -88,7 +66,7 @@ Fluxo executável atual:
 
 ```text
 HTTP -> input_guardrail -> context_enrichment -> normalize_user_message
-     -> router -> faq ou product_workflow
+     -> router -> faq | product_workflow
      -> compiler -> evidence_judge -> output_guardrail
      -> persist_turn -> resposta HTTP
 ```
@@ -105,8 +83,8 @@ Guardrails não são agentes: são controles obrigatórios do fluxo.
 | Agente | Papel | Estado atual |
 |---|---|---|
 | `router` | Classificar a intenção e escolher uma rota permitida. | Registrado e usado pelo grafo. |
-| `faq_rag` | Responder em português usando apenas documentos recuperados. | Registrado e única capacidade de domínio ativa. |
-| `product_workflow` | Consultar e explicar sugestões e triagem comercial em modo read-only. | Card, executor, duas tools e repositório PostgreSQL direto registrados; sem decisões ou operações de escrita. |
+| `faq_rag` | Responder em português usando apenas documentos recuperados. | Registrado e ativo. |
+| `product_workflow` | Explicar snapshot/card e consultar sugestão vigente para outro produto. | Registrado; read-only; requer PostgreSQL e grants autorizados. |
 | `evidence_judge` | Avaliar se o rascunho está sustentado pelas evidências e citações. | Registrado e usado após o compiler. |
 | `response_compiler` (`compiler`) | Sintetizar os resultados especializados em uma resposta candidata. | Registrado e usado antes do judge. |
 
@@ -121,23 +99,17 @@ comerciais e não cria rotas para capacidades ausentes.
 
 Pode buscar trechos `.txt`, `.md` e `.pdf` no Qdrant via `faq_search`, redigir
 uma resposta documental em português e indicar arquivo/página quando
-disponíveis. Cada chunk possui `audience=shared`, `audience=employee` ou
-`audience=manager`; o executor converte `role_id=2` para gerente e
-`role_id=3` para funcionário e aplica o filtro server-side antes da busca.
-Não usa conhecimento externo, não inventa evidência, não recalcula regras do ML
-e deve recusar quando não houver suporte suficiente.
+disponíveis. Não usa conhecimento externo, não inventa evidência, não
+recalcula regras do ML e deve recusar quando não houver suporte suficiente.
 
 ### Product Workflow
 
-É somente leitura: consulta dados publicados no PostgreSQL e explica o
-resultado do ML e da triagem. Expõe somente
-`get_suggestion_for_product` e `get_suggestion_detail`: o funcionário consulta
-somente sugestões `IN_EMPLOYEE_TRIAGE` disponíveis para validação e o gerente
-consulta apenas sugestões `SENT_TO_MANAGER`. A busca exclui eventos `EXPIRED`;
-o detalhe do gerente inclui apenas dados de `suggestion_triage`, sem
-`suggestion_decision` ou histórico de `suggestion_log`. O log é consultado
-internamente somente para excluir `EXPIRED`. Não pode recalcular fluxo, alterar
-sugestões, criar pedidos, ativar promoções ou escrever no banco.
+É somente leitura: usa o snapshot recebido para o produto do card ou consulta
+outra sugestão por query fixa parametrizada. O escopo de loja vem de `email` e
+`role_id` autenticados: role 3 vê `available_for_triage`; role 2 vê
+`SENT_TO_MANAGER`; ambas excluem `suggestion_log.event = 'EXPIRED'`. Snapshot
+tem proveniência cliente, nunca banco. Não recalcula ML, altera sugestões,
+cria pedidos, ativa promoções ou escreve no PostgreSQL.
 
 ### Evidence Judge
 
@@ -171,8 +143,8 @@ O contrato declarativo fica em `src/agents/schemas/agent_card.py`:
   `evidence_judge`, `response_compiler`;
 - `id` em `snake_case`, versão SemVer, prompt não vazio e tools sem IDs
   duplicados;
-- `FailurePolicy` descreve comportamento de timeout, retry e fallback e deve
-  ser acompanhada por validação runtime e testes.
+- `MemoryPolicy`, `EvidencePolicy` e `FailurePolicy` descrevem intenção e
+  devem ser acompanhadas por validação runtime e testes.
 
 O card não substitui a implementação: `src/agents/registry.py` define o que
 está registrado e `src/api/dependencies.py` define o que entra no grafo.
@@ -182,16 +154,18 @@ está registrado e `src/api/dependencies.py` define o que entra no grafo.
 | Agente | Tool/capacidade | Limite |
 |---|---|---|
 | Router | `search_conversation_summaries` | Somente memória do próprio usuário; até 3 resumos encerrados, score inicial `>= 0.5`, conversa atual excluída e validação posterior no MongoDB. |
-| FAQ/RAG | `faq_search` | Consulta apenas a collection FAQ configurada; escopo `shared + manager` para `role_id=2` e `shared + employee` para `role_id=3`, `top_k=4`, relevância mínima padrão `0.30`; sem busca externa. |
-| Product Workflow | `get_suggestion_for_product`, `get_suggestion_detail` | Repositório PostgreSQL read-only, busca por produto, filtros de cargo/loja, exclusão de `EXPIRED`, card e triagem autorizados com evidência original. |
+| FAQ/RAG | `faq_search` | Consulta apenas o Qdrant da coleção FAQ; `top_k=4`, relevância mínima padrão `0.30`; sem busca externa. |
+| Product Workflow | `product_card_lookup` | Query predefinida e parametrizada; email/cargo são vinculados pelo runtime, não são argumentos do modelo. |
 | Judge | Nenhuma | Validação pura do payload recebido. |
 | Compiler | Nenhuma | Usa somente resultados e evidências já presentes no estado. |
 
 Detalhes de wiring importantes:
 
-- A composição injeta o retriever base no `FAQExecutor`; a tool `faq_search` é
-  construída por requisição com o escopo do `role_id` e não guarda role em
-  estado global mutável.
+- `TOOL_REGISTRY` começa vazio. A composição registra `faq_search` antes de
+  construir o `FAQExecutor`; IDs ausentes devem falhar explicitamente. O
+  `product_card_lookup` é ligado por requisição ao pool e ao principal
+  autenticado e injetado diretamente no AgentCard; não pode ser guardado em
+  registry global com identidade de usuário.
 - O card do router declara a tool de memória, mas o `get_graph()` atual cria
   `RouterExecutor()` sem `summary_search_service`; portanto essa tool não está
   ativa no caminho HTTP padrão. Testes podem injetá-la.
@@ -199,8 +173,10 @@ Detalhes de wiring importantes:
   `ToolResult[FAQSearchData]`; a migração deve usar
   `src/agents/tooling/result_factory.py`, sem documentar o legado como contrato
   final.
-- `run_faq_node` encaminha o `request` sanitizado ao FAQ e projeta as evidências
-  retornadas para `GraphState.evidences`.
+- `run_faq_node` hoje extrai o texto da resposta do executor, mas ainda inicializa
+  `citation_ids` vazio e não projeta as evidências do retorno legado para
+  `GraphState.evidences`; a trilha FAQ totalmente grounded só deve ser tratada
+  como concluída após essa migração e seus testes.
 - `ToolBinding` descreve argumentos; não concede autorização. Autorização,
   tenant/store scope, limites, timeout e filtros pertencem ao servidor.
 
@@ -253,9 +229,8 @@ Mensagem:
 ```
 
 Endpoint: `POST /api/v1/conversations/{conversation_id}/messages`, autenticado
-por `Authorization: Bearer <JWT>` HS256; o email vem da claim assinada e é
-associado a `user_account` antes do grafo. A API não valida `exp` conforme a
-premissa de que tokens inválidos/expirados não chegam ao serviço.
+por `Authorization: Bearer <JWT>` assinado com HS256; o email vem da claim
+`email` e é associado a `user_account` antes do grafo.
 `ConversationRequest` rejeita campos extras, mensagem vazia e mensagens acima
 de 4.000 caracteres. A resposta contém `conversation_id`, `request_id`,
 `response` e status `success`, `rejected`, `clarification_required`,
@@ -309,10 +284,7 @@ Quando regras colidirem, preserve nesta ordem:
 `input_guardrail` rejeita vazio/excesso, mascara CPF, CNPJ, e-mail, telefone,
 cartão e credenciais, detecta prompt injection, pedidos de dados internos,
 política governamental e classificação semântica bloqueada. O padrão é
-As decisões dos guardrails são determinísticas e implementadas no código:
-limites, PII, prompt injection, pedidos internos, política governamental,
-formatação, fontes FAQ, emojis e alegações comerciais. A análise de suporte
-semântico permanece sob responsabilidade do evidence judge, não dos guardrails.
+`fail_closed`; indisponibilidade do classificador bloqueia a entrada.
 
 ### Saída e groundedness
 
@@ -324,7 +296,7 @@ troca o conteúdo por resposta controlada; nunca expõe regra interna.
 ### Identidade e dados comerciais
 
 As rotas de conversa recebem um JWT Bearer HS256 e derivam o email autenticado
-do principal validado pela API antes de executar o grafo. A identidade não vem do
+da claim `email`, validado pela API antes de executar o grafo. A identidade não vem do
 body nem da query e é propagada em todo o fluxo de memória. Consultas de
 identidade ao PostgreSQL usam credencial somente de leitura e SQL parametrizado.
 Ao implementar tools comerciais, derive role/store scope no servidor, use
