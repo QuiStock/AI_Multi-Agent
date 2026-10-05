@@ -7,11 +7,11 @@
 
 ## Contexto
 
-A API de IA precisa associar a claim `email` do Bearer JWE a uma conta e ler seu `role_id` em `user_account` antes de iniciar operações de conversa. O projeto possui uma API comercial Spring que mantém o domínio e schema PostgreSQL. A integração de autenticação externa não será implementada pela API de IA.
+A API de IA precisa associar a claim `email` do Bearer JWT assinado com HS256 a uma conta e ler seu `role_id` em `user_account` antes de iniciar operações de conversa. O projeto possui uma API comercial Spring que mantém o domínio e schema PostgreSQL. Login e emissão do JWT permanecem com o serviço existente; a API de IA apenas valida o token recebido.
 
 ## Decisão
 
-A API de IA mantém conexão/credencial própria, exclusiva e somente de leitura. A autenticação consulta somente `user_account.email` e `user_account.role_id`. O Product Workflow pode ler, além disso, `user_store`, `suggestion`, `suggestion_log`, `product`, `category` e `batch`, para montar cards dentro das lojas vinculadas e refletir a validade física dos lotes. `store` não é necessário porque o escopo usa `store_id` do vínculo ativo em `user_store`. A API Spring continua proprietária do schema e comunica mudanças de nomes/semântica que afetem as consultas. A API de IA não executa escrita, DDL, migração ou concessão de privilégios.
+A API de IA mantém conexão/credencial própria, exclusiva e somente de leitura, consultando apenas `user_account.email` e `user_account.role_id`. A API Spring continua proprietária do schema e comunica mudanças de nomes/semântica que afetem essa consulta. A API de IA não executa escrita, DDL, migração ou concessão de privilégios.
 
 Consulta precisa ser parametrizada e limitada a esses campos. Erros operacionais do banco falham fechado (`500`); conta ausente resulta `401`. Transação/probe são somente leitura. A configuração e comprovação dos grants efetivos fazem parte da validação de implantação.
 
@@ -23,8 +23,8 @@ Consulta precisa ser parametrizada e limitada a esses campos. Erros operacionais
 
 ## Consequências
 
-- A implantação precisa provisionar secret/DSN exclusivo e grants efetivos somente de `SELECT` nas tabelas explicitamente listadas acima, comprovados no PostgreSQL de integração. Não presumir que o grant foi aplicado só porque consta na documentação.
+- A implantação precisa provisionar secret/DSN exclusivo e grants limitados a leitura de `user_account`.
 - Mudanças no schema precisam de coordenação Spring–IA e testes de contrato.
 - Falha/latência PostgreSQL passa a impactar autenticação da IA; usar timeouts e health checks.
 - Auditoria de uso restringe-se a eventos operacionais sem token, chave ou email integral nos logs comuns; eventual requisito de auditoria de acesso a linha permanece sujeito às políticas do ambiente PostgreSQL.
-- Os parâmetros JWE (`RSA-OAEP-256`, `A256GCM`), biblioteca (`jwcrypto`) e rotação por `kid` com sobreposição temporária foram decididos na spec da feature. O pool, timeouts e auditoria estão implementados e cobertos por testes. O teste PostgreSQL efêmero verifica leitura e rejeição de `UPDATE`/DDL; grants efetivos da credencial do ambiente ainda precisam ser comprovados contra o PostgreSQL de integração (T035).
+- A autenticação usa segredo HS256 compartilhado por ambiente. A API valida a assinatura e claim `email`, mas não `exp`, conforme a premissa de que tokens inválidos/expirados não chegam ao serviço. O pool, timeout e auditoria permanecem. O teste PostgreSQL efêmero verifica leitura e rejeição de `UPDATE`/DDL; grants efetivos da credencial do ambiente ainda precisam ser comprovados contra PostgreSQL de integração (T007).

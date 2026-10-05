@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     database_url: str | None = None
     postgres_password: str | None = None
     postgres_dsn: str | None = None
-    jwe_private_keys_json: str | None = None
+    jwt_secret: str | None = None
     postgres_pool_timeout_seconds: float = Field(default=2.0, gt=0)
     health_probe_timeout_seconds: float = Field(default=2.0, gt=0)
     mongodb_uri: str | None = None

@@ -40,7 +40,7 @@ from src.auth.errors import (
 )
 from src.auth.models import AuthenticatedPrincipal
 from src.auth.service import AuthenticationService
-from src.auth.token import decoder_from_json_keyring
+from src.auth.token import JWTEmailDecoder
 from src.graphs.adapters import GraphNode, run_faq_node, run_product_workflow_node
 from src.graphs.agent_graph import create_agent_graph
 from src.graphs.state import RouteName
@@ -88,17 +88,15 @@ def get_authenticated_principal(
         )
     settings = config.get_settings()
     try:
-        decoder = decoder_from_json_keyring(settings.jwe_private_keys_json)
-        email = decoder.decode_email(credentials.credentials)
         pool = get_postgres_pool(request)
         service = AuthenticationService(
-            decoder,
+            JWTEmailDecoder(settings.jwt_secret),
             PostgresAccountRepository(
                 pool,
                 statement_timeout_ms=int(settings.postgres_pool_timeout_seconds * 1000),
             ),
         )
-        return service.authenticate_email(email)
+        return service.authenticate(credentials.credentials)
     except InvalidCredentialError:
         record_authentication_denial("credential_invalid")
         raise HTTPException(
