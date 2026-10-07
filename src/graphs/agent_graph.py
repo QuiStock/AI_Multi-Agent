@@ -105,9 +105,9 @@ def product_workflow_unavailable_node(state: GraphState) -> GraphState:
 def decide_after_product_workflow(state: GraphState) -> str:
     result = state.get("agent_results", {}).get("product_workflow", {})
     return (
-        "product_workflow_unavailable"
-        if result.get("status") == "error"
-        else "compiler"
+        "compiler"
+        if result.get("status") == "success"
+        else "product_workflow_unavailable"
     )
 
 

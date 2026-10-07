@@ -2,11 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.guardrails.config import SupportValidationResult
 from src.guardrails.output_guardrail import (
     CONTROLLED_OUTPUT_RESPONSE,
     create_output_guardrail_node,
-    evaluate_compiled_output,
     output_guardrail_node,
     validate_output,
 )
@@ -32,14 +30,10 @@ def _state(
 
 
 def test_faq_output_only_checks_markdown() -> None:
-    def fail_evaluator(_: str, __: list[str]) -> str:
-        raise AssertionError("FAQ não deve chamar o avaliador semântico")
-
     result = validate_output(
         "Resposta informativa sem fonte externa.",
         source="faq",
         references=["manual.md"],
-        evaluator=fail_evaluator,
     )
 
     assert result["status"] == "passed"
@@ -69,87 +63,14 @@ def test_faq_output_removes_emojis_and_passes() -> None:
     assert result["sanitized_content"] == "Resposta com símbolo proibido "
 
 
-def test_compiled_output_passes_when_supported() -> None:
-    received: list[tuple[str, list[str]]] = []
-
-    def evaluator(response: str, references: list[str]) -> str:
-        received.append((response, references))
-        return "supported"
-
+def test_compiled_output_passes_without_semantic_evaluator() -> None:
     result = validate_output(
         "A resposta compilada está sustentada.",
         source="compiled",
         references=["Material do agente FAQ."],
-        evaluator=evaluator,
     )
 
     assert result["status"] == "passed"
-    assert received == [
-        ("A resposta compilada está sustentada.", ["Material do agente FAQ."])
-    ]
-
-
-def test_compiled_evaluator_receives_content_without_emojis() -> None:
-    content = "Resposta compilada " + chr(0x1F642)
-    received: list[str] = []
-
-    def evaluator(response: str, _: list[str]) -> str:
-        received.append(response)
-        return "supported"
-
-    result = validate_output(content, source="compiled", evaluator=evaluator)
-
-    assert result["status"] == "passed"
-    assert received == ["Resposta compilada "]
-    assert result["sanitized_content"] == "Resposta compilada "
-
-
-def test_compiled_output_replaces_unsupported_content() -> None:
-    result = validate_output(
-        "A resposta adiciona uma informação não encontrada.",
-        source="compiled",
-        evaluator=lambda _response, _references: "unsupported",
-    )
-
-    assert result["status"] == "passed"
-    assert result["reason_code"] == "unsupported_content"
-    assert result["sanitized_content"] == CONTROLLED_OUTPUT_RESPONSE
-
-
-def test_compiled_output_replaces_when_validator_is_unavailable() -> None:
-    def failing_evaluator(_: str, __: list[str]) -> str:
-        raise RuntimeError("modelo indisponível")
-
-    result = validate_output(
-        "Resposta sem problemas de formatação.",
-        source="compiled",
-        evaluator=failing_evaluator,
-    )
-
-    assert result["status"] == "passed"
-    assert result["reason_code"] == "validator_unavailable"
-    assert result["sanitized_content"] == CONTROLLED_OUTPUT_RESPONSE
-
-
-def test_compiled_evaluator_uses_structured_supported_contract() -> None:
-    class FakeStructuredModel:
-        def __init__(self) -> None:
-            self.messages: Any = None
-
-        def invoke(self, messages: Any) -> SupportValidationResult:
-            self.messages = messages
-            return SupportValidationResult(status="supported")
-
-    model = FakeStructuredModel()
-    result = evaluate_compiled_output(
-        "Resposta compilada.",
-        ["Material do agente."],
-        model=model,
-    )
-
-    assert result == "supported"
-    assert "Resposta compilada." in model.messages[1].content
-    assert "Material do agente." in model.messages[1].content
 
 
 def test_output_node_replaces_missing_response() -> None:
@@ -194,10 +115,7 @@ def test_output_node_supports_response_draft_from_graph_state() -> None:
     assert result["response_draft"]["content"] == "Resposta final "
 
 
-def test_approved_judge_prevents_duplicate_semantic_validation() -> None:
-    def fail_evaluator(_: str, __: list[str]) -> str:
-        raise AssertionError("o judge já validou o suporte semântico")
-
+def test_approved_judge_allows_deterministic_validation() -> None:
     result = output_guardrail_node(
         {
             "status": "in_progress",
@@ -215,7 +133,6 @@ def test_approved_judge_prevents_duplicate_semantic_validation() -> None:
             },
         },
         source="compiled",
-        evaluator=fail_evaluator,
     )
 
     assert result["output_guardrail"]["status"] == "passed"
@@ -264,15 +181,8 @@ def test_compiled_output_node_replaces_when_judge_is_missing() -> None:
     assert result["response_draft"]["content"] == CONTROLLED_OUTPUT_RESPONSE
 
 
-def test_created_compiled_node_passes_injected_model() -> None:
-    class FakeStructuredModel:
-        def invoke(self, _: Any) -> SupportValidationResult:
-            return SupportValidationResult(status="supported")
-
-    node = create_output_guardrail_node(
-        source="compiled",
-        model=FakeStructuredModel(),
-    )
+def test_created_compiled_node_uses_deterministic_validation() -> None:
+    node = create_output_guardrail_node(source="compiled")
     state = _state(
         "Resposta compilada.",
         agent_contents=["Material do agente."],

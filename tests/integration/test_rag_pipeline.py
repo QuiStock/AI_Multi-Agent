@@ -16,7 +16,13 @@ class IntegrationEmbeddings:
 
 
 class IntegrationVectorStore:
-    def search(self, *, query_vector: list[float], limit: int) -> list[SimpleNamespace]:
+    def search(
+        self,
+        *,
+        query_vector: list[float],
+        limit: int,
+        query_filter: object,
+    ) -> list[SimpleNamespace]:
         return [
             SimpleNamespace(
                 score=0.88,
@@ -34,7 +40,10 @@ def test_faq_tool_connects_retriever_to_serialized_evidence() -> None:
         embedding_provider=IntegrationEmbeddings(),
         vector_store=IntegrationVectorStore(),
     )
-    search_tool = create_faq_search_tool(retriever)
+    search_tool = create_faq_search_tool(
+        retriever,
+        allowed_audiences=("shared", "manager"),
+    )
 
     result = search_tool.invoke({"query": "Qual é a regra?"})
 

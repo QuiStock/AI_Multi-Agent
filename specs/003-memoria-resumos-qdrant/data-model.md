@@ -10,7 +10,7 @@ Um documento por conversa, identificado por `_id`; mensagens ficam em array orde
 | Campo lógico | Tipo | Regra |
 |---|---|---|
 | `_id` / `conversation_id` | string | Identificador estável da conversa; `_id` é a chave física já usada pelo repositório. |
-| `user_id` | string | Obrigatório; todas as consultas de conversa filtram por owner no servidor. |
+| `email` | string | Obrigatório desde a criação da nova coleção; identidade canônica derivada do JWT; todas as consultas de conversa filtram pelo email autenticado no servidor. Não manter campo de identidade `user_id` na nova coleção. |
 | `status` | `active \| ended \| deleting` | `deleting` é estado transitório proposto para garantir limpeza cross-store. |
 | `started_at`, `updated_at`, `ended_at` | timestamp UTC | Ordenação/listagem; campo ausente/nulo de `ended_at` enquanto ativa. |
 | `title` | string ou nulo | Metadado, não é resumo; pode continuar no Mongo. |
@@ -44,7 +44,7 @@ Coleção operacional nova; não contém texto ou embedding de resumo. `closure_
 | Campo | Tipo | Regra |
 |---|---|---|
 | `_id` / `job_id` | string | Identidade do job. |
-| `conversation_id`, `user_id` | string | Escopo e proprietário derivados do servidor. |
+| `conversation_id`, `email` | string | Escopo e identidade do usuário derivados do servidor. |
 | `closure_key`, `request_id` | string/nulo | `closure_key` estável deduplica `(conversation_id, closure_key)`; quando disponível, é derivada de `conversation_id` + `request_id` estável, que também serve à rastreabilidade. |
 | `status` | `queued \| processing \| completed \| failed \| superseded` | Estados observáveis; `processing` expira via lease; `superseded` significa conversa retomada/removida antes do job; falha terminal pode ser reprocessada por operação autorizada. |
 | `attempts` | inteiro | Contagem limitada; estado da tentativa fica no job, não no resumo. |
@@ -76,7 +76,7 @@ Um ponto estável por conversa (`point_id` determinístico a partir de `conversa
 | Payload | Tipo | Regra |
 |---|---|---|
 | `memory_type` | keyword | `conversation_summary`. |
-| `conversation_id`, `user_id` | string/keyword | Filtrar e validar owner; payload não substitui autorização Mongo. |
+| `conversation_id`, `email` | string/keyword | Filtrar e validar identidade; payload não substitui autorização Mongo. |
 | `status` | keyword | Apenas `ended` é elegível à recuperação. |
 | `title` | string/nulo | Metadado de conversa; pode ser copiado do Mongo. |
 | `summary` | string | Texto do resumo; fonte persistente exclusiva. |

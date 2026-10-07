@@ -1,1 +1,1 @@
-"""Consultative product-card workflow."""
+"""Read-only Product Workflow capability."""

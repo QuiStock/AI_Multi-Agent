@@ -34,6 +34,25 @@ class StoredMessage(BaseModel):
         return self
 
 
+class ConversationTurn(BaseModel):
+    """The two ordered messages written atomically for one completed turn."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    user_message: StoredMessage
+    assistant_message: StoredMessage
+
+    @model_validator(mode="after")
+    def validate_turn_messages(self) -> "ConversationTurn":
+        if self.user_message.role != "user":
+            raise ValueError("user_message precisa ter role=user")
+        if self.assistant_message.role != "assistant":
+            raise ValueError("assistant_message precisa ter role=assistant")
+        if self.user_message.message_id == self.assistant_message.message_id:
+            raise ValueError("As mensagens do turno precisam de IDs distintos")
+        return self
+
+
 class ConversationDocument(TypedDict):
     """Persisted conversation shape; summary state belongs to Qdrant."""
 
@@ -144,12 +163,12 @@ class SummaryContextSelection(TypedDict):
 class ConversationRepository(Protocol):
     """Persistence interface consumed by the message service."""
 
-    def append_message(
+    def append_turn(
         self,
         *,
         conversation_id: str,
         email: str,
-        message: StoredMessage,
-    ) -> bool:
-        """Return True if inserted, or False if this message was already stored."""
+        turn: ConversationTurn,
+    ) -> None:
+        """Append the user and assistant messages in one atomic Mongo update."""
         ...

@@ -7,8 +7,7 @@ from datetime import datetime, timezone
 from uuid import NAMESPACE_URL, uuid5
 
 from .mongo_repository import MongoConversationRepository
-from .summary_job_repository import MongoSummaryJobRepository
-from .summary_jobs import SummaryJob
+from .summary_job_repository import MongoSummaryJobRepository, SummaryJob
 from .summary_queue import RedisSummaryQueue
 
 logger = logging.getLogger(__name__)
@@ -94,3 +93,75 @@ class ConversationSummaryScheduler:
             [conversation_id, stable_timestamp], separators=(",", ":")
         )
         return str(uuid5(NAMESPACE_URL, f"summary-close-request:{identity}"))
+
+
+class ConversationDeletionScheduler:
+    """Mark an owned conversation and enqueue cross-store cleanup."""
+
+    def __init__(
+        self,
+        *,
+        conversations: MongoConversationRepository,
+        jobs: MongoSummaryJobRepository,
+        queue: RedisSummaryQueue,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._conversations = conversations
+        self._jobs = jobs
+        self._queue = queue
+        self._clock = clock or (lambda: datetime.now(timezone.utc))
+
+    def delete_and_schedule(
+        self,
+        *,
+        conversation_id: str,
+        email: str,
+        request_id: str | None = None,
+    ) -> SummaryJob:
+        conversation_id = conversation_id.strip()
+        email = email.strip()
+        if not conversation_id or not email:
+            raise ValueError("conversation_id e email são obrigatórios")
+
+        now = self._clock()
+        stable_request_id = request_id or str(
+            uuid5(
+                NAMESPACE_URL,
+                f"conversation-delete-request:{conversation_id}:{email}",
+            )
+        )
+        marked = self._conversations.mark_deleting(
+            conversation_id=conversation_id,
+            email=email,
+        )
+        if not marked:
+            existing = self._jobs.find_latest_for_conversation(
+                conversation_id=conversation_id,
+                email=email,
+                operation="delete",
+            )
+            if existing is not None:
+                return existing
+            from .mongo_repository import ConversationNotFoundError
+
+            raise ConversationNotFoundError(conversation_id)
+
+        job = self._jobs.create_or_get(
+            conversation_id=conversation_id,
+            email=email,
+            closure_key=f"delete:{stable_request_id}",
+            request_id=stable_request_id,
+            now=now,
+            operation="delete",
+        )
+        if job.status == "queued" and job.published_at is None:
+            try:
+                self._queue.publish(job.job_id)
+                self._jobs.mark_published(job_id=job.job_id, published_at=now)
+            except Exception as exc:
+                logger.warning(
+                    "Exclusão aguardando relay; job_id=%s error_type=%s",
+                    job.job_id,
+                    type(exc).__name__,
+                )
+        return job

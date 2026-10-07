@@ -1,4 +1,4 @@
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from .config import (
@@ -6,21 +6,16 @@ from .config import (
     InputGuardrailResult,
     OutputGuardrailResult,
 )
-from .input import SemanticCategory, validate_input
-from .output import OutputSource, SupportStatus, validate_output
+from .input import validate_input
+from .output import OutputSource, validate_output
 
 
 class GuardrailPipeline:
     def __init__(
         self,
         config: GuardrailConfig | None = None,
-        *,
-        classifier: Callable[[str], SemanticCategory] | None = None,
-        evaluator: Callable[[str, list[str]], SupportStatus] | None = None,
     ) -> None:
         self.config = config or GuardrailConfig()
-        self.classifier = classifier
-        self.evaluator = evaluator
 
     def check_input(
         self,
@@ -29,7 +24,6 @@ class GuardrailPipeline:
         return validate_input(
             state,
             config=self.config,
-            classifier=self.classifier,
         )
 
     def check_output(
@@ -44,5 +38,4 @@ class GuardrailPipeline:
             config=self.config,
             source=source,
             references=references,
-            evaluator=self.evaluator,
         )

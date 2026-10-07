@@ -1,23 +1,27 @@
 # Internal Contract: Conversation Memory Persistence
 
 **Feature**: `003-memoria-resumos-qdrant`
-**Scope**: contratos internos MongoDB, Redis Streams e Qdrant; não cria rota HTTP pública.
+**Scope**: contratos internos MongoDB, Redis Streams e Qdrant, além da
+operação HTTP autenticada de exclusão de conversa definida na spec. Não cria
+ou altera operações comerciais.
 
 ## Store ownership
 
-- MongoDB `conversations`: one document per conversation, owner/status/title/timestamps and ordered `messages` only. No summary text, summary version, or summary watermark. **Confirmed physical field**: `messages` (2026-09-30); retain the current English timestamp/title fields and `_id` identity unless implementation inspection exposes a compatibility issue. Do not add a redundant `session_id` without a demonstrated consumer.
+- MongoDB `conversations`: one document per conversation, authenticated `email` identity/status/title/timestamps and ordered `messages` only. No summary text, summary version, or summary watermark. **Confirmed physical field**: `messages` (2026-09-30); retain the current English timestamp/title fields and `_id` identity unless implementation inspection exposes a compatibility issue. New collections use `email` from creation and have no user-identity `user_id` field. Do not add a redundant `session_id` without a demonstrated consumer.
 - MongoDB `conversation_summary_jobs`: durable job metadata only; never summary text or model output.
 - Redis Stream: delivery signal containing job/conversation/owner/request identifiers, not message content or summary.
 - Qdrant memory collection: summary text, embedding and summary metadata/watermark. Stable one-point-per-conversation identity.
 
-## Append message
+## Append complete turn
 
-Input: trusted `conversation_id`, trusted `user_id`, stable `message_id`, role, content, UTC timestamp.
+Input: trusted `conversation_id`, authenticated `email`, and one ordered turn containing a stable user `message_id` and assistant `message_id`, content, and UTC timestamps.
 
-1. Append atomically to the conversation's message array only when the conversation is active and owned by `user_id`.
-2. A repeated `message_id` is an idempotent no-op.
-3. An assistant message cannot create a conversation document by itself.
-4. Stored array order is authoritative for transcript order; timestamp ties must not reorder a user/assistant pair.
+1. The input guardrail sanitizes the current `HumanMessage` and replaces it in the shared `messages` channel before context enrichment, routing, or agent execution. Do not retain a `sanitized_message` field in `GraphState` or `RequestContext`.
+2. At graph completion, persist that current sanitized user message and `final_response` as two separate objects in the conversation's `messages` array, user first and assistant second, using one atomic MongoDB document update.
+3. A repeated turn with the same two message IDs is an idempotent no-op. The initial turn creates the conversation document with both messages in that same operation.
+4. The update is allowed only when the conversation is new or active and owned by the authenticated `email`; it updates `updated_at` and increments `total_turns` once for a new turn.
+5. Stored array order is authoritative for transcript order; timestamp ties must not reorder the user/assistant pair.
+6. The shared `pii_map` may be used by output sanitization/restoration but must not be included in state projections passed to agent executors.
 
 ## End and summarize
 
@@ -33,7 +37,7 @@ Input: trusted `conversation_id`, trusted `user_id`, stable `message_id`, role, 
 ## Summary retrieval
 
 - Semantic candidates and their summary text come from Qdrant.
-- Validate every candidate against MongoDB for current conversation existence, same owner and ended status; do not fetch summary content/version from Mongo.
+- Validate every candidate against MongoDB for current conversation existence, same authenticated email and ended status; do not fetch summary content/version from Mongo.
 - If semantic retrieval produces no valid candidate, select up to the existing limit of the user's most recently updated ended Qdrant points, excluding the current conversation. Use a payload filter and indexed `updated_at` ordering, then validate owner/status in Mongo.
 - Do not make summary retrieval depend on the legacy Mongo `summary` field.
 
@@ -51,15 +55,22 @@ The reconciler itself must be restartable and idempotent. Batch size, cadence an
 
 ## Delete
 
-Internal delete operation accepts conversation ID and trusted owner. First atomically transition the conversation to non-readable `deleting` and persist an idempotent durable tombstone/cleanup job; only then remove the Qdrant point and Mongo conversation. Workers must acquire the same per-conversation coordination used by summary updates and revalidate owner/status plus tombstone immediately before Qdrant upsert. A tombstoned/deleting/missing conversation is never eligible for upsert. Keep the tombstone until both stores are confirmed absent; retries after partial completion converge to both absent. Reconciliation must honor tombstones and must not enqueue deleted conversations. The API/UX endpoint is outside this contract and requires a separate approved interface change.
+The authenticated delete operation accepts only a conversation ID in the route;
+the server derives the email from the validated principal. First atomically
+transition the conversation to non-readable `deleting` and persist an
+idempotent durable tombstone/cleanup job; only then remove the Qdrant point and
+Mongo conversation. Workers must acquire the same per-conversation
+coordination used by summary updates and revalidate email/status plus tombstone
+immediately before Qdrant upsert. A tombstoned/deleting/missing conversation is
+never eligible for upsert. Keep the tombstone until both stores are confirmed
+absent; retries after partial completion converge to both absent. Reconciliation
+must honor tombstones and must not enqueue deleted conversations. The HTTP
+response is asynchronous and returns correlation/state metadata, not summary
+content.
 
-## Legacy migration
+## Fresh collection cutover
 
-1. Keep legacy Mongo summary fields intact until each corresponding Qdrant point is present and verified.
-2. Reuse a valid point; when absent/invalid, build a fresh summary from Mongo messages and upsert it to Qdrant.
-3. Read the point back and verify identity, owner, ended state and progress marker.
-4. Only then unset the three legacy Mongo fields: `summary`, `summary_version`, `summarized_through_message_id`.
-5. Persist a migration report of counts/errors only, not summary content; failed records remain retryable.
+The user confirmed the old conversation history will be discarded. Provision new empty MongoDB and Qdrant collections; do not backfill old `user_id`, messages, summaries, jobs, or Qdrant points. Verify the exact environment and collection identifiers before cutover/physical removal. No rollback path restores the discarded conversation history.
 
 ## Compatibility review
 

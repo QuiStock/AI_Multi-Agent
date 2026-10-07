@@ -7,11 +7,8 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
-from langchain_core.messages import AIMessage
 from psycopg import errors as psycopg_errors
 
-import src.agents.product_workflow.executor as executor_module
-from src.agents.product_workflow.executor import ProductWorkflowExecutor
 from src.agents.product_workflow.schemas import ProductCard
 from src.agents.product_workflow.tools.product_card_repository import (
     ProductCardRepository,
@@ -122,44 +119,6 @@ def test_repository_rejects_empty_query_before_database_access() -> None:
             email="x@example.test", role_id=3, product_query=" "
         )
     assert pool.calls == 0
-
-
-def test_snapshot_is_evidence_without_database_lookup(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class Repository:
-        def search(self, **_: Any) -> list[ProductCard]:
-            pytest.fail("snapshot question must not look up PostgreSQL")
-
-    class FakeAgent:
-        def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
-            return {
-                "messages": [
-                    *state["messages"],
-                    AIMessage(content="O card indica leite integral."),
-                ]
-            }
-
-    monkeypatch.setattr(
-        executor_module, "create_agent_from_card", lambda **_: FakeAgent()
-    )
-    executor = ProductWorkflowExecutor(Repository(), model=object())  # type: ignore[arg-type]
-    result = executor.invoke(
-        {
-            "request": {
-                "email": "user@example.test",
-                "role_id": 3,
-                "request_id": "req-1",
-                "product_card": {"product_name": "Leite Integral", "sku": "SKU-1"},
-            },
-            "messages": [],
-        }
-    )
-    assert result["status"] == "success"
-    assert result["evidences"][0]["source_type"] == "client_card_snapshot"
-    assert (
-        result["evidences"][0]["metadata"]["provenance"] == "client_request_unverified"
-    )
 
 
 def test_lookup_tool_binds_identity_and_reports_ambiguous_products() -> None:

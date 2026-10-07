@@ -16,7 +16,7 @@ class ConversationController:
         conversation_id: str,
         request: ConversationRequest,
         email: str,
-        role_id: int,
+        role_id: int | None = None,
     ) -> ConversationResponse:
         return self._service.converse(
             conversation_id=conversation_id,

@@ -21,7 +21,7 @@ class CompilerExecutor:
         self.model = (
             get_structured_model(
                 CompilerResult,
-                kind="fast",
+                provider="gemini",
             )
             if model is None
             else model

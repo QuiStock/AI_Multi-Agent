@@ -1,3 +1,8 @@
+"""Deprecated product-card models retained for historical compatibility tests.
+
+The active Product Workflow contract is defined in ``models.py``.
+"""
+
 from __future__ import annotations
 
 from datetime import date

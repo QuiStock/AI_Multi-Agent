@@ -34,14 +34,16 @@ class ManifestStore:
                 pipeline_version=doc_data["pipeline_version"],
                 chunk_count=doc_data["chunk_count"],
                 status=IndexStatus(doc_data["status"]),
+                audience=doc_data.get("audience"),
                 indexed_at=doc_data.get("indexed_at"),
                 error=doc_data.get("error"),
             )
 
         return Manifest(
-            schema_version=data.get(
-                "schema_version",
-                1,
+            schema_version=max(2, int(data.get("schema_version", 1))),
+            audience_policy_version=data.get(
+                "audience_policy_version",
+                "faq-audience-v1",
             ),
             documents=documents,
         )
@@ -51,6 +53,7 @@ class ManifestStore:
 
         data = {
             "schema_version": manifest.schema_version,
+            "audience_policy_version": manifest.audience_policy_version,
             "documents": {
                 doc_id: asdict(doc_state) | {"status": doc_state.status.value}
                 for doc_id, doc_state in manifest.documents.items()

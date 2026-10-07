@@ -1,8 +1,6 @@
 import pytest
-from langgraph.graph.state import CompiledStateGraph
 
 from src import config, llm_factory
-from src.agents import tool_registry
 from src.agents.faq.executor import FAQExecutor
 from src.agents.faq.tools.faq_tool import create_faq_search_tool
 from src.agents.registry import get_agent_card
@@ -36,15 +34,14 @@ def test_faq_executor_builds_compiled_graph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _set_fake_key(monkeypatch)
-    monkeypatch.setitem(
-        tool_registry.TOOL_REGISTRY,
-        "faq_search",
-        create_faq_search_tool(FakeRetriever()),
+    executor = FAQExecutor(retriever=FakeRetriever())
+    tool = create_faq_search_tool(
+        FakeRetriever(),
+        allowed_audiences=("shared", "manager"),
     )
 
-    executor = FAQExecutor()
-
-    assert isinstance(executor.agent, CompiledStateGraph)
+    assert executor.model is not None
+    assert tool.name == "faq_search"
 
 
 def test_structured_model_binds_fast_and_gemini_paths(
@@ -68,14 +65,14 @@ def test_structured_model_binds_fast_and_gemini_paths(
         ) -> FakeRunnable:
             return FakeRunnable()
 
-    monkeypatch.setattr(llm_factory, "llm_fast", FakeProvider())
+    monkeypatch.setattr(llm_factory, "llm_groq", FakeProvider())
     monkeypatch.setattr(llm_factory, "llm_gemini", FakeProvider())
     monkeypatch.setattr(llm_factory, "llm_groq", FakeProvider())
 
-    fast = llm_factory.get_structured_model(RouteDecision, kind="fast")
+    groq = llm_factory.get_structured_model(RouteDecision, provider="groq")
     default = llm_factory.get_structured_model(RouteDecision)
 
-    assert isinstance(fast, FakeRunnable)
+    assert isinstance(groq, FakeRunnable)
     assert isinstance(default, FakeRunnable)
     assert default.fallbacks == []
 

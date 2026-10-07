@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from langchain_core.messages import AnyMessage, SystemMessage
+from langchain_core.messages import AnyMessage, HumanMessage, SystemMessage
 
 from src.agents.factory import create_agent_from_card
 from src.agents.router.card import ROUTER_CARD
@@ -73,7 +73,7 @@ class RouterExecutor:
         request_context: Mapping[str, Any] | None = None,
     ) -> RoutingDecision:
         try:
-            tool_context = self._tool_context(request_context)
+            tool_context = self._tool_context(messages, request_context)
             if self.summary_search_service is not None and tool_context is not None:
                 tool = build_search_conversation_summaries_tool(
                     service=self.summary_search_service,
@@ -113,6 +113,7 @@ class RouterExecutor:
 
     @staticmethod
     def _tool_context(
+        messages: Sequence[AnyMessage],
         request_context: Mapping[str, Any] | None,
     ) -> dict[str, str] | None:
         if request_context is None:
@@ -120,7 +121,16 @@ class RouterExecutor:
         email = request_context.get("email")
         conversation_id = request_context.get("conversation_id")
         request_id = request_context.get("request_id")
-        query = request_context.get("sanitized_message")
+        query = next(
+            (
+                message.content
+                for message in reversed(messages)
+                if isinstance(message, HumanMessage)
+                and isinstance(message.content, str)
+                and message.content.strip()
+            ),
+            None,
+        )
         if not isinstance(email, str) or not email.strip():
             return None
         if not isinstance(conversation_id, str) or not conversation_id.strip():

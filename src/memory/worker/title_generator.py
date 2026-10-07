@@ -32,7 +32,7 @@ class TitleGenerator(Protocol):
 
 
 class LLMConversationTitleGenerator:
-    """Use the dedicated Gemini Flash-Lite structured-output model."""
+    """Use the Hugging Face structured-output model for conversation titles."""
 
     def __init__(self, model: Any | None = None) -> None:
         self._model = get_title_model(ConversationTitle) if model is None else model

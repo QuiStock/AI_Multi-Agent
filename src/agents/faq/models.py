@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+from src.agents.faq.ingestion.audience import Audience
+
 
 @dataclass(frozen=True)
 class DocumentPart:
@@ -21,3 +23,4 @@ class DocumentLoaded:
     source_name: str
     file_type: str
     parts: tuple[DocumentPart, ...]
+    audience: Audience | None = None

@@ -1,19 +1,11 @@
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import replace
 from functools import partial
-from typing import Any, Literal
+from typing import Literal
 
-from langchain_core.messages import HumanMessage, SystemMessage
-
-from .config import (
-    GuardrailConfig,
-    OutputGuardrailResult,
-    SupportValidationResult,
-)
+from .config import GuardrailConfig, OutputGuardrailResult
 from .pii import restore_pii_placeholders
 
 CONTROLLED_OUTPUT_RESPONSE = (
@@ -39,7 +31,6 @@ def _controlled_correction(
 
 
 OutputSource = Literal["faq", "compiled"]
-SupportStatus = Literal["supported", "unsupported"]
 
 
 _EMOJI_PATTERN = re.compile("[\U0001f1e6-\U0001f1ff\U0001f300-\U0001faff\u2600-\u27bf]")
@@ -52,19 +43,6 @@ _UNSUPPORTED_COMMERCIAL_CLAIMS = (
     "entrega confirmada",
     "pedido processado",
 )
-
-
-_SUPPORT_SYSTEM_PROMPT = """Você verifica se uma resposta foi sustentada pelos
-materiais fornecidos.
-
-Responda somente com uma destas classificações:
-- supported: todas as afirmações factuais da resposta estão apoiadas pelos materiais;
-- unsupported: existe qualquer afirmação factual nova ou não apoiada.
-
-Permita resumos, reorganização, paráfrases e formatação Markdown.
-Não use conhecimento externo, não reescreva a resposta e não avalie regras que
-não estejam nos materiais fornecidos.
-"""
 
 
 def _remove_emojis(content: str) -> tuple[str, bool]:
@@ -85,36 +63,6 @@ def _markdown_violations(content: str) -> list[str]:
         violations.append("unbalanced_bold_delimiter")
 
     return violations
-
-
-def evaluate_compiled_output(
-    response: str,
-    references: list[str],
-    *,
-    model: Any | None = None,
-) -> SupportStatus:
-    from src.llm_factory import get_structured_model
-
-    structured_model = model or get_structured_model(
-        SupportValidationResult,
-        kind="fast",
-    )
-    materials = json.dumps(references, ensure_ascii=False)
-    messages = [
-        SystemMessage(content=_SUPPORT_SYSTEM_PROMPT),
-        HumanMessage(
-            content=(
-                f"Materiais fornecidos pelos agentes:\n{materials}\n\n"
-                f"Resposta compilada:\n{response}"
-            )
-        ),
-    ]
-    result = structured_model.invoke(messages)
-
-    if not isinstance(result, SupportValidationResult):
-        result = SupportValidationResult.model_validate(result)
-
-    return result.status
 
 
 def _result(
@@ -229,52 +177,12 @@ def _commercial_claim_result(
     )
 
 
-def _compiled_support_result(
-    sanitized: str,
-    references: Sequence[str],
-    sanitized_result: str | None,
-    evaluator: Callable[[str, list[str]], SupportStatus] | None,
-) -> OutputGuardrailResult | None:
-    if evaluator is None:
-        return _controlled_correction(
-            "validator_unavailable",
-            "Não foi possível validar o suporte da resposta.",
-            violations=["support_validation_failed"],
-        )
-
-    try:
-        support = evaluator(sanitized, list(references))
-    except Exception:
-        return _controlled_correction(
-            "validator_unavailable",
-            "Não foi possível validar o suporte da resposta.",
-            violations=["support_validation_failed"],
-        )
-
-    if support == "unsupported":
-        return _controlled_correction(
-            "unsupported_content",
-            "A resposta contém conteúdo não sustentado pelos materiais fornecidos.",
-            violations=["unsupported_content"],
-        )
-
-    if support != "supported":
-        return _controlled_correction(
-            "validator_unavailable",
-            "A validação não retornou uma classificação permitida.",
-            violations=["invalid_support_status"],
-        )
-
-    return None
-
-
 def validate_output(
     content: str,
     *,
     config: GuardrailConfig | None = None,
     source: OutputSource,
     references: Sequence[str] = (),
-    evaluator: Callable[[str, list[str]], SupportStatus] | None = None,
 ) -> OutputGuardrailResult:
     config = config or GuardrailConfig()
 
@@ -309,16 +217,6 @@ def validate_output(
     if commercial_claim_result is not None:
         return commercial_claim_result
 
-    if source == "compiled" and config.evaluate_compiled_support:
-        support_result = _compiled_support_result(
-            sanitized,
-            references,
-            sanitized_result,
-            evaluator,
-        )
-        if support_result is not None:
-            return support_result
-
     return _result(
         "approved",
         "A resposta passou pela validação.",
@@ -332,7 +230,6 @@ def output_guardrail_node(
     *,
     guardrail_config: GuardrailConfig | None = None,
     source: OutputSource,
-    evaluator: Callable[[str, list[str]], SupportStatus] | None = None,
 ) -> dict[str, object]:
     response = state.get("response_draft")
     if not isinstance(response, Mapping):
@@ -414,20 +311,11 @@ def output_guardrail_node(
                         else []
                     )
 
-                validation_config = guardrail_config or GuardrailConfig()
-
-                if isinstance(judge, Mapping) and judge.get("status") == "approved":
-                    validation_config = replace(
-                        validation_config,
-                        evaluate_compiled_support=False,
-                    )
-
                 result = validate_output(
                     raw_content,
-                    config=validation_config,
+                    config=guardrail_config,
                     source=source,
                     references=references,
-                    evaluator=evaluator,
                 )
                 sanitized_content = result.get("sanitized_content")
                 content = (
@@ -463,17 +351,10 @@ def output_guardrail_node(
 def create_output_guardrail_node(
     *,
     source: OutputSource,
-    model: Any | None = None,
     guardrail_config: GuardrailConfig | None = None,
 ) -> Callable[[Mapping[str, object]], dict[str, object]]:
-    evaluator: Callable[[str, list[str]], SupportStatus] | None = None
-
-    if source == "compiled":
-        evaluator = partial(evaluate_compiled_output, model=model)
-
     return partial(
         output_guardrail_node,
         source=source,
-        evaluator=evaluator,
         guardrail_config=guardrail_config,
     )

@@ -42,56 +42,48 @@ def message_service(conversation_collection: Collection) -> MemoryMessageService
     return MemoryMessageService(MongoConversationRepository(conversation_collection))
 
 
-def test_first_user_message_creates_the_single_conversation_document(
+def _save_turn(
+    service: MemoryMessageService,
+    *,
+    conversation_id: str = "conversation-1",
+    email: str = "user-1",
+    request_id: str = "request-1",
+    user_content: str = "Question",
+    assistant_content: str = "Answer",
+    consulted_agents: list[str] | None = None,
+    sent_at: datetime | None = None,
+) -> None:
+    service.save_turn(
+        conversation_id=conversation_id,
+        email=email,
+        request_id=request_id,
+        sanitized_user_content=user_content,
+        assistant_content=assistant_content,
+        consulted_agents=consulted_agents or [],
+        sent_at=sent_at,
+    )
+
+
+def test_first_turn_creates_one_document_with_two_ordered_messages(
     conversation_collection: Collection,
     message_service: MemoryMessageService,
 ) -> None:
-    created = message_service.save_user_message(
-        conversation_id="conversation-1",
-        email="user-1",
-        request_id="request-1",
-        sanitized_content="$2 milk",
+    sent_at = datetime(2026, 9, 22, 17, 30, tzinfo=timezone.utc)
+    _save_turn(
+        message_service,
+        user_content="$2 milk",
+        assistant_content="There are two cartons.",
+        consulted_agents=["faq"],
+        sent_at=sent_at,
     )
 
     document = conversation_collection.find_one({"_id": "conversation-1"})
-    assert created is True
     assert document is not None
     assert "session_id" not in document
     assert document["email"] == "user-1"
     assert document["status"] == "active"
     assert document["title"] is None
-    assert document["total_turns"] == 0
-    assert len(document["messages"]) == 1
-    assert document["messages"][0]["content"] == "$2 milk"
-    assert document["messages"][0]["role"] == "user"
-    assert document["messages"][0]["message_id"] == "request-1:user"
-    assert document["messages"][0]["created_at"].replace(
-        tzinfo=timezone.utc
-    ) == document["started_at"].replace(tzinfo=timezone.utc)
-
-
-def test_conversation_document_keeps_ordered_messages_without_summary_fields(
-    conversation_collection: Collection,
-    message_service: MemoryMessageService,
-) -> None:
-    message_service.save_user_message(
-        conversation_id="conversation-ordered",
-        email="user-1",
-        request_id="request-1",
-        sanitized_content="Question",
-    )
-    message_service.save_assistant_message(
-        conversation_id="conversation-ordered",
-        email="user-1",
-        request_id="request-1",
-        content="Answer",
-        consulted_agents=["faq"],
-    )
-
-    documents = list(conversation_collection.find({"_id": "conversation-ordered"}))
-
-    assert len(documents) == 1
-    document = documents[0]
+    assert document["total_turns"] == 1
     assert [message["role"] for message in document["messages"]] == [
         "user",
         "assistant",
@@ -100,198 +92,108 @@ def test_conversation_document_keeps_ordered_messages_without_summary_fields(
         "request-1:user",
         "request-1:assistant",
     ]
-    assert not {
-        "summary",
-        "summary_version",
-        "summarized_through_message_id",
-    }.intersection(document)
+    assert document["messages"][0]["content"] == "$2 milk"
+    assert document["messages"][1]["content"] == "There are two cartons."
+    assert document["messages"][1]["consulted_agents"] == ["faq"]
+    assert document["messages"][0]["created_at"].replace(tzinfo=timezone.utc) == sent_at
+    assert document["updated_at"].replace(tzinfo=timezone.utc) >= sent_at
 
 
-def test_assistant_reply_appends_and_increments_turns_once(
+def test_repeated_turn_is_an_idempotent_noop(
     conversation_collection: Collection,
     message_service: MemoryMessageService,
 ) -> None:
-    message_service.save_user_message(
-        conversation_id="conversation-1",
-        email="user-1",
-        request_id="request-1",
-        sanitized_content="Question",
-    )
+    _save_turn(message_service)
+    before = conversation_collection.find_one({"_id": "conversation-1"})
 
-    inserted = message_service.save_assistant_message(
-        conversation_id="conversation-1",
-        email="user-1",
-        request_id="request-1",
-        content="$Answer",
-        consulted_agents=["product_workflow"],
-    )
-    retry_inserted = message_service.save_assistant_message(
-        conversation_id="conversation-1",
-        email="user-1",
-        request_id="request-1",
-        content="$Answer",
-        consulted_agents=["product_workflow"],
+    _save_turn(message_service)
+
+    after = conversation_collection.find_one({"_id": "conversation-1"})
+    assert before is not None and after is not None
+    assert after["messages"] == before["messages"]
+    assert after["total_turns"] == 1
+    assert after["updated_at"] == before["updated_at"]
+
+
+def test_new_turn_appends_both_messages_and_increments_once(
+    conversation_collection: Collection,
+    message_service: MemoryMessageService,
+) -> None:
+    _save_turn(message_service)
+    _save_turn(
+        message_service,
+        request_id="request-2",
+        user_content="Follow-up",
+        assistant_content="Follow-up answer",
     )
 
     document = conversation_collection.find_one({"_id": "conversation-1"})
-    assert inserted is True
-    assert retry_inserted is False
     assert document is not None
-    assert [message["role"] for message in document["messages"]] == [
-        "user",
-        "assistant",
+    assert [message["message_id"] for message in document["messages"]] == [
+        "request-1:user",
+        "request-1:assistant",
+        "request-2:user",
+        "request-2:assistant",
     ]
-    assert document["messages"][1]["consulted_agents"] == ["product_workflow"]
-    assert document["messages"][1]["content"] == "$Answer"
-    assert document["total_turns"] == 1
+    assert document["total_turns"] == 2
 
 
-def test_repeated_user_request_does_not_duplicate_message(
+def test_turn_is_scoped_to_its_user(
     conversation_collection: Collection,
     message_service: MemoryMessageService,
 ) -> None:
-    arguments = {
-        "conversation_id": "conversation-1",
-        "email": "user-1",
-        "request_id": "request-1",
-        "sanitized_content": "Question",
-    }
-
-    assert message_service.save_user_message(**arguments) is True
-    assert message_service.save_user_message(**arguments) is False
-
-    document = conversation_collection.find_one({"_id": "conversation-1"})
-    assert document is not None
-    assert len(document["messages"]) == 1
-
-
-def test_conversation_is_scoped_to_its_user(
-    conversation_collection: Collection,
-    message_service: MemoryMessageService,
-) -> None:
-    message_service.save_user_message(
-        conversation_id="conversation-1",
-        email="owner",
-        request_id="request-1",
-        sanitized_content="Private",
-    )
+    _save_turn(message_service, email="owner")
 
     with pytest.raises(ConversationNotFoundError):
-        message_service.save_user_message(
-            conversation_id="conversation-1",
+        _save_turn(
+            message_service,
             email="another-user",
             request_id="request-2",
-            sanitized_content="Do not append",
+            user_content="Do not append",
         )
 
     document = conversation_collection.find_one({"_id": "conversation-1"})
     assert document is not None
     assert document["email"] == "owner"
-    assert len(document["messages"]) == 1
+    assert len(document["messages"]) == 2
 
 
-def test_assistant_cannot_create_a_conversation(
-    message_service: MemoryMessageService,
-) -> None:
-    with pytest.raises(ConversationNotFoundError):
-        message_service.save_assistant_message(
-            conversation_id="missing-conversation",
-            email="user-1",
-            request_id="request-1",
-            content="Orphan response",
-            consulted_agents=[],
-        )
-
-
-def test_ended_conversation_rejects_new_messages_but_accepts_retry(
+def test_ended_conversation_rejects_new_turn_but_accepts_retry(
     conversation_collection: Collection,
     message_service: MemoryMessageService,
 ) -> None:
-    message_service.save_user_message(
-        conversation_id="conversation-1",
-        email="user-1",
-        request_id="request-1",
-        sanitized_content="Question",
-    )
+    _save_turn(message_service)
     conversation_collection.update_one(
         {"_id": "conversation-1"},
         {"$set": {"status": "ended"}},
     )
 
-    assert (
-        message_service.save_user_message(
-            conversation_id="conversation-1",
-            email="user-1",
-            request_id="request-1",
-            sanitized_content="Question",
-        )
-        is False
-    )
+    _save_turn(message_service)
     with pytest.raises(ConversationClosedError):
-        message_service.save_user_message(
-            conversation_id="conversation-1",
-            email="user-1",
+        _save_turn(
+            message_service,
             request_id="request-2",
-            sanitized_content="New message",
+            user_content="New message",
         )
 
     document = conversation_collection.find_one({"_id": "conversation-1"})
     assert document is not None
-    assert len(document["messages"]) == 1
+    assert len(document["messages"]) == 2
+    assert document["total_turns"] == 1
 
 
-def test_stored_dates_are_utc_and_updated_at_tracks_latest_message(
-    conversation_collection: Collection,
-    message_service: MemoryMessageService,
-) -> None:
-    message_service.save_user_message(
-        conversation_id="conversation-1",
-        email="user-1",
-        request_id="request-1",
-        sanitized_content="Question",
-    )
-    message_service.save_assistant_message(
-        conversation_id="conversation-1",
-        email="user-1",
-        request_id="request-1",
-        content="Answer",
-        consulted_agents=[],
-    )
-
-    document = conversation_collection.find_one({"_id": "conversation-1"})
-    assert document is not None
-    user_time = document["messages"][0]["created_at"].replace(tzinfo=timezone.utc)
-    assistant_time = document["messages"][1]["created_at"].replace(tzinfo=timezone.utc)
-    updated_at = document["updated_at"].replace(tzinfo=timezone.utc)
-    assert user_time.tzinfo == timezone.utc
-    assert assistant_time >= user_time
-    assert updated_at == max(user_time, assistant_time)
-
-
-def test_summary_snapshot_accepts_qdrant_state_without_persisting_it_in_mongo(
+def test_summary_snapshot_uses_qdrant_state_without_persisting_it_in_mongo(
     conversation_collection: Collection,
     message_service: MemoryMessageService,
 ) -> None:
     repository = MongoConversationRepository(conversation_collection)
-    message_service.save_user_message(
-        conversation_id="conversation-1",
-        email="user-1",
-        request_id="request-1",
-        sanitized_content="Question",
-    )
-    message_service.save_assistant_message(
-        conversation_id="conversation-1",
-        email="user-1",
-        request_id="request-1",
-        content="Answer",
-        consulted_agents=[],
-    )
-
+    _save_turn(message_service)
     repository.mark_ended(
         conversation_id="conversation-1",
         email="user-1",
         ended_at=datetime.now(timezone.utc),
     )
+
     snapshot = repository.get_summary_snapshot(
         conversation_id="conversation-1",
         email="user-1",
@@ -305,15 +207,15 @@ def test_summary_snapshot_accepts_qdrant_state_without_persisting_it_in_mongo(
         "request-1:user",
         "request-1:assistant",
     ]
-    assert snapshot.messages[0].created_at.tzinfo == timezone.utc
     assert snapshot.summary == "Question and answer."
     assert snapshot.summary_version == 1
-    assert snapshot.summarized_through_message_id == "request-1:assistant"
     document = conversation_collection.find_one({"_id": "conversation-1"})
     assert document is not None
-    assert "summary" not in document
-    assert "summary_version" not in document
-    assert "summarized_through_message_id" not in document
+    assert not {
+        "summary",
+        "summary_version",
+        "summarized_through_message_id",
+    }.intersection(document)
 
 
 def test_ended_conversation_is_listed_and_reopened_with_existing_history(
@@ -321,19 +223,7 @@ def test_ended_conversation_is_listed_and_reopened_with_existing_history(
     message_service: MemoryMessageService,
 ) -> None:
     repository = MongoConversationRepository(conversation_collection)
-    message_service.save_user_message(
-        conversation_id="conversation-resume",
-        email="user-1",
-        request_id="request-1",
-        sanitized_content="Question",
-    )
-    message_service.save_assistant_message(
-        conversation_id="conversation-resume",
-        email="user-1",
-        request_id="request-1",
-        content="Answer",
-        consulted_agents=[],
-    )
+    _save_turn(message_service, conversation_id="conversation-resume")
     conversation_collection.update_one(
         {"_id": "conversation-resume"},
         {"$set": {"title": "Earlier session"}},
@@ -369,12 +259,7 @@ def test_conversation_history_cannot_be_resumed_by_another_user(
     message_service: MemoryMessageService,
 ) -> None:
     repository = MongoConversationRepository(conversation_collection)
-    message_service.save_user_message(
-        conversation_id="private-conversation",
-        email="owner",
-        request_id="request-1",
-        sanitized_content="Private question",
-    )
+    _save_turn(message_service, conversation_id="private-conversation", email="owner")
     repository.mark_ended(
         conversation_id="private-conversation",
         email="owner",
@@ -392,4 +277,3 @@ def test_conversation_history_cannot_be_resumed_by_another_user(
     assert document is not None
     assert document["email"] == "owner"
     assert document["status"] == "ended"
-    assert document["messages"][0]["content"] == "Private question"

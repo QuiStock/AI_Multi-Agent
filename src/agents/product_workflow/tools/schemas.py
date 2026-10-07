@@ -1,3 +1,5 @@
+"""Deprecated arguments for the historical product-card tool."""
+
 from pydantic import BaseModel, ConfigDict, Field
 
 

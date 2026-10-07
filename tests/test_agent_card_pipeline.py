@@ -12,6 +12,16 @@ from src.agents.router.card import ROUTER_CARD
 from src.graphs.contracts import RouteDecision
 
 
+class EmptyRetriever:
+    def search(
+        self,
+        query: str,
+        *,
+        allowed_audiences: tuple[str, ...],
+    ) -> list[dict[str, object]]:
+        return []
+
+
 def _fake_search(query: str) -> str:
     """Return deterministic evidence for the pipeline test."""
 
@@ -71,19 +81,23 @@ def test_executor_forwards_agent_input_to_compiled_agent(
 
     monkeypatch.setattr(
         "src.agents.faq.executor.create_agent_from_card",
-        lambda card, model: FakeAgent(),
+        lambda **kwargs: FakeAgent(),
     )
 
     agent_input = {
         "messages": [HumanMessage(content="Pergunta de teste")],
+        "request": {"role_id": 3},
     }
-    result = FAQExecutor(model="fake-model").invoke(agent_input)
+    result = FAQExecutor(
+        retriever=EmptyRetriever(),
+        model="fake-model",
+    ).invoke(agent_input)
 
     assert result == {
         "answer": "",
         "evidences": [],
     }
-    assert captured["agent_input"] == agent_input
+    assert captured["agent_input"] == {"messages": agent_input["messages"]}
 
 
 def test_factory_accepts_per_request_router_tools_and_response_schema(

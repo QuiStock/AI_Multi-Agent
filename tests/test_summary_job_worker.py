@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from src.memory.mongo_repository import ConversationNotEndedError
-from src.memory.summary_jobs import SummaryJob
+from src.memory.summary_job_repository import SummaryJob
 from src.memory.summary_lock_repository import ConversationSummaryLease
 from src.memory.worker.summary_job_worker import (
     SummaryJobWorker,
@@ -11,12 +11,13 @@ from src.memory.worker.summary_job_worker import (
 NOW = datetime(2026, 10, 1, tzinfo=timezone.utc)
 
 
-def _job() -> SummaryJob:
+def _job(*, operation: str = "summary") -> SummaryJob:
     return SummaryJob(
         job_id="conversation-1:close-1",
         conversation_id="conversation-1",
         email="user-1",
         closure_key="close-1",
+        operation=operation,  # type: ignore[arg-type]
         status="processing",
         attempts=1,
         created_at=NOW,
@@ -112,6 +113,21 @@ class ResumedConversationProcessor:
         raise ConversationNotEndedError("conversation resumed")
 
 
+class DeleteJobRepository(FakeJobRepository):
+    def claim(self, **_: object) -> SummaryJob:
+        self.events.append("claim")
+        return _job(operation="delete")
+
+
+class FakeCleanupProcessor:
+    def __init__(self) -> None:
+        self.deleted = False
+
+    def delete(self, *, before_delete: object, **_: object) -> None:
+        before_delete()  # type: ignore[operator]
+        self.deleted = True
+
+
 def _worker(
     repository: FakeJobRepository, queue: FakeQueue, processor: FakeProcessor
 ) -> SummaryJobWorker:
@@ -184,4 +200,25 @@ def test_job_is_superseded_if_the_conversation_was_resumed() -> None:
 
     assert "superseded" in repository.events
     assert "retry" not in repository.events
+    assert queue.acks == ["1-0"]
+
+
+def test_worker_processes_delete_operation_before_ack() -> None:
+    repository = DeleteJobRepository()
+    queue = FakeQueue()
+    cleanup = FakeCleanupProcessor()
+    worker = SummaryJobWorker(
+        repository=repository,  # type: ignore[arg-type]
+        conversation_locks=FakeLockRepository(),  # type: ignore[arg-type]
+        queue=queue,  # type: ignore[arg-type]
+        processor=FakeProcessor(),  # type: ignore[arg-type]
+        cleanup_processor=cleanup,  # type: ignore[arg-type]
+        settings=SummaryJobWorkerSettings(
+            worker_id="worker-1", clock=lambda: NOW, lease_seconds=30
+        ),
+    )
+
+    worker.run_once(block_ms=0)
+
+    assert cleanup.deleted
     assert queue.acks == ["1-0"]

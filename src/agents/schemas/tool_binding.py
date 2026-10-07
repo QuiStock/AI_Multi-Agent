@@ -37,5 +37,3 @@ class ToolBinding(BaseModel):
     name: str = Field(min_length=1)
     description: str = Field(min_length=1)
     properties: list[ToolProperty] = Field(default_factory=list)
-
-    skip_compilation: bool = False

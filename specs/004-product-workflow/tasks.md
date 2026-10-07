@@ -1,5 +1,9 @@
 # Tasks: Product Workflow consultivo para sugestões de produto
 
+> Superseded by `specs/005-product-workflow-read-only`. These historical
+> tasks describe the former snapshot/card and `product_card_lookup` contract;
+> the active runtime uses the two tools documented in the newer feature.
+
 **Input**: Design artifacts in `specs/004-product-workflow/`  
 **Prerequisites**: `plan.md`, `spec.md`, `research.md`, `data-model.md`, `contracts/product-card-tool.md`, `quickstart.md`  
 **Tests**: Incluídos conforme a Constituição e o `quickstart.md`; para cada fatia, escrevê-los antes da implementação.

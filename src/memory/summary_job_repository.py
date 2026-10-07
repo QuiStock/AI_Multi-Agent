@@ -4,16 +4,67 @@ import json
 import re
 from contextlib import suppress
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Literal
 from uuid import NAMESPACE_URL, uuid5
 
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pymongo import ASCENDING, ReturnDocument
 from pymongo.collection import Collection
 from pymongo.errors import DuplicateKeyError
 
-from .summary_jobs import DEFAULT_MAX_ATTEMPTS, SummaryJob
-
 SUMMARY_JOBS_COLLECTION_NAME = "conversation_summary_jobs"
+SummaryJobStatus = Literal["queued", "processing", "completed", "failed", "superseded"]
+SummaryJobOperation = Literal["summary", "delete"]
+DEFAULT_MAX_ATTEMPTS = 5
+DEFAULT_RETRY_BASE_SECONDS = 2
+DEFAULT_RETRY_MAX_SECONDS = 300
+
+
+class SummaryJob(BaseModel):
+    """Durable job metadata; transcripts and generated summaries are excluded."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    job_id: str = Field(min_length=1)
+    conversation_id: str = Field(min_length=1)
+    email: str = Field(min_length=1)
+    closure_key: str = Field(min_length=1)
+    request_id: str | None = None
+    operation: SummaryJobOperation = "summary"
+    status: SummaryJobStatus = "queued"
+    attempts: int = Field(default=0, ge=0)
+    max_attempts: int = Field(default=DEFAULT_MAX_ATTEMPTS, ge=1)
+    created_at: datetime
+    updated_at: datetime
+    published_at: datetime | None = None
+    next_attempt_at: datetime | None = None
+    lease_owner: str | None = None
+    lease_until: datetime | None = None
+    last_error: str | None = None
+
+    @field_validator(
+        "created_at", "updated_at", "published_at", "next_attempt_at", "lease_until"
+    )
+    @classmethod
+    def require_aware_datetimes(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("Datas do job precisam incluir timezone")
+        return value
+
+
+def retry_delay_seconds(
+    attempts: int,
+    *,
+    base_seconds: int = DEFAULT_RETRY_BASE_SECONDS,
+    max_seconds: int = DEFAULT_RETRY_MAX_SECONDS,
+) -> int:
+    """Return bounded exponential backoff for a one-based attempt count."""
+    if attempts < 1:
+        raise ValueError("attempts precisa ser pelo menos 1")
+    if base_seconds < 1 or max_seconds < base_seconds:
+        raise ValueError("Configuração de backoff inválida")
+    delay = base_seconds * (1 << (attempts - 1))
+    return delay if delay < max_seconds else max_seconds
 
 
 class MongoSummaryJobRepository:
@@ -57,6 +108,7 @@ class MongoSummaryJobRepository:
         closure_key: str,
         request_id: str | None,
         now: datetime,
+        operation: SummaryJobOperation = "summary",
     ) -> SummaryJob:
         if not self._indexes_ready:
             self.ensure_indexes()
@@ -65,13 +117,14 @@ class MongoSummaryJobRepository:
         self._validate_key(closure_key, "closure_key")
         self._require_aware(now)
         identity = json.dumps([conversation_id, closure_key], separators=(",", ":"))
-        job_id = str(uuid5(NAMESPACE_URL, f"summary-job:{identity}"))
+        job_id = str(uuid5(NAMESPACE_URL, f"summary-job:{operation}:{identity}"))
         document = {
             "_id": job_id,
             "conversation_id": conversation_id,
             "email": email,
             "closure_key": closure_key,
             "request_id": request_id,
+            "operation": operation,
             "status": "queued",
             "attempts": 0,
             "max_attempts": self._max_attempts,
@@ -127,6 +180,23 @@ class MongoSummaryJobRepository:
             .limit(limit)
         )
         return [self._parse(item) for item in cursor]
+
+    def find_latest_for_conversation(
+        self,
+        *,
+        conversation_id: str,
+        email: str,
+        operation: SummaryJobOperation,
+    ) -> SummaryJob | None:
+        document = self._collection.find_one(
+            {
+                "conversation_id": conversation_id,
+                "email": email,
+                "operation": operation,
+            },
+            sort=[("updated_at", -1), ("_id", -1)],
+        )
+        return self._parse(document) if document is not None else None
 
     def mark_published(self, *, job_id: str, published_at: datetime) -> bool:
         self._require_aware(published_at)

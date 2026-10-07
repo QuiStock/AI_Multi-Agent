@@ -197,8 +197,8 @@ def _make_components(
 
 
 def _create_docs(tmp_path: Path, *names: str) -> Path:
-    docs_dir = tmp_path / "docs"
-    docs_dir.mkdir()
+    docs_dir = tmp_path / "docs" / "shared"
+    docs_dir.mkdir(parents=True)
 
     for name in names:
         path = docs_dir / name
@@ -596,6 +596,7 @@ def test_qdrant_store_logs_inserted_and_removed_points(
         doc_id="faq.txt",
         chunk_index=0,
         text="conteúdo",
+        audience="shared",
         metadata={
             "source_name": "faq.txt",
             "file_type": ".txt",
@@ -660,6 +661,7 @@ def test_qdrant_retriever_logs_candidates_and_results(
             *,
             query_vector: list[float],
             limit: int,
+            query_filter: object,
         ) -> list[Any]:
             return [
                 SimpleNamespace(
@@ -691,7 +693,10 @@ def test_qdrant_retriever_logs_candidates_and_results(
         logging.INFO,
         logger="src.agents.faq.retrieval.qdrant_retriever",
     ):
-        results = retriever.search("qual é a regra?")
+        results = retriever.search(
+            "qual é a regra?",
+            allowed_audiences=("shared", "manager"),
+        )
 
     finished = next(
         record

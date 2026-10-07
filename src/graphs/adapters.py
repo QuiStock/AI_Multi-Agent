@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
-from typing import Any, Literal, Protocol, cast
+from typing import Any, Protocol, cast
 
 from langchain_core.messages import (
     AIMessage,
@@ -46,25 +46,6 @@ class ConversationContextEnricherPort(Protocol):
 class MemoryMessagePersistencePort(Protocol):
     """Persist the user and assistant messages of one accepted turn."""
 
-    def save_user_message(
-        self,
-        *,
-        conversation_id: str,
-        email: str,
-        request_id: str,
-        sanitized_content: str,
-    ) -> bool: ...
-
-    def save_assistant_message(
-        self,
-        *,
-        conversation_id: str,
-        email: str,
-        request_id: str,
-        content: str,
-        consulted_agents: list[str],
-    ) -> bool: ...
-
     def save_turn(  # noqa: PLR0913 - one persistence operation needs both messages
         self,
         *,
@@ -83,7 +64,7 @@ class FAQExecutorPort(Protocol):
 
 
 class ProductWorkflowExecutorPort(Protocol):
-    def invoke(self, state: dict[str, Any]) -> dict[str, Any]: ...
+    def invoke(self, state: GraphState) -> dict[str, Any]: ...
 
 
 class CompilerExecutorPort(Protocol):
@@ -100,31 +81,10 @@ class JudgeExecutorPort(Protocol):
 
 
 def sanitized_state(state: GraphState) -> GraphState:
-    request = state.get("request", {})
-    sanitized = request.get("sanitized_message")
-
-    if not sanitized:
-        return state
-
-    messages = list(state.get("messages", []))
-
-    for index in range(len(messages) - 1, -1, -1):
-        if isinstance(messages[index], HumanMessage):
-            request_id = request.get("request_id")
-            message_id = (
-                f"{request_id}:user"
-                if isinstance(request_id, str) and request_id.strip()
-                else messages[index].id
-            )
-            messages[index] = HumanMessage(
-                content=sanitized,
-                id=message_id,
-            )
-            break
-    return {
-        **state,
-        "messages": messages,
-    }
+    """Keep private PII restoration data away from agent executors."""
+    agent_state = dict(state)
+    agent_state.pop("pii_map", None)
+    return cast(GraphState, agent_state)
 
 
 def run_router_node(
@@ -152,6 +112,7 @@ def run_faq_node(
     result = executor.invoke(
         {
             "messages": current_state.get("messages", []),
+            "request": current_state.get("request"),
         }
     )
 
@@ -168,6 +129,9 @@ def run_faq_node(
         "answer": answer,
         "citation_ids": citation_ids,
     }
+    error_code = result.get("error_code")
+    if isinstance(error_code, str) and error_code:
+        faq_result["error_code"] = error_code
 
     return {
         "agent_results": {
@@ -183,30 +147,25 @@ def run_product_workflow_node(
     executor: ProductWorkflowExecutorPort,
 ) -> GraphUpdate:
     current_state = sanitized_state(state)
-    result = executor.invoke(
-        {
-            "messages": current_state.get("messages", []),
-            "request": current_state.get("request", {}),
-        }
-    )
+    result = executor.invoke(current_state)
     answer = str(result.get("answer", "")).strip()
     evidences = cast(list[Evidence], result.get("evidences", []))
-    raw_status = result.get("status", "unavailable")
-    status = cast(
-        Literal["success", "unavailable", "error"],
-        raw_status
-        if raw_status in {"success", "unavailable", "error"}
-        else "unavailable",
-    )
+    error_code = result.get("error_code")
     product_result: ProductWorkFlowResult = {
-        "status": status,
+        "status": "success"
+        if answer and evidences
+        else "unavailable"
+        if error_code == "PRODUCT_WORKFLOW_UNAVAILABLE"
+        else "error",
         "answer": answer,
         "evidence_ids": [item["evidence_id"] for item in evidences],
     }
-    if status == "error":
-        product_result["error_code"] = "PRODUCT_WORKFLOW_UNAVAILABLE"
+    if isinstance(error_code, str) and error_code:
+        product_result["error_code"] = error_code
     return {
-        "agent_results": {"product_workflow": product_result},
+        "agent_results": {
+            "product_workflow": product_result,
+        },
         "evidences": evidences,
     }
 
@@ -241,7 +200,7 @@ def run_compiler_node(
     *,
     compiler: CompilerExecutorPort,
 ) -> GraphUpdate:
-    result = compiler.invoke(state)
+    result = compiler.invoke(sanitized_state(state))
 
     return {
         "response_draft": result,
@@ -262,10 +221,6 @@ def run_context_enrichment_node(
     if not email or not conversation_id:
         raise ValueError("email e conversation_id são necessários para retomada")
 
-    sanitized_message = request.get("sanitized_message")
-    if not isinstance(sanitized_message, str) or not sanitized_message.strip():
-        raise ValueError("sanitized_message é necessário para retomada")
-
     request_id = request.get("request_id", "").strip()
     if not request_id:
         raise ValueError("request_id é necessário para retomada")
@@ -280,14 +235,17 @@ def run_context_enrichment_node(
         (
             message
             for message in reversed(current_messages)
-            if isinstance(message, HumanMessage)
+            if isinstance(message, HumanMessage) and message.id == f"{request_id}:user"
         ),
+        None,
     )
     if current_human is None:
         raise ValueError("A mensagem atual do usuário é necessária para retomada")
+    if not isinstance(current_human.content, str) or not current_human.content.strip():
+        raise ValueError("A mensagem sanitizada do usuário é inválida")
 
     current_message = HumanMessage(
-        content=sanitized_message,
+        content=current_human.content,
         id=f"{request_id}:user",
     )
     current_ids = [message.id for message in current_messages if message.id]
@@ -324,49 +282,30 @@ def _request_for_persistence(state: GraphState) -> tuple[str, str, str]:
     return values
 
 
-def run_persist_user_message_node(
-    state: GraphState,
-    *,
-    message_service: MemoryMessagePersistencePort | None,
-) -> GraphUpdate:
-    """Persist and normalize the accepted user message for this turn."""
-    if message_service is None and "request" not in state:
-        return {}
-
-    request = state.get("request")
-    sanitized_message = request.get("sanitized_message") if request else None
-    if not isinstance(sanitized_message, str) or not sanitized_message.strip():
-        raise ValueError("sanitized_message é necessário para persistir mensagem")
-
-    conversation_id, email, request_id = _request_for_persistence(state)
+def run_normalize_user_message_node(state: GraphState) -> GraphUpdate:
+    """Ensure the current sanitized user message has this request's stable ID."""
+    _, _, request_id = _request_for_persistence(state)
     message_id = f"{request_id}:user"
-    current_messages = list(state.get("messages", []))
-    latest_human = next(
+    messages = list(state.get("messages", []))
+    current_human = next(
         (
             message
-            for message in reversed(current_messages)
+            for message in reversed(messages)
             if isinstance(message, HumanMessage)
         ),
+        None,
     )
+    if current_human is None:
+        raise ValueError("A mensagem sanitizada do usuário não foi encontrada")
+    if not isinstance(current_human.content, str) or not current_human.content.strip():
+        raise ValueError("A mensagem sanitizada do usuário é inválida")
+    if current_human.id == message_id:
+        return {}
     updates: list[AnyMessage] = []
-    if latest_human is not None and latest_human.id and latest_human.id != message_id:
-        updates.append(cast(AnyMessage, RemoveMessage(id=latest_human.id)))
-    updates.append(HumanMessage(content=sanitized_message, id=message_id))
-
-    if message_service is not None:
-        message_service.save_user_message(
-            conversation_id=conversation_id,
-            email=email,
-            request_id=request_id,
-            sanitized_content=sanitized_message,
-        )
-
+    if current_human.id:
+        updates.append(cast(AnyMessage, RemoveMessage(id=current_human.id)))
+    updates.append(HumanMessage(content=current_human.content, id=message_id))
     return {"messages": updates}
-
-
-def run_normalize_user_message_node(state: GraphState) -> GraphUpdate:
-    """Normalize the current user message without persisting the turn."""
-    return run_persist_user_message_node(state, message_service=None)
 
 
 def run_persist_turn_node(
@@ -387,11 +326,21 @@ def run_persist_turn_node(
         raise ValueError("final_response.content não pode estar vazio")
 
     request = state.get("request")
-    sanitized_message = request.get("sanitized_message") if request else None
-    if not isinstance(sanitized_message, str) or not sanitized_message.strip():
-        raise ValueError("sanitized_message é necessário para persistir o turno")
-
     conversation_id, email, request_id = _request_for_persistence(state)
+    user_message_id = f"{request_id}:user"
+    user_message = next(
+        (
+            message
+            for message in reversed(state.get("messages", []))
+            if isinstance(message, HumanMessage) and message.id == user_message_id
+        ),
+        None,
+    )
+    if user_message is None:
+        raise ValueError("A mensagem sanitizada do turno não foi encontrada")
+    if not isinstance(user_message.content, str) or not user_message.content.strip():
+        raise ValueError("A mensagem sanitizada do turno é inválida")
+
     target_agent = state.get("routing_decision", {}).get("target_agent")
     consulted_agents = [target_agent] if isinstance(target_agent, str) else []
     sent_at = request.get("sent_at") if request else None
@@ -399,31 +348,15 @@ def run_persist_turn_node(
         raise ValueError("sent_at precisa ser um datetime com timezone")
 
     if message_service is not None:
-        save_turn = getattr(message_service, "save_turn", None)
-        if callable(save_turn):
-            save_turn(
-                conversation_id=conversation_id,
-                email=email,
-                request_id=request_id,
-                sanitized_user_content=sanitized_message,
-                assistant_content=content,
-                consulted_agents=consulted_agents,
-                sent_at=sent_at,
-            )
-        else:
-            message_service.save_user_message(
-                conversation_id=conversation_id,
-                email=email,
-                request_id=request_id,
-                sanitized_content=sanitized_message,
-            )
-            message_service.save_assistant_message(
-                conversation_id=conversation_id,
-                email=email,
-                request_id=request_id,
-                content=content,
-                consulted_agents=consulted_agents,
-            )
+        message_service.save_turn(
+            conversation_id=conversation_id,
+            email=email,
+            request_id=request_id,
+            sanitized_user_content=user_message.content,
+            assistant_content=content,
+            consulted_agents=consulted_agents,
+            sent_at=sent_at,
+        )
 
     return {
         "messages": [
@@ -434,46 +367,6 @@ def run_persist_turn_node(
         ],
         "pii_map": {},
         "status": "completed",
-    }
-
-
-def run_persist_assistant_message_node(
-    state: GraphState,
-    *,
-    message_service: MemoryMessagePersistencePort | None,
-) -> GraphUpdate:
-    """Persist the controlled final response of an accepted turn."""
-    if message_service is None and "request" not in state:
-        return {}
-
-    final_response = state.get("final_response")
-    if not final_response:
-        raise ValueError("final_response é necessário para persistir resposta")
-
-    content = final_response["content"].strip()
-    if not content:
-        raise ValueError("final_response.content não pode estar vazio")
-
-    conversation_id, email, request_id = _request_for_persistence(state)
-    target_agent = state.get("routing_decision", {}).get("target_agent")
-    consulted_agents = [target_agent] if isinstance(target_agent, str) else []
-
-    if message_service is not None:
-        message_service.save_assistant_message(
-            conversation_id=conversation_id,
-            email=email,
-            request_id=request_id,
-            content=content,
-            consulted_agents=consulted_agents,
-        )
-
-    return {
-        "messages": [
-            AIMessage(
-                content=content,
-                id=f"{request_id}:assistant",
-            )
-        ]
     }
 
 

@@ -1,3 +1,9 @@
+"""Deprecated repository kept only for compatibility with historical tests.
+
+The active SQL boundary is ``PostgresProductWorkflowRepository`` in the
+parent package. It is the only repository wired into the runtime.
+"""
+
 from __future__ import annotations
 
 from typing import Any
