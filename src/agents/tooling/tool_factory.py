@@ -143,12 +143,9 @@ def tool_error(
     meta: ToolMetadata,
     content: ResponseContent | None = None,
 ) -> ToolResult[None]:
-    response: DirectResponse | NoResponse
-
-    if content is None:
-        response = NoResponse()
-    else:
-        response = DirectResponse(content=content)
+    response: DirectResponse | NoResponse = (
+        NoResponse() if content is None else DirectResponse(content=content)
+    )
 
     return ToolResult[None](
         status=ToolStatus.ERROR,

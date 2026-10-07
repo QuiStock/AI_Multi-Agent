@@ -6,6 +6,7 @@ from typing import Literal, cast
 Audience = Literal["shared", "employee", "manager"]
 
 VALID_AUDIENCES = frozenset({"shared", "employee", "manager"})
+MIN_AUDIENCE_PATH_PARTS = 2
 
 
 def audience_for_path(documents_root: Path, document_path: Path) -> Audience:
@@ -20,7 +21,7 @@ def audience_for_path(documents_root: Path, document_path: Path) -> Audience:
     if root_audience in VALID_AUDIENCES:
         return cast(Audience, root_audience)
 
-    if len(parts) < 2:
+    if len(parts) < MIN_AUDIENCE_PATH_PARTS:
         raise ValueError(
             "Documentos FAQ precisam estar em shared/, employee/ ou manager/."
         )

@@ -100,7 +100,7 @@ class MongoSummaryJobRepository:
         )
         self._indexes_ready = True
 
-    def create_or_get(
+    def create_or_get(  # noqa: PLR0913 - explicit durable job identity boundary
         self,
         *,
         conversation_id: str,
