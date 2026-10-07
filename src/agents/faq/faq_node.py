@@ -6,7 +6,7 @@ from langchain.agents import create_agent
 from langchain_core.tools import BaseTool
 from langgraph.graph.state import CompiledStateGraph
 
-from src.llm_factory import llm_fast
+from src.llm_factory import llm_groq
 
 from .faq_prompt import FAQ_SYSTEM_PROMPT
 
@@ -15,7 +15,7 @@ def create_faq_agent(
     tools: Sequence[BaseTool] | None = None,
 ) -> CompiledStateGraph:
     return create_agent(
-        llm_fast,
+        llm_groq,
         tools=list(tools or []),
         system_prompt=FAQ_SYSTEM_PROMPT,
     )
