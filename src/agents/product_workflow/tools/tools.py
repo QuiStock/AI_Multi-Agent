@@ -5,6 +5,7 @@ from typing import Literal
 
 from langchain_core.tools import BaseTool, tool
 
+from src.agents.product_workflow.filters import MANAGER_ROLE_ID
 from src.agents.product_workflow.models import (
     ProductSuggestionCandidate,
     ProductSuggestionSearchData,
@@ -160,7 +161,7 @@ def build_product_workflow_tools(
             data = build_detail_data(
                 detail,
                 selection_ref=selection_ref,
-                manager=tool_context.authorized.role_id == 2,
+                manager=tool_context.authorized.role_id == MANAGER_ROLE_ID,
             )
             evidence = [detail_evidence(detail, data)]
             if data.triage is not None:

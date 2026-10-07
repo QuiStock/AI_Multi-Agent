@@ -12,6 +12,9 @@ from src.llm_factory import llm_groq
 
 from .card import FAQ_CARD
 
+MANAGER_ROLE_ID = 2
+EMPLOYEE_ROLE_ID = 3
+
 
 class FAQExecutor:
     def __init__(
@@ -69,9 +72,9 @@ class FAQExecutor:
             raise ValueError("O contexto da requisição é obrigatório.")
 
         role_id = request.get("role_id")
-        if role_id == 2:
+        if role_id == MANAGER_ROLE_ID:
             return ("shared", "manager")
-        if role_id == 3:
+        if role_id == EMPLOYEE_ROLE_ID:
             return ("shared", "employee")
 
         raise PermissionError("Role sem acesso ao FAQ.")

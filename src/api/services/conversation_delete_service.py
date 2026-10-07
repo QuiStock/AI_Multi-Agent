@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import suppress
 from typing import Protocol
 
 from src.api.schemas.conversation_delete import ConversationDeleteResponse
@@ -38,11 +39,8 @@ class ConversationDeleteService:
             email=email,
             request_id=request_id,
         )
-        try:
+        with suppress(Exception):
             self._checkpoint_cleanup.delete_thread(conversation_id)
-        except Exception:
-            # Checkpoints are ephemeral; cleanup must not undo the durable job.
-            pass
         return self._response(conversation_id=conversation_id, job=job)
 
     @staticmethod
