@@ -22,7 +22,6 @@ from src.agents.schemas.tool_result import (
     ToolWarning,
 )
 
-
 DataT = TypeVar("DataT")
 
 
@@ -35,7 +34,7 @@ class ToolResultExtras:
 
 def create_tool_metadata(
     *,
-    tool_name,
+    tool_name: str,
     tool_version: str,
     tool_call_id: str,
     trace_id: str,
@@ -98,6 +97,7 @@ def compose_success(
         meta=meta,
     )
 
+
 def direct_success(
     *,
     content: ResponseContent,
@@ -115,7 +115,6 @@ def direct_success(
         error=None,
         meta=meta,
     )
-
 
 
 def partial_result(
@@ -136,7 +135,6 @@ def partial_result(
         error=error,
         meta=meta,
     )
-
 
 
 def tool_error(
