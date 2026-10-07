@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache, partial
+from ipaddress import ip_address
 from typing import Any, cast
 
 from fastapi import Depends, HTTPException, Request, status
@@ -17,17 +18,19 @@ from src.agents.faq.ingestion.embedding.google_embedding_provider import (
 )
 from src.agents.faq.ingestion.vectorstore.qdrant_store import QdrantStore
 from src.agents.faq.retrieval.qdrant_retriever import QdrantRetriever
-from src.agents.faq.tools.faq_tool import create_faq_search_tool
 from src.agents.judge.executor import JudgeExecutor
 from src.agents.product_workflow.executor import ProductWorkflowExecutor
-from src.agents.product_workflow.tools.product_card_repository import (
-    ProductCardRepository,
+from src.agents.product_workflow.repository import (
+    PostgresProductWorkflowRepository,
 )
 from src.agents.router.executor import RouterExecutor
-from src.agents.tool_registry import TOOL_REGISTRY
 from src.api.controllers.conversation_controller import ConversationController
+from src.api.controllers.conversation_delete_controller import (
+    ConversationDeleteController,
+)
 from src.api.controllers.conversation_end_controller import ConversationEndController
 from src.api.controllers.conversation_list_controller import ConversationListController
+from src.api.services.conversation_delete_service import ConversationDeleteService
 from src.api.services.conversation_end_service import ConversationEndService
 from src.api.services.conversation_list_service import ConversationListService
 from src.api.services.conversation_service import ConversationService
@@ -41,7 +44,11 @@ from src.auth.errors import (
 from src.auth.models import AuthenticatedPrincipal
 from src.auth.service import AuthenticationService
 from src.auth.token import JWTEmailDecoder
-from src.graphs.adapters import GraphNode, run_faq_node, run_product_workflow_node
+from src.graphs.adapters import (
+    GraphNode,
+    run_faq_node,
+    run_product_workflow_node,
+)
 from src.graphs.agent_graph import create_agent_graph
 from src.graphs.state import RouteName
 from src.guardrails.config import GuardrailConfig
@@ -50,16 +57,13 @@ from src.guardrails.output_guardrail import create_output_guardrail_node
 from src.memory.checkpointer import create_local_checkpointer
 from src.memory.enrich_context import ConversationContextEnricher
 from src.memory.message_service import MemoryMessageService
-from src.memory.mongo_repository import (
-    CONVERSATIONS_COLLECTION_NAME,
-    MongoConversationRepository,
-)
-from src.memory.summary_job_repository import (
-    SUMMARY_JOBS_COLLECTION_NAME,
-    MongoSummaryJobRepository,
-)
+from src.memory.mongo_repository import MongoConversationRepository
+from src.memory.summary_job_repository import MongoSummaryJobRepository
 from src.memory.summary_queue import RedisSummaryQueue
-from src.memory.summary_scheduler import ConversationSummaryScheduler
+from src.memory.summary_scheduler import (
+    ConversationDeletionScheduler,
+    ConversationSummaryScheduler,
+)
 from src.observability.audit import record_authentication_denial
 
 _bearer_scheme = HTTPBearer(auto_error=False)
@@ -79,6 +83,19 @@ def get_authenticated_principal(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
 ) -> AuthenticatedPrincipal:
+    settings = config.get_settings()
+    client = request.client
+    if settings.auth_bypass_local_tests and client is not None:
+        try:
+            is_loopback = ip_address(client.host).is_loopback
+        except ValueError:
+            is_loopback = False
+        if is_loopback:
+            return AuthenticatedPrincipal(
+                email=settings.auth_bypass_email,
+                role_id=settings.auth_bypass_role_id,
+            )
+
     if credentials is None or credentials.scheme.lower() != "bearer":
         record_authentication_denial("credential_missing")
         raise HTTPException(
@@ -86,7 +103,6 @@ def get_authenticated_principal(
             detail="Credencial inválida.",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    settings = config.get_settings()
     try:
         pool = get_postgres_pool(request)
         service = AuthenticationService(
@@ -147,8 +163,9 @@ def get_mongo_client() -> MongoClient[Any]:
 
 @lru_cache
 def get_conversation_repository() -> MongoConversationRepository:
+    settings = config.get_settings()
     return MongoConversationRepository(
-        get_mongo_client()[_database_name()][CONVERSATIONS_COLLECTION_NAME]
+        get_mongo_client()[_database_name()][settings.memory_conversations_collection]
     )
 
 
@@ -156,7 +173,7 @@ def get_conversation_repository() -> MongoConversationRepository:
 def get_summary_job_repository() -> MongoSummaryJobRepository:
     settings = config.get_settings()
     repository = MongoSummaryJobRepository(
-        get_mongo_client()[_database_name()][SUMMARY_JOBS_COLLECTION_NAME],
+        get_mongo_client()[_database_name()][settings.memory_summary_jobs_collection],
         max_attempts=settings.summary_job_max_attempts,
     )
     repository.ensure_indexes()
@@ -190,11 +207,13 @@ def get_conversation_summary_scheduler() -> ConversationSummaryScheduler:
 
 
 def get_graph(request: Request) -> CompiledStateGraph:
-    cached = getattr(request.app.state, "conversation_graph", None)
-    if cached is not None:
-        return cast(CompiledStateGraph, cached)
+    cached_graph = getattr(request.app.state, "agent_graph", None)
+    if cached_graph is not None:
+        return cast(CompiledStateGraph, cached_graph)
+
     settings = config.get_settings()
     repository = get_conversation_repository()
+    postgres_pool = get_postgres_pool(request)
 
     qdrant_client = config.create_qdrant_client(settings)
     embedding_provider = GoogleEmbeddingProvider()
@@ -208,36 +227,28 @@ def get_graph(request: Request) -> CompiledStateGraph:
         top_k=settings.faq_retrieval_k,
         min_score=settings.faq_retrieval_min_relevance,
     )
-    TOOL_REGISTRY["faq_search"] = create_faq_search_tool(faq_retriever)
-
-    faq_executor = FAQExecutor()
+    faq_executor = FAQExecutor(retriever=faq_retriever)
+    product_workflow_executor = ProductWorkflowExecutor(
+        repository=PostgresProductWorkflowRepository(
+            postgres_pool,
+            statement_timeout_ms=int(settings.postgres_pool_timeout_seconds * 1000),
+        ),
+    )
     capabilities: dict[RouteName, GraphNode] = {
         "faq": partial(
             run_faq_node,
             executor=faq_executor,
-        )
+        ),
+        "product_workflow": partial(
+            run_product_workflow_node,
+            executor=product_workflow_executor,
+        ),
     }
-    pool = getattr(request.app.state, "postgres_pool", None)
-    if pool is not None:
-        product_executor = ProductWorkflowExecutor(
-            ProductCardRepository(
-                pool,
-                statement_timeout_ms=int(settings.postgres_pool_timeout_seconds * 1000),
-            )
-        )
-        capabilities["product_workflow"] = partial(
-            run_product_workflow_node, executor=product_executor
-        )
 
     graph = create_agent_graph(
         input_guardrail=cast(
             GraphNode,
-            partial(
-                input_guardrail_node,
-                guardrail_config=GuardrailConfig(
-                    classify_semantically=True,
-                ),
-            ),
+            partial(input_guardrail_node, guardrail_config=GuardrailConfig()),
         ),
         router=RouterExecutor(),
         capabilities=capabilities,
@@ -251,7 +262,7 @@ def get_graph(request: Request) -> CompiledStateGraph:
         message_service=MemoryMessageService(repository),
         checkpointer=get_checkpointer(),
     )
-    request.app.state.conversation_graph = graph
+    request.app.state.agent_graph = graph
     return graph
 
 
@@ -265,6 +276,19 @@ def get_conversation_end_controller() -> ConversationEndController:
     return ConversationEndController(
         ConversationEndService(
             scheduler=get_conversation_summary_scheduler(),
+            checkpoint_cleanup=get_checkpointer(),
+        )
+    )
+
+
+def get_conversation_delete_controller() -> ConversationDeleteController:
+    return ConversationDeleteController(
+        ConversationDeleteService(
+            scheduler=ConversationDeletionScheduler(
+                conversations=get_conversation_repository(),
+                jobs=get_summary_job_repository(),
+                queue=get_summary_queue(),
+            ),
             checkpoint_cleanup=get_checkpointer(),
         )
     )

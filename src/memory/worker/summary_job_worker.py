@@ -10,8 +10,11 @@ from datetime import datetime, timezone
 from typing import Protocol
 
 from ..mongo_repository import ConversationNotEndedError, ConversationNotFoundError
-from ..summary_job_repository import MongoSummaryJobRepository
-from ..summary_jobs import SummaryJob, retry_delay_seconds
+from ..summary_job_repository import (
+    MongoSummaryJobRepository,
+    SummaryJob,
+    retry_delay_seconds,
+)
 from ..summary_lock_repository import (
     ConversationSummaryLease,
     MongoConversationSummaryLockRepository,
@@ -39,6 +42,16 @@ class SummaryProcessor(Protocol):
     ) -> object: ...
 
 
+class ConversationCleanupProcessor(Protocol):
+    def delete(
+        self,
+        *,
+        email: str,
+        conversation_id: str,
+        before_delete: Callable[[], None] | None = None,
+    ) -> object: ...
+
+
 class SummaryJobLeaseLostError(RuntimeError):
     """Raised when a worker can no longer prove ownership of its job lease."""
 
@@ -52,6 +65,7 @@ class SummaryJobWorker:
         queue: RedisSummaryQueue,
         processor: SummaryProcessor,
         settings: SummaryJobWorkerSettings,
+        cleanup_processor: ConversationCleanupProcessor | None = None,
     ) -> None:
         if not settings.worker_id.strip():
             raise ValueError("worker_id é obrigatório")
@@ -61,6 +75,7 @@ class SummaryJobWorker:
         self._conversation_locks = conversation_locks
         self._queue = queue
         self._processor = processor
+        self._cleanup_processor = cleanup_processor
         self._worker_id = settings.worker_id
         self._clock = settings.clock or (lambda: datetime.now(timezone.utc))
         self._lease_seconds = settings.lease_seconds
@@ -157,11 +172,20 @@ class SummaryJobWorker:
                 lease_lost.set()
                 raise SummaryJobLeaseLostError("summary_job_lease_lost")
 
-        self._processor.run(
-            email=job.email,
-            conversation_id=job.conversation_id,
-            before_upsert=validate_lease_before_upsert,
-        )
+        if job.operation == "delete":
+            if self._cleanup_processor is None:
+                raise RuntimeError("conversation_cleanup_processor_unconfigured")
+            self._cleanup_processor.delete(
+                email=job.email,
+                conversation_id=job.conversation_id,
+                before_delete=validate_lease_before_upsert,
+            )
+        else:
+            self._processor.run(
+                email=job.email,
+                conversation_id=job.conversation_id,
+                before_upsert=validate_lease_before_upsert,
+            )
         if lease_lost.is_set():
             raise SummaryJobLeaseLostError("summary_job_lease_lost")
         completed = self._repository.complete(

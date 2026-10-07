@@ -70,33 +70,6 @@ def test_judge_approves_supported_draft_and_receives_evidence_content() -> None:
     assert "Classificação publicada: ALTO." in str(model.messages[-1].content)
 
 
-def test_judge_preserves_client_snapshot_provenance_in_payload() -> None:
-    model = FakeJudgeModel(
-        JudgeDecision(
-            status="approved",
-            reason="Resposta suportada pelo snapshot enviado.",
-            evidence_ids=["card-1"],
-        )
-    )
-    card_evidence: Evidence = {
-        "evidence_id": "card-1",
-        "source_type": "client_card_snapshot",
-        "source_id": "snapshot-1",
-        "content": '{"product_name":"Leite"}',
-        "metadata": {"provenance": "client_request_unverified"},
-    }
-    draft: ResponseDraft = {
-        "content": "O produto é Leite.",
-        "citations": ["card-1"],
-        "status": "draft",
-    }
-    JudgeExecutor(model=model).invoke(response_draft=draft, evidences=[card_evidence])
-    assert model.messages is not None
-    payload = str(model.messages[-1].content)
-    assert "client_card_snapshot" in payload
-    assert "client_request_unverified" in payload
-
-
 def test_judge_fails_without_citations_without_calling_model() -> None:
     model = FakeJudgeModel(
         JudgeDecision(

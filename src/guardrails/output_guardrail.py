@@ -1,7 +1,6 @@
 from .output import (
     CONTROLLED_OUTPUT_RESPONSE,
     create_output_guardrail_node,
-    evaluate_compiled_output,
     output_guardrail_node,
     validate_output,
 )
@@ -9,7 +8,6 @@ from .output import (
 __all__ = [
     "CONTROLLED_OUTPUT_RESPONSE",
     "create_output_guardrail_node",
-    "evaluate_compiled_output",
     "output_guardrail_node",
     "validate_output",
 ]

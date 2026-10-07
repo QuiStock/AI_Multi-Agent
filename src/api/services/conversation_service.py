@@ -9,7 +9,7 @@ from langchain_core.messages import HumanMessage
 
 from src.api.errors import GraphExecutionError, InputRejectedError
 from src.api.schemas.conversation import ConversationRequest, ConversationResponse
-from src.graphs.state import GraphState
+from src.graphs.state import GraphState, RequestContext
 from src.memory.mongo_repository import (
     ConversationClosedError,
     ConversationNotEndedError,
@@ -39,26 +39,25 @@ class ConversationService:
         conversation_id: str,
         request: ConversationRequest,
         email: str,
-        role_id: int,
+        role_id: int | None = None,
     ) -> ConversationResponse:
         normalized_conversation_id = conversation_id.strip()
         if not normalized_conversation_id:
             raise ValueError("conversation_id é obrigatório")
 
         request_id = str(uuid4())
+        request_context: RequestContext = {
+            "request_id": request_id,
+            "email": email,
+            "conversation_id": normalized_conversation_id,
+            "sent_at": request.sent_at,
+            "is_new_conversation": not request.is_resuming_conversation,
+            "is_resuming_conversation": request.is_resuming_conversation,
+        }
+        if role_id is not None:
+            request_context["role_id"] = role_id
         state: GraphState = {
-            "request": {
-                "request_id": request_id,
-                "email": email,
-                "role_id": role_id,
-                "conversation_id": normalized_conversation_id,
-                "sent_at": request.sent_at,
-                "is_new_conversation": not request.is_resuming_conversation,
-                "is_resuming_conversation": request.is_resuming_conversation,
-                "product_card": request.product_card.model_dump(mode="json")
-                if request.product_card
-                else None,
-            },
+            "request": request_context,
             "messages": [
                 HumanMessage(
                     content=request.message,

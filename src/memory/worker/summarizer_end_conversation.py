@@ -53,7 +53,11 @@ class LLMSummaryUpdater:
     """Use the application LLM to create or incrementally update a summary."""
 
     def __init__(self, model: Any | None = None) -> None:
-        self._model = get_structured_model(SummaryText) if model is None else model
+        self._model = (
+            get_structured_model(SummaryText, provider="groq")
+            if model is None
+            else model
+        )
 
     def update(
         self,

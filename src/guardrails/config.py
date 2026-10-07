@@ -1,8 +1,6 @@
 from dataclasses import dataclass
 from typing import Literal, TypedDict
 
-from pydantic import BaseModel, ConfigDict
-
 GuardrailStatus = Literal["passed", "blocked"]
 
 
@@ -36,16 +34,9 @@ class OutputGuardrailResult(TypedDict, total=False):
     sanitized_content: str
 
 
-class SupportValidationResult(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    status: Literal["supported", "unsupported"]
-
-
 @dataclass(frozen=True)
 class GuardrailConfig:
     enabled: bool = True
-    fail_closed: bool = True
 
     # Input
     max_input_chars: int = 4_000
@@ -54,14 +45,12 @@ class GuardrailConfig:
     detect_prompt_injection: bool = True
     block_internal_data_requests: bool = True
     block_government_politics: bool = True
-    classify_semantically: bool = True
 
     # Output
     max_output_chars: int = 6_000
     remove_emojis: bool = True
     validate_markdown: bool = True
     require_sources_for_faq: bool = True
-    evaluate_compiled_support: bool = True
     block_unsupported_commercial_claims: bool = True
 
     timeout_ms: int = 1_500

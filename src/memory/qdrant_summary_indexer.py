@@ -114,6 +114,27 @@ class QdrantSummaryIndexer:
             wait=True,
         )
 
+    def list_summary_payloads(self, *, limit: int = 100) -> list[dict[str, object]]:
+        if limit < 1:
+            raise ValueError("limit precisa ser positivo")
+        if not self._client.collection_exists(self._collection_name):
+            return []
+        points, _ = self._client.scroll(
+            collection_name=self._collection_name,
+            scroll_filter=models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key="memory_type",
+                        match=models.MatchValue(value="conversation_summary"),
+                    )
+                ]
+            ),
+            limit=limit,
+            with_payload=True,
+            with_vectors=False,
+        )
+        return [point.payload for point in points if isinstance(point.payload, dict)]
+
     def get_latest_ended(
         self, *, email: str, exclude_conversation_id: str, limit: int
     ) -> list[dict[str, object]]:

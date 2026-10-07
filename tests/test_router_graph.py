@@ -142,7 +142,6 @@ def test_router_can_call_summary_search_tool_from_authenticated_request_context(
                 "request_id": "request-1",
                 "email": "authenticated-user",
                 "conversation_id": "current-conversation",
-                "sanitized_message": "O que combinamos antes?",
             },
             "messages": [HumanMessage(content="O que combinamos antes?")],
         },

@@ -2,8 +2,11 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
 from uuid import NAMESPACE_URL, uuid5
 
-from src.memory.summary_job_repository import MongoSummaryJobRepository
-from src.memory.summary_jobs import SummaryJob, retry_delay_seconds
+from src.memory.summary_job_repository import (
+    MongoSummaryJobRepository,
+    SummaryJob,
+    retry_delay_seconds,
+)
 from src.memory.summary_queue import RedisSummaryQueue, SummaryJobOutboxRelay
 from src.memory.summary_scheduler import ConversationSummaryScheduler
 

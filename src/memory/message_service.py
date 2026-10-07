@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from typing import Literal
 
-from .contracts import ConversationRepository, StoredMessage
+from .contracts import ConversationRepository, ConversationTurn, StoredMessage
 
 
 class MemoryMessageService:
@@ -11,52 +11,6 @@ class MemoryMessageService:
 
     def __init__(self, repository: ConversationRepository) -> None:
         self._repository = repository
-
-    def save_user_message(
-        self,
-        *,
-        conversation_id: str,
-        email: str,
-        request_id: str,
-        sanitized_content: str,
-        sent_at: datetime | None = None,
-    ) -> bool:
-        """Persist input after the input guardrail has produced its safe text."""
-        self._validate_identifiers(conversation_id, email, request_id)
-        message = self._build_message(
-            request_id=request_id,
-            role="user",
-            content=sanitized_content,
-            created_at=sent_at,
-        )
-        return self._persist(
-            conversation_id=conversation_id,
-            email=email,
-            message=message,
-        )
-
-    def save_assistant_message(
-        self,
-        *,
-        conversation_id: str,
-        email: str,
-        request_id: str,
-        content: str,
-        consulted_agents: list[str],
-    ) -> bool:
-        """Persist the final response, not intermediate agent/tool messages."""
-        self._validate_identifiers(conversation_id, email, request_id)
-        message = self._build_message(
-            request_id=request_id,
-            role="assistant",
-            content=content,
-            consulted_agents=consulted_agents,
-        )
-        return self._persist(
-            conversation_id=conversation_id,
-            email=email,
-            message=message,
-        )
 
     def save_turn(  # noqa: PLR0913 - one persistence operation needs both messages
         self,
@@ -69,20 +23,26 @@ class MemoryMessageService:
         consulted_agents: list[str],
         sent_at: datetime | None = None,
     ) -> None:
-        """Persist both messages of one completed turn."""
-        self.save_user_message(
-            conversation_id=conversation_id,
-            email=email,
-            request_id=request_id,
-            sanitized_content=sanitized_user_content,
-            sent_at=sent_at,
+        """Persist both ordered messages of one completed turn atomically."""
+        self._validate_identifiers(conversation_id, email, request_id)
+        turn = ConversationTurn(
+            user_message=self._build_message(
+                request_id=request_id,
+                role="user",
+                content=sanitized_user_content,
+                created_at=sent_at,
+            ),
+            assistant_message=self._build_message(
+                request_id=request_id,
+                role="assistant",
+                content=assistant_content,
+                consulted_agents=consulted_agents,
+            ),
         )
-        self.save_assistant_message(
+        self._repository.append_turn(
             conversation_id=conversation_id,
             email=email,
-            request_id=request_id,
-            content=assistant_content,
-            consulted_agents=consulted_agents,
+            turn=turn,
         )
 
     @staticmethod
@@ -112,17 +72,4 @@ class MemoryMessageService:
             content=content,
             created_at=created_at or datetime.now(timezone.utc),
             consulted_agents=consulted_agents,
-        )
-
-    def _persist(
-        self,
-        *,
-        conversation_id: str,
-        email: str,
-        message: StoredMessage,
-    ) -> bool:
-        return self._repository.append_message(
-            conversation_id=conversation_id,
-            email=email,
-            message=message,
         )

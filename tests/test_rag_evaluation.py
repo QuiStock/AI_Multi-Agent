@@ -16,7 +16,13 @@ class EvaluationVectorStore:
     def __init__(self, points: list[SimpleNamespace]) -> None:
         self.points = points
 
-    def search(self, *, query_vector: list[float], limit: int) -> list[SimpleNamespace]:
+    def search(
+        self,
+        *,
+        query_vector: list[float],
+        limit: int,
+        query_filter: object,
+    ) -> list[SimpleNamespace]:
         return self.points[:limit]
 
 
@@ -37,7 +43,10 @@ def test_retriever_returns_relevant_evidence_and_citation_metadata() -> None:
         ),
     )
 
-    result = retriever.search("Quando renovo a matrícula?")
+    result = retriever.search(
+        "Quando renovo a matrícula?",
+        allowed_audiences=("shared", "manager"),
+    )
 
     assert result == [
         {
@@ -67,4 +76,10 @@ def test_retriever_discards_evidence_below_minimum_relevance() -> None:
         min_score=0.3,
     )
 
-    assert retriever.search("Qual é o cardápio de hoje?") == []
+    assert (
+        retriever.search(
+            "Qual é o cardápio de hoje?",
+            allowed_audiences=("shared", "employee"),
+        )
+        == []
+    )

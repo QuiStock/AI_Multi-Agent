@@ -49,17 +49,17 @@
 - **Alternatives considered**: depender somente de cancelamento do job (não cobre worker já executando); apagar apenas Mongo (deixa resumo recuperável no Qdrant); apagar apenas Qdrant (não remove histórico solicitado).
 - **Open technical verification**: validar lease expirada/heartbeat e a versão Redis >=5.0 no serviço hospedado. O contrato exige coordenação por conversa e revalidação de tombstone antes do upsert; a implementação deve provar que job concorrente/atrasado não ressuscita o ponto.
 
-### R6 — Migração e recuperação
+### R6 — Cutover de coleções sem preservar o histórico antigo
 
-- **Decision**: processo retomável por conversa; verificar/reutilizar ponto válido; gerar resumo dos turnos para ponto ausente/inválido; ler e validar ponto gravado; só então remover os campos de resumo legado no Mongo. Se falhar, manter o documento legado daquela conversa sem alterar seu conteúdo.
-- **Rationale**: atende estratégia confirmada sem perda silenciosa. Após cutover, reparo/reversão reconstrói do histórico Mongo para Qdrant e nunca repõe conteúdo do resumo no Mongo.
-- **Alternatives considered**: apagar os campos primeiro (perda se backfill falhar); manter dual-write indefinidamente (contradiz exclusividade de resumo e cria fontes concorrentes).
+- **Decision**: descartar o histórico antigo; provisionar novas coleções MongoDB e Qdrant vazias. Novos documentos, jobs e payloads usam email como identidade desde a criação; não migrar user_id, mensagens, resumos ou jobs antigos.
+- **Rationale**: decisão explícita do usuário de não levar o histórico antigo para as novas coleções.
+- **Operational safeguard**: antes de qualquer remoção física, validar ambiente e identificadores exatos das coleções alvo. Rollback de aplicação não restaura histórico descartado.
 
 ## Dependency and project constraints
 
 - Projeto exige Python `>=3.14`; `uv.lock` resolve Python 3.14.3, PyMongo 4.18.1, qdrant-client 1.19.0, redis 8.1.0 e pytest 9.1.1.
 - Testes de integração usam o marcador `integration`; o default pytest exclui esses testes.
-- O repositório não apresenta um framework de migration MongoDB dedicado; recomenda-se script idempotente de migração com `--dry-run`, processamento em lotes e relatório sem conteúdo sensível.
+- O histórico antigo será descartado; o cutover deve provisionar coleções novas e vazias e validar os alvos antes da remoção física das coleções antigas. Não haverá script de backfill de mensagens/resumos.
 - **T002 — ambiente-alvo**: Qdrant Cloud `Interdisciplinar` foi verificado no painel em 2026-10-01: **v1.19.1**, compatível com `scroll.order_by` (disponível desde v1.8.0), condicionado ao índice de payload de `updated_at`. MongoDB Atlas e Redis hospedado não foram verificados nesta consulta; suas versões permanecem desconhecidas, mas não há no plano atual uma dependência de funcionalidade específica dessas versões. Não inferir versões de servidores a partir das bibliotecas cliente instaladas.
 - Não foi encontrado contrato HTTP público de exclusão da conversa nesta implementação. O plano cobre a operação interna de persistência/limpeza; endpoint público e UX devem ser tratados como extensão explícita se forem necessários.
 - Proposta de nomes de campos: manter nomes ingleses existentes no código para reduzir migração, traduzindo o exemplo do usuário semanticamente; confirmar antes de implementação caso o grupo queira nomes físicos em português.

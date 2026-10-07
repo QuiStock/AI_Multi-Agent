@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Any
 
+from src.agents.faq.ingestion.audience import Audience
+
 
 @dataclass(frozen=True)
 class Chunk:
@@ -11,6 +13,7 @@ class Chunk:
     text: str
     page_number: int | None = None
     heading: str | None = None
+    audience: Audience | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 

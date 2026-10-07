@@ -69,7 +69,6 @@ def _setup(
     monkeypatch.setattr(
         "src.api.dependencies.PostgresAccountRepository", FakeAccountRepository
     )
-    monkeypatch.setattr("src.api.dependencies.get_postgres_pool", lambda _: object())
     graph = GraphSpy()
     app = create_app()
     app.state.postgres_pool = object()

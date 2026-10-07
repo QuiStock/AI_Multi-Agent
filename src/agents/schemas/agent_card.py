@@ -2,12 +2,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .policies import (
-    EvidencePolicy,
-    FailurePolicy,
-    MemoryPolicy,
-    PromptVariable,
-)
+from .policies import FailurePolicy, PromptVariable
 from .tool_binding import ToolBinding
 
 
@@ -35,9 +30,6 @@ class AgentCard(BaseModel):
     system_prompt_template: str = Field(min_length=1)
 
     tools: list[ToolBinding]
-
-    memory_policy: MemoryPolicy
-    evidence_policy: EvidencePolicy
 
     failure_policy: FailurePolicy | None = None
     prompt_variables: list[PromptVariable] = Field(default_factory=list)

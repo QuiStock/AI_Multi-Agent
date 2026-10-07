@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Any, Literal, NotRequired, TypedDict
+from typing import Annotated, Literal, NotRequired, TypedDict
 
 from langchain_core.messages import AnyMessage
 from langgraph.graph import add_messages
@@ -26,14 +26,12 @@ TurnStatus = Literal[
 class RequestContext(TypedDict):
     request_id: str
     email: str
-    role_id: int
+    role_id: NotRequired[int]
     conversation_id: str
     sent_at: datetime
-    sanitized_message: NotRequired[str]
     is_new_conversation: NotRequired[bool]
     is_resuming_conversation: NotRequired[bool]
     trace_id: NotRequired[str]
-    product_card: NotRequired[dict[str, Any] | None]
 
 
 class MemoryContext(TypedDict):
@@ -46,8 +44,6 @@ class InputGuardrailResult(TypedDict):
     reason_code: str
     reason: str
     redactions: list[str]
-    sanitized_message: NotRequired[str]
-    pii_map: NotRequired[dict[str, str]]
 
 
 class OutputGuardrailResult(TypedDict):
@@ -70,9 +66,7 @@ class RoutingDecision(TypedDict):
 
 class Evidence(TypedDict):
     evidence_id: str
-    source_type: Literal[
-        "metric", "faq_document", "client_card_snapshot", "product_card_query"
-    ]
+    source_type: Literal["metric", "faq_document", "product_workflow"]
     source_id: str
     content: str
     metadata: dict[str, str]

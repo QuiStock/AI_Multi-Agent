@@ -62,6 +62,7 @@ class RecursiveCharacterChunker(Chunker):
                         text=chunk_text,
                         page_number=part.page_number,
                         heading=part.heading,
+                        audience=document.audience,
                         metadata={
                             "source_name": (document.source_name),
                             "file_type": document.file_type,

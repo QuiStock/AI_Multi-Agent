@@ -100,16 +100,16 @@ class FakeJudgeExecutor:
         }
 
 
-def test_router_adapter_sanitizes_state_before_calling_executor() -> None:
+def test_router_adapter_forwards_the_sanitized_message_from_shared_state() -> None:
     executor = FakeRouterExecutor()
     state: GraphState = {
         "request": {
             "request_id": "req-1",
             "email": "user-1",
             "conversation_id": "conversation-1",
-            "sanitized_message": "Mensagem sanitizada.",
         },
-        "messages": [HumanMessage(content="Mensagem com dado sensível.")],
+        "messages": [HumanMessage(content="Mensagem sanitizada.")],
+        "pii_map": {"[PII]": "valor original"},
     }
 
     result = run_router_node(state, router=executor)
@@ -143,7 +143,6 @@ def test_context_enrichment_does_not_load_history_for_new_conversation() -> None
             "request_id": "request-1",
             "email": "user-1",
             "conversation_id": "conversation-1",
-            "sanitized_message": "O que comprei?",
             "is_new_conversation": True,
         },
         "messages": [HumanMessage(content="O que comprei?")],
@@ -162,7 +161,6 @@ def test_context_enrichment_does_not_reopen_an_active_continuing_conversation() 
             "request_id": "request-2",
             "email": "user-1",
             "conversation_id": "conversation-1",
-            "sanitized_message": "Próxima mensagem.",
             "is_new_conversation": False,
             "is_resuming_conversation": False,
         },
@@ -181,7 +179,7 @@ def test_context_enrichment_restores_history_before_current_sanitized_message() 
         [
             HumanMessage(id="message-1", content="Primeira pergunta."),
             AIMessage(id="message-2", content="Primeira resposta."),
-            HumanMessage(id=current_id, content="Texto salvo antes do guardrail."),
+            HumanMessage(id=current_id, content="Mensagem atual sanitizada."),
         ]
     )
     state: GraphState = {
@@ -189,10 +187,9 @@ def test_context_enrichment_restores_history_before_current_sanitized_message() 
             "request_id": "request-1",
             "email": "user-1",
             "conversation_id": "conversation-1",
-            "sanitized_message": "Mensagem atual sanitizada.",
             "is_resuming_conversation": True,
         },
-        "messages": [HumanMessage(content="Mensagem atual original.")],
+        "messages": [HumanMessage(id=current_id, content="Mensagem atual sanitizada.")],
     }
 
     result = run_context_enrichment_node(state, context_enricher=enricher)
@@ -212,6 +209,12 @@ def test_context_enrichment_restores_history_before_current_sanitized_message() 
 def test_faq_adapter_calls_executor_and_normalizes_answer() -> None:
     executor = FakeFAQExecutor()
     state: GraphState = {
+        "request": {
+            "request_id": "request-1",
+            "email": "manager@example.com",
+            "conversation_id": "conversation-1",
+            "role_id": 2,
+        },
         "messages": [HumanMessage(content="Qual é a regra?")],
     }
 
@@ -219,6 +222,7 @@ def test_faq_adapter_calls_executor_and_normalizes_answer() -> None:
 
     assert executor.state is not None
     assert executor.state["messages"] == state["messages"]
+    assert executor.state["request"] == state["request"]
     assert result["agent_results"]["faq"] == {
         "status": "success",
         "answer": "Resposta baseada na documentação.",
@@ -226,21 +230,24 @@ def test_faq_adapter_calls_executor_and_normalizes_answer() -> None:
     }
 
 
-def test_compiler_adapter_forwards_canonical_state_to_executor() -> None:
+def test_compiler_adapter_does_not_expose_private_pii_map_to_executor() -> None:
     executor = FakeCompilerExecutor()
     state: GraphState = {
+        "pii_map": {"[PII]": "valor original"},
         "agent_results": {
             "faq": {
                 "status": "success",
                 "answer": "Resposta do FAQ.",
                 "citation_ids": ["faq-1"],
             }
-        }
+        },
     }
 
     result = run_compiler_node(state, compiler=executor)
 
-    assert executor.state is state
+    assert executor.state is not None
+    assert "pii_map" not in executor.state
+    assert executor.state["agent_results"] == state["agent_results"]
     assert result["response_draft"] == {
         "content": "Resposta compilada.",
         "citations": ["faq-1"],

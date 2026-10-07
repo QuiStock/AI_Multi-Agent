@@ -6,7 +6,7 @@
 
 ## Summary
 
-Alterar a memória conversacional para manter um documento MongoDB por conversa com seu array de mensagens, mas sem texto de resumo, versão ou marcador de sumarização nesse documento. O resumo e seu marcador de progresso passam a ser lidos e gravados exclusivamente no ponto estável da conversa no Qdrant. Implementar jobs duráveis em MongoDB e entrega por Redis Streams (não existentes neste branch), além de worker, busca semântica, fallback de recentes, exclusão e migração dos dados legados.
+Alterar a memória conversacional para manter um documento MongoDB por conversa com seu array de mensagens e email como identidade, mas sem texto de resumo, versão ou marcador de sumarização nesse documento. O resumo e seu marcador de progresso passam a ser lidos e gravados exclusivamente no ponto estável da conversa no Qdrant. Implementar jobs duráveis em MongoDB e entrega por Redis Streams, além de worker, busca semântica, fallback de recentes e exclusão. As novas coleções começarão vazias; todo o histórico anterior será descartado sem migração/backfill.
 
 O documento MongoDB separado `conversation_summary_jobs` continua permitido porque contém apenas metadados de execução, nunca o texto do resumo. Título e estado da conversa também não são conteúdo de resumo.
 
@@ -14,7 +14,7 @@ O documento MongoDB separado `conversation_summary_jobs` continua permitido porq
 
 **Language/Version**: Python 3.14 (projeto requer `>=3.14`; lock valida Python 3.14.3).
 
-**Primary Dependencies**: PyMongo 4.18.1, `qdrant-client` 1.19.0, redis-py 8.1.0 (adicionado como dependência direta), Pydantic 2.x, pytest 9.1.1. Qdrant/Mongo existem no código; integração Redis Streams para memória ainda será criada. Redis server precisa ser >=5.0 para Streams/consumer groups; confirmar as versões de Redis/Mongo/Qdrant hospedados antes da ativação/migração.
+**Primary Dependencies**: PyMongo 4.18.1, `qdrant-client` 1.19.0, redis-py 8.1.0 (adicionado como dependência direta), Pydantic 2.x, pytest 9.1.1. Qdrant/Mongo existem no código; integração Redis Streams para memória ainda será criada. Redis server precisa ser >=5.0 para Streams/consumer groups; confirmar as versões de Redis/Mongo/Qdrant hospedados antes do cutover para as coleções novas.
 
 **Storage**: MongoDB `conversations` para documento e mensagens; MongoDB `conversation_summary_jobs` para metadados de jobs; MongoDB `conversation_summary_locks` para leases técnicas por conversa; Redis Streams para entrega; Qdrant para texto, embedding e progresso do resumo. Não persistir texto de resumo em nenhuma coleção MongoDB.
 
@@ -26,19 +26,19 @@ O documento MongoDB separado `conversation_summary_jobs` continua permitido porq
 
 **Performance Goals**: Nenhuma meta numérica de latência ou escala foi confirmada nesta feature. Preservar encerramento assíncrono e medir duração/fila/reconciliação durante validação, sem inventar SLA.
 
-**Constraints**: Resumo apenas Qdrant; uma conversa/um documento Mongo; mensagens acrescentadas em ordem; isolamento por `user_id`; jobs de entrega pelo menos uma vez; retries limitados e observáveis; ponto Qdrant estável por conversa; resumo não pode ser recriado após exclusão; a rubrica de interação conversacional no MongoDB continua atendida pelas mensagens.
+**Constraints**: Resumo apenas Qdrant; uma conversa/um documento Mongo; mensagens acrescentadas em ordem; identidade e isolamento por email obtido do JWT (substituindo `user_id`); jobs de entrega pelo menos uma vez; retries limitados e observáveis; ponto Qdrant estável por conversa; resumo não pode ser recriado após exclusão; a rubrica de interação conversacional no MongoDB continua atendida pelas mensagens.
 
-**Scale/Scope**: `src/memory/`, integração com o endpoint/worker de encerramento e busca de contexto, dados legados e testes correspondentes. Não inclui autenticação (feature 002), novo comportamento dos agentes, política de retenção automática nem contrato público de nova rota de exclusão.
+**Scale/Scope**: `src/memory/`, integração com o endpoint/worker de encerramento e busca de contexto, endpoint público autenticado e idempotente de exclusão, provisionamento de coleções vazias e testes correspondentes. Não inclui autenticação (feature 002), novo comportamento dos agentes ou política de retenção automática.
 
 ## Constitution Check
 
 | Gate | Resultado | Evidência/ação |
 |---|---|---|
-| Spec-first e rastreabilidade | PASS | Spec aprovada; requisitos FR-001–FR-015 e critérios SC-001–SC-010 orientam este plano. |
+| Spec-first e rastreabilidade | PASS | Spec aprovada; requisitos FR-001–FR-016 e critérios SC-001–SC-012 orientam este plano. |
 | Status explícito e sem decisões silenciosas | PASS | Decisões de produto e campo físico `messages` estão confirmadas na spec; parâmetros operacionais permanecem como decisões técnicas de implementação, não como novas regras de produto. |
 | Contratos e responsabilidades | PASS | Mongo mantém histórico; Qdrant mantém texto e vetor; jobs Mongo/Redis mantêm só metadados e entrega. |
 | Privacidade e isolamento | PASS | Toda leitura de candidato Qdrant é validada contra dono/estado atual no Mongo; exclusão deve limpar ambos e bloquear jobs tardios. |
-| Testes e evidências | PASS | Plano inclui unitários, integração Mongo/Qdrant/Redis, regressão de busca/fallback, migração e evidências ligadas aos FRs. |
+| Testes e evidências | PASS | Plano inclui unitários, integração Mongo/Qdrant/Redis, regressão de busca/fallback, cutover com coleções vazias e evidências ligadas aos FRs. |
 | Restrições acadêmicas | PASS | MongoDB continua persistindo interação conversacional; Qdrant é memória de resumo, sem retirar o uso obrigatório do Mongo. |
 
 **Post-design gate**: PASS sob as mesmas condições. A versão do servidor Qdrant, estratégia concreta de coordenação e janela numérica de retry precisam ser confirmadas antes da implementação; são decisões técnicas do plano, não ambiguidades de produto.
@@ -66,8 +66,7 @@ src/memory/
 ├── contracts.py                  # contratos de mensagem, conversa e resumo
 ├── mongo_repository.py           # documento da conversa e leitura de propriedade/estado
 ├── message_service.py            # append idempotente das mensagens
-├── summary_jobs.py               # modelo/estados de job (sem texto de resumo)
-├── summary_job_repository.py     # estado durável, índices, claim e retry
+├── summary_job_repository.py     # contrato do job, estado durável, índices, claim e retry
 ├── summary_lock_repository.py    # lease/fencing por conversa, compartilhada com exclusão
 ├── summary_scheduler.py          # fechamento interno e criação idempotente do job
 ├── summary_queue.py              # relay e publicação Redis Streams
@@ -80,7 +79,7 @@ src/memory/
     └── summarizer_end_conversation.py
 
 scripts/
-└── migrate_conversation_summaries.py  # dry-run/backfill/unset por lote
+└── provision_memory_collections.py   # criar/verificar coleções novas vazias
 
 tests/
 ├── test_memory_message_service.py
@@ -89,29 +88,30 @@ tests/
 ├── test_summary_jobs.py
 ├── test_summary_job_worker.py
 ├── test_summary_reconciler.py
-├── test_conversation_summary_migration.py
+├── test_memory_collection_provisioning.py
 └── integration/
     └── test_memory_mongo_repository.py
 ```
 
-**Structure Decision**: Manter a arquitetura em `src/memory/` e integrar jobs/relay/worker ao endpoint interno de encerramento já existente na API. O worker e relay rodam em processo separado da API. `closure_key` estável é criada uma vez pela aplicação no limite interno de encerramento, gravada no job e encaminhada pelo Redis apenas como `job_id`; não introduz rota pública. Não criar coleção de conversa paralela. O campo físico confirmado continua `messages`.
+**Structure Decision**: Manter a arquitetura em `src/memory/` e integrar jobs/relay/worker ao endpoint interno de encerramento já existente na API. O worker e relay rodam em processo separado da API. `closure_key` estável é criada uma vez pela aplicação no limite interno de encerramento, gravada no job e encaminhada pelo Redis apenas como `job_id`. A exclusão pública autenticada apenas cria o tombstone/job e retorna `202`; a limpeza cross-store permanece no worker. Não criar coleção de conversa paralela. O campo físico confirmado continua `messages`.
 
 ## Design Approach
 
 1. **Fonte e limites de persistência**: MongoDB é fonte do histórico de mensagens e metadados de conversa; Qdrant é fonte exclusiva do conteúdo do resumo e de seu progresso; job repository guarda somente estado operacional.
 2. **Fechamento assíncrono**: a camada interna de encerramento gera uma `closure_key` estável e persiste (ou recupera) o job por `(conversation_id, closure_key)`. Um relay publica jobs ainda não publicados em Redis Streams; o evento carrega só `job_id`. O worker lê snapshot de mensagens, busca resumo/progresso no Qdrant, sumariza somente o sufixo não coberto, faz upsert e só então conclui job/ack. Um relay/reclaim repara falhas entre persistência Mongo e publicação Redis.
 3. **Proteção contra stale writes**: usar lease Mongo com fencing token/heartbeat por conversa, compartilhada por todos os jobs e pela futura exclusão; revalidar lease e status/progresso imediatamente antes do upsert. A exclusão adicionará tombstone operacional na T025 para impedir que consumidor com snapshot antigo recrie o ponto.
-4. **Busca de contexto**: o vetor e o texto vêm do Qdrant. MongoDB valida `user_id`, conversa existente e status encerrado; deixa de ser autoridade de texto/versão do resumo. O fallback recente também é migrado para leitura Qdrant filtrada/ordenada.
-5. **Migração gradual**: primeiro garantir que o novo caminho lê/escreve Qdrant; em seguida validar/reutilizar pontos existentes e reconstruir ausentes a partir das mensagens; por último remover `summary`, `summary_version` e `summarized_through_message_id` dos documentos Mongo. Se um ponto falhar, manter o documento legado intacto para nova tentativa. Pós-migração, recuperação é regenerar do histórico, não restaurar o texto do resumo no Mongo.
+4. **Busca de contexto**: o vetor e o texto vêm do Qdrant. MongoDB valida email autenticado, conversa existente e status encerrado; deixa de ser autoridade de texto/versão do resumo. O fallback recente também é migrado para leitura Qdrant filtrada/ordenada.
+5. **Cutover sem migração**: provisionar coleções MongoDB e Qdrant novas e vazias, com email como identidade; não importar mensagens, resumos, jobs ou payloads antigos. O histórico anterior será descartado.
 6. **Título**: permanece metadado da conversa fora do escopo de armazenamento do resumo. Quando gerado com base no resumo, o texto pode ser usado transitoriamente pelo worker; apenas o título é gravado no Mongo.
+7. **Exclusão pública**: a rota autenticada recebe somente `conversation_id`, deriva o email do principal, marca a conversa como `deleting`, cria ou recupera o job de limpeza e retorna `202`. Repetições do mesmo pedido são seguras e não revelam dados de outro proprietário.
 
-## Migration and Rollback
+## Fresh collections and rollback
 
-- Produzir relatório de pré-migração com contagens por estado, presença/validade do ponto Qdrant e campos legados de resumo; não incluir texto de resumo em logs/telemetria.
-- Fazer backfill por conversa: validar ownership/status e ponto Qdrant existente; preencher progresso ausente quando recuperável; gerar resumo do histórico se o ponto estiver ausente/inválido; ler novamente o ponto e validar metadados antes de remover campos legados.
-- Tornar o backfill idempotente e retomável, com limite de lote, cursor e relatório de falhas. Não remover dados de conversas cujo ponto Qdrant não tenha sido verificado.
-- Aplicação pós-cutover não lê nem grava conteúdo de resumo no Mongo. Remover campos legados com `$unset` apenas após verificação por conversa/lote.
-- Reversão não reidrata resumo no Mongo: corrigir/recriar ponto a partir do histórico de mensagens. A migração mantém documentos sem alteração quando a escrita/validação Qdrant falhar.
+- O histórico anterior de conversas, mensagens, jobs e resumos será descartado; MongoDB e Qdrant serão preparados como coleções novas e vazias para o cutover.
+- Provisionar e verificar nomes, ambiente, credenciais e índices das novas coleções antes de direcionar tráfego.
+- Não executar backfill, reconstrução de resumos antigos, cópia de jobs ou `$unset` legado.
+- A remoção física das coleções antigas requer validar ambiente e identificadores exatos dos alvos no procedimento de cutover; não é executada por esta edição documental.
+- Rollback de código/configuração não recupera o histórico descartado; recuperação de histórico não faz parte desta feature.
 - Exclusão é operação idempotente: estado de exclusão/job durável antecede a limpeza final; apagar ponto Qdrant e documento da conversa, reconhecer job e reconciliar operações interrompidas. O marcador operacional temporário não guarda texto de resumo.
 
 ## Risks and Mitigations
@@ -120,7 +120,7 @@ tests/
 |---|---|
 | Job gravado e publicação Redis falha/interrompe | Outbox no próprio job (`published_at`), relay retomável, consumer group e reclaim de pendentes/leases expirados. |
 | Dois fechamentos escrevem fora de ordem | Coordenação por conversa, watermark monotônico e revalidação antes do upsert. |
-| Qdrant indisponível durante migração | Não remover campos legado daquele documento; retry/reconciliação posterior. |
+| Cutover direciona tráfego às coleções erradas | Validar identificadores das novas coleções e ambiente antes de habilitar tráfego ou descartar coleções antigas. |
 | Exclusão concorre com job em processamento | Estado/tombstone de exclusão, claim/serialização e limpeza idempotente com verificação de ausência do ponto. |
 | Campo de ordenação não indexado no Qdrant | Criar/verificar índice de payload `updated_at`; validar versão do servidor e comportamento de `scroll(order_by)` no ambiente. |
 | Histórico excede limite BSON de 16 MiB | Manter limite/monitoramento como decisão de arquitetura separada; testar mensagem/documento próximo ao limite antes de release. Não mover texto de resumo para Mongo como workaround. |

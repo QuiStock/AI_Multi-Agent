@@ -1,9 +1,10 @@
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
 
+from src.agents.faq.ingestion.audience import audience_for_path
 from src.agents.faq.ingestion.embedding.google_embedding_provider import (
     GoogleEmbeddingProvider,
 )
@@ -170,11 +171,16 @@ class Indexer:
             )
 
         try:
+            audience = audience_for_path(self.documents_root, change.path)
             document = self.reader_registry.read(
                 change.path,
                 doc_id=change.doc_id,
             )
             normalized_document = self.normalizer.normalize(document)
+            normalized_document = replace(
+                normalized_document,
+                audience=audience,
+            )
             chunks = self.chunker.chunk(normalized_document)
             chunk_count = len(chunks)
             vectors = self.embedding_provider.embed_documents(chunks)
@@ -193,6 +199,7 @@ class Indexer:
                 source_hash=change.source_hash,
                 pipeline_version=self.pipeline_version,
                 chunk_count=chunk_count,
+                audience=audience,
                 status=IndexStatus.INDEXED,
                 indexed_at=self._now(),
                 error=None,

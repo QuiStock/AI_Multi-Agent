@@ -1,8 +1,13 @@
 # Feature Specification: Product Workflow consultivo para sugestões de produto
 
+> Superseded by `specs/005-product-workflow-read-only`. The active contract
+> exposes exactly `get_suggestion_for_product` and `get_suggestion_detail`,
+> uses PostgreSQL as the source of truth, and does not use a client card
+> snapshot as a Product Workflow tool input.
+
 **Feature Branch**: `product_workflow`  
 **Created**: 2026-10-01  
-**Status**: Draft  
+**Status**: Superseded
 **Input**: Criar o agente Product Workflow que orienta funcionários e gerentes sobre o produto de um card de sugestão. A requisição pode trazer um snapshot estruturado do card. Para perguntas sobre outro produto ou sem card, uma tool consulta o PostgreSQL e devolve informações no mesmo contrato de card.
 
 ## Clarifications
@@ -69,7 +74,9 @@ Como usuário, quero saber quando não há sugestão vigente ou quando a consult
 - **FR-005**: A consulta MUST ser somente leitura, parametrizada e restrita aos dados que o usuário autenticado pode acessar.
 - **FR-006**: A identidade e o cargo MUST ser estabelecidos pelo processo de autenticação existente a partir do email validado e da consulta de `role_id` no PostgreSQL; `role_id = 2` representa gerente e `role_id = 3` representa funcionário. O cliente MUST NOT escolher sua identidade, cargo ou escopo de loja no payload.
 - **FR-007**: A tool MUST aplicar o escopo de loja na própria consulta, derivando a loja autorizada a partir do usuário autenticado e dos vínculos ativos no banco, sem exigir uma etapa adicional de autenticação.
-- **FR-008**: Para funcionário, a consulta MUST limitar resultados a sugestões com `available_for_triage = TRUE`; para gerente, MUST limitar a sugestões com status `SENT_TO_MANAGER`.
+- **FR-008**: Para funcionário, a consulta MUST limitar resultados a sugestões
+  com status `IN_EMPLOYEE_TRIAGE` e `available_for_triage = TRUE`; para gerente,
+  MUST limitar a sugestões com status `SENT_TO_MANAGER`.
 - **FR-009**: Uma sugestão MUST ser excluída do conjunto vigente quando houver registro relacionado em `suggestion_log` com `event = 'EXPIRED'`. A API central garante o registro desse evento quando uma sugestão é substituída; não faz parte desta feature alterar o script SQL.
 - **FR-010**: Quando uma nova sugestão do mesmo produto e loja substituir a anterior, a expiração MUST ocorrer independentemente de a nova sugestão ter o mesmo tipo ou outro tipo.
 - **FR-011**: Se a busca não encontrar sugestão vigente dentro do escopo, a tool MUST retornar um resultado estruturado de não encontrado e o agente MUST responder de modo restritivo, sem afirmar que o produto não existe ou recorrer a sugestão expirada.

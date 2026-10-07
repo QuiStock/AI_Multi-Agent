@@ -1,5 +1,11 @@
 # Contract: Product Card Lookup
 
+> Superseded by the two-tool Product Workflow contract in
+> `specs/005-product-workflow-read-only`: use
+> `get_suggestion_for_product` followed by `get_suggestion_detail`. The
+> compatibility implementation in this directory is not registered in the
+> active graph.
+
 **Status**: regras `confirmado` são normativas; mapeamento inicial conferido contra `Quistock/quistock-updated.sql`. A correspondência do schema implantado com esse script ainda deve ser validada na implantação.
 
 ## Caller and authorization
@@ -7,7 +13,8 @@
 - Only the registered `product_workflow` executor may invoke this named capability.
 - Inputs are the normalized product query and server-derived authenticated context. Email, role and store scope are never tool arguments controlled by the model or client.
 - Role mapping: `2` manager, `3` employee.
-- Employee visibility: `available_for_triage` only. Manager visibility: `SENT_TO_MANAGER` only.
+- Employee visibility: `status = 'IN_EMPLOYEE_TRIAGE'` and
+  `available_for_triage = TRUE`. Manager visibility: `SENT_TO_MANAGER` only.
 - Store scope is derived and enforced server-side for every query and candidate. No cross-store retrieval.
 
 ## Request (logical)
@@ -34,7 +41,8 @@ Result must use the repository `ToolResult[DataT]` envelope (`schema_version`, `
 - Fixed, parameterized, read-only SQL only; no model-generated SQL.
 - Return only fields needed to construct the same structured card contract used by the request snapshot.
 - Exclude any suggestion with a related `suggestion_log` event `EXPIRED`.
-- Role 3: `available_for_triage = TRUE`; role 2: `status = 'SENT_TO_MANAGER'`.
+- Role 3: `status = 'IN_EMPLOYEE_TRIAGE'` and
+  `available_for_triage = TRUE`; role 2: `status = 'SENT_TO_MANAGER'`.
 - Escopo: `user_account.email` → `user_account.id` → `user_store.user_id`, somente vínculo ativo/não desvinculado, comparando `user_store.store_id` com `suggestion.store_id`.
 - Dados: `suggestion.product_id` → `product.id`; `product.category_id` → `category.id`; `suggestion_log.suggestion_id` exclui qualquer `event = 'EXPIRED'`.
 - A consulta limita resultados a seis produtos, configura `statement_timeout` e aplica pesquisa parametrizada em `product.name`, `product.sku` e `category.name`.

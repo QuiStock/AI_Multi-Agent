@@ -19,7 +19,7 @@ from src.agents.faq.ingestion.state.change_detector import ChangeDetector
 from src.agents.faq.ingestion.state.manifest_store import ManifestStore
 from src.agents.faq.ingestion.vectorstore.qdrant_store import QdrantStore
 
-PIPELINE_VERSION = "faq-v1"
+PIPELINE_VERSION = "faq-v2-audience-v1"
 
 
 def build_indexer(settings: config.Settings) -> Indexer:

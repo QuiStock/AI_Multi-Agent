@@ -1,9 +1,5 @@
 from src.agents.schemas.agent_card import AgentCard, AgentRole
-from src.agents.schemas.policies import (
-    EvidencePolicy,
-    FailurePolicy,
-    MemoryPolicy,
-)
+from src.agents.schemas.policies import FailurePolicy
 
 from .judge_prompt import JUDGE_SYSTEM_PROMPT
 
@@ -18,17 +14,6 @@ JUDGE_CARD = AgentCard(
     version="1.0.0",
     system_prompt_template=JUDGE_SYSTEM_PROMPT,
     tools=[],
-    memory_policy=MemoryPolicy(
-        enabled=False,
-        mode="none",
-        max_items=0,
-        ttl_hours=None,
-    ),
-    evidence_policy=EvidencePolicy(
-        requires_evidence=True,
-        requires_citations=False,
-        minimum_sources=1,
-    ),
     failure_policy=FailurePolicy(
         on_timeout="fail",
         max_retries=0,

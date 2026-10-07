@@ -7,6 +7,7 @@ from psycopg_pool import ConnectionPool
 from src import config
 from src.api.errors import register_exception_handlers
 from src.api.routes.conversation import router as conversation_router
+from src.api.routes.conversation_delete import router as conversation_delete_router
 from src.api.routes.conversation_end import router as conversation_end_router
 from src.api.routes.conversation_list import router as conversation_list_router
 from src.api.routes.health import router as health_router
@@ -17,8 +18,6 @@ def create_app() -> FastAPI:
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
         settings = config.get_settings()
-        application.state.conversation_graph = None
-        application.state.postgres_pool = None
         pool: ConnectionPool | None = None
         if settings.postgres_dsn:
             pool = create_postgres_pool(
@@ -30,10 +29,8 @@ def create_app() -> FastAPI:
         try:
             yield
         finally:
-            application.state.conversation_graph = None
             if pool is not None:
                 pool.close()
-            application.state.postgres_pool = None
 
     app = FastAPI(
         title="Quistock AI API",
@@ -43,6 +40,7 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
     app.include_router(health_router)
     app.include_router(conversation_router, prefix="/api/v1")
+    app.include_router(conversation_delete_router, prefix="/api/v1")
     app.include_router(conversation_end_router, prefix="/api/v1")
     app.include_router(conversation_list_router, prefix="/api/v1")
     return app

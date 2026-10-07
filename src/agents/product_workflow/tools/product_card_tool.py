@@ -1,3 +1,11 @@
+"""Deprecated compatibility tool; the runtime uses ``tools.py`` only.
+
+This module is retained temporarily for callers of the former product-card
+contract. It is not registered in the Product Workflow card or dependencies.
+New code must use ``get_suggestion_for_product`` and
+``get_suggestion_detail`` from ``tools.py``.
+"""
+
 from __future__ import annotations
 
 import hashlib

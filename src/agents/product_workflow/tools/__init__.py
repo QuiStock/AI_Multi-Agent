@@ -1,1 +1,1 @@
-"""Read-only product-card lookup tools."""
+"""Read-only Product Workflow tools."""
