@@ -8,6 +8,7 @@ from shutil import rmtree
 import pytest
 from langchain_core.embeddings import Embeddings
 from qdrant_client import QdrantClient
+from qdrant_client.http import models
 
 from src.agents.faq.ingestion.embedding.google_embedding_provider import (
     GoogleEmbeddingProvider,
@@ -118,15 +119,17 @@ def test_ingestion_pipeline_indexes_updates_and_deletes_documents(
     tmp_path = integration_tmp_path
     documents_root = tmp_path / "docs"
     documents_root.mkdir()
-    (documents_root / "faq.txt").write_text(
+    shared_root = documents_root / "shared"
+    shared_root.mkdir()
+    (shared_root / "faq.txt").write_text(
         "Regra inicial.\r\n\r\n\r\nDetalhes.",
         encoding="utf-8",
     )
-    (documents_root / "manual.md").write_text(
+    (shared_root / "manual.md").write_text(
         "# Manual\n\nConteúdo documentado.",
         encoding="utf-8",
     )
-    _make_pdf(documents_root / "manual.pdf")
+    _make_pdf(shared_root / "manual.pdf")
 
     vector_store = QdrantStore(
         qdrant_client=QdrantClient(":memory:"),
@@ -139,25 +142,36 @@ def test_ingestion_pipeline_indexes_updates_and_deletes_documents(
 
     assert first.indexed == 3
     assert first.failed == 0
-    assert len(vector_store.search([1.0] * 8, limit=10)) == 3
+    shared_filter = models.Filter(
+        should=[
+            models.FieldCondition(
+                key="audience",
+                match=models.MatchValue(value="shared"),
+            )
+        ]
+    )
+    assert (
+        len(vector_store.search([1.0] * 8, limit=10, query_filter=shared_filter))
+        == 3
+    )
 
     second = indexer.run()
     assert second.indexed == 0
     assert second.skipped == 3
 
-    (documents_root / "faq.txt").write_text(
+    (shared_root / "faq.txt").write_text(
         "Regra atualizada.",
         encoding="utf-8",
     )
-    (documents_root / "manual.md").unlink()
+    (shared_root / "manual.md").unlink()
 
     third = indexer.run()
 
     assert third.indexed == 1
     assert third.deleted == 1
     manifest = ManifestStore(manifest_path).load()
-    assert set(manifest.documents) == {"faq.txt", "manual.pdf"}
-    assert manifest.documents["faq.txt"].status is IndexStatus.INDEXED
+    assert set(manifest.documents) == {"shared/faq.txt", "shared/manual.pdf"}
+    assert manifest.documents["shared/faq.txt"].status is IndexStatus.INDEXED
 
 
 def test_ingestion_components_cover_validation_and_persistence_edges(

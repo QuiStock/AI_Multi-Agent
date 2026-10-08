@@ -78,16 +78,14 @@ def create_faq_graph(
     """Build the initial graph with only the active FAQ capability."""
 
     graph: StateGraph[GraphState] = StateGraph(GraphState)
-    graph.add_node("input_guardrail", input_guardrail_node)
+    graph.add_node("input_guardrail", cast(Any, input_guardrail_node))
     graph.add_node(
         "router",
         cast(Any, create_router_node(router_model)),
-        input_schema=GraphState,
     )
     graph.add_node(
         "faq",
         cast(Any, _create_faq_node(faq_agent or create_faq_agent())),
-        input_schema=GraphState,
     )
     graph.add_node("controlled_response", _controlled_response_node)
 
