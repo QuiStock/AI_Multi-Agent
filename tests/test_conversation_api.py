@@ -7,7 +7,8 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 
-from src.api.dependencies import get_graph
+from src.api.dependencies import get_authenticated_principal, get_graph
+from src.auth.models import AuthenticatedPrincipal
 from src.main import create_app
 from src.memory.mongo_repository import ConversationClosedError
 
@@ -47,6 +48,9 @@ def app_client():  # type: ignore[no-untyped-def]
     graph = FakeGraph()
     app = create_app()
     app.dependency_overrides[get_graph] = lambda: graph
+    app.dependency_overrides[get_authenticated_principal] = lambda: (
+        AuthenticatedPrincipal(email="user-1", role_id=2)
+    )
     with TestClient(app) as client:
         yield client, graph
     app.dependency_overrides.clear()
@@ -54,7 +58,6 @@ def app_client():  # type: ignore[no-untyped-def]
 
 def _payload(**overrides: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {
-        "user_id": "user-1",
         "message": "Qual é a regra?",
         "sent_at": "2026-09-22T14:30:00-03:00",
         "is_resuming_conversation": False,
@@ -79,7 +82,7 @@ def test_conversation_endpoint_invokes_graph_and_returns_metadata(app_client) ->
     UUID(body["request_id"])
 
     assert graph.state is not None
-    assert graph.state["request"]["user_id"] == "user-1"
+    assert graph.state["request"]["email"] == "user-1"
     assert graph.state["request"]["sent_at"] == datetime(
         2026,
         9,
@@ -124,6 +127,9 @@ def test_conversation_endpoint_returns_controlled_input_rejection() -> None:
     graph = FakeGraph(status="rejected")
     app = create_app()
     app.dependency_overrides[get_graph] = lambda: graph
+    app.dependency_overrides[get_authenticated_principal] = lambda: (
+        AuthenticatedPrincipal(email="user-1", role_id=2)
+    )
 
     with TestClient(app) as client:
         response = client.post(
@@ -139,6 +145,9 @@ def test_conversation_endpoint_returns_controlled_input_rejection() -> None:
 def test_conversation_endpoint_maps_closed_conversation_to_conflict() -> None:
     app = create_app()
     app.dependency_overrides[get_graph] = lambda: FailingGraph()
+    app.dependency_overrides[get_authenticated_principal] = lambda: (
+        AuthenticatedPrincipal(email="user-1", role_id=2)
+    )
 
     with TestClient(app) as client:
         response = client.post(

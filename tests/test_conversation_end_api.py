@@ -6,95 +6,39 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from src.api.controllers.conversation_end_controller import ConversationEndController
-from src.api.dependencies import get_conversation_end_controller
+from src.api.dependencies import (
+    get_authenticated_principal,
+    get_conversation_end_controller,
+)
 from src.api.services.conversation_end_service import ConversationEndService
+from src.auth.models import AuthenticatedPrincipal
 from src.main import create_app
 from src.memory.mongo_repository import ConversationNotFoundError
-from src.memory.summary_jobs import SummaryJob
-from src.memory.summary_queue import SummaryQueueError
+from src.memory.summary_job_repository import SummaryJob
+
+NOW = datetime(2026, 9, 22, 17, 30, tzinfo=timezone.utc)
 
 
-class FakeConversationRepository:
-    def __init__(self) -> None:
-        self.status = "active"
-        self.ended_at = datetime(2026, 9, 22, 17, 30, tzinfo=timezone.utc)
-
-    def mark_ended(
-        self,
-        *,
-        conversation_id: str,
-        user_id: str,
-        ended_at: datetime,
-    ) -> datetime:
-        assert conversation_id == "conversation-1"
-        if user_id != "user-1":
-            raise ConversationNotFoundError(conversation_id)
-        if self.status == "active":
-            self.status = "ended"
-            self.ended_at = ended_at
-        return self.ended_at
-
-
-class FakeJobRepository:
-    def __init__(self) -> None:
-        self.jobs: dict[str, SummaryJob] = {}
-        self.published: list[str] = []
-
-    def create_or_get(self, **kwargs: Any) -> tuple[SummaryJob, bool]:
-        existing = next(
-            (
-                job
-                for job in self.jobs.values()
-                if job.conversation_id == kwargs["conversation_id"]
-                and job.closure_key == kwargs["closure_key"]
-            ),
-            None,
-        )
-        if existing is not None:
-            return existing, False
-        job = SummaryJob(
-            job_id=kwargs["job_id"],
-            conversation_id=kwargs["conversation_id"],
-            user_id=kwargs["user_id"],
-            closure_key=kwargs["closure_key"],
-            request_id=kwargs["request_id"],
-            status="queued",
+class FakeScheduler:
+    def __init__(self, *, status: str = "queued") -> None:
+        self.calls: list[dict[str, str]] = []
+        self.job = SummaryJob(
+            job_id="job-1",
+            conversation_id="conversation-1",
+            email="user-1",
+            closure_key="closure-1",
+            request_id="stable-request-1",
+            status=status,  # type: ignore[arg-type]
             attempts=0,
-            created_at=kwargs["created_at"],
-            updated_at=kwargs["created_at"],
-        )
-        self.jobs[job.job_id] = job
-        return job, True
-
-    def mark_published(self, *, job_id: str, published_at: datetime) -> None:
-        self.published.append(job_id)
-        self.jobs[job_id] = self.jobs[job_id].model_copy(
-            update={"published_at": published_at, "publication_claimed": False}
+            created_at=NOW,
+            updated_at=NOW,
         )
 
-    def claim_publication(self, *, job_id: str, updated_at: datetime) -> bool:
-        job = self.jobs[job_id]
-        if job.publication_claimed or job.published_at is not None:
-            return False
-        self.jobs[job_id] = job.model_copy(update={"publication_claimed": True})
-        return True
-
-    def release_publication(self, *, job_id: str, updated_at: datetime) -> None:
-        self.jobs[job_id] = self.jobs[job_id].model_copy(
-            update={"publication_claimed": False}
-        )
-
-
-class FakePublisher:
-    def __init__(self, *, fail: bool = False) -> None:
-        self.fail = fail
-        self.jobs: list[str] = []
-
-    def publish(self, job: SummaryJob) -> str:
-        if self.fail:
-            raise SummaryQueueError("redis unavailable")
-        self.jobs.append(job.job_id)
-        return "1-0"
+    def end_and_schedule(self, **kwargs: str) -> SummaryJob:
+        self.calls.append(kwargs)
+        if kwargs["email"] != "user-1":
+            raise ConversationNotFoundError(kwargs["conversation_id"])
+        return self.job
 
 
 class FakeCheckpoint:
@@ -106,117 +50,99 @@ class FakeCheckpoint:
 
 
 def _controller(
-    *,
-    publisher: FakePublisher | None = None,
-) -> tuple[
-    ConversationEndController,
-    FakeConversationRepository,
-    FakeJobRepository,
-    FakeCheckpoint,
-]:
-    conversation_repository = FakeConversationRepository()
-    job_repository = FakeJobRepository()
+    *, status: str = "queued"
+) -> tuple[ConversationEndController, FakeScheduler, FakeCheckpoint]:
+    scheduler = FakeScheduler(status=status)
     checkpoint = FakeCheckpoint()
     controller = ConversationEndController(
         ConversationEndService(
-            conversation_repository=conversation_repository,  # type: ignore[arg-type]
-            job_repository=job_repository,
-            job_publisher=publisher or FakePublisher(),  # type: ignore[arg-type]
+            scheduler=scheduler,  # type: ignore[arg-type]
             checkpoint_cleanup=checkpoint,
-            clock=lambda: datetime(2026, 9, 22, 17, 30, tzinfo=timezone.utc),
         )
     )
-    return controller, conversation_repository, job_repository, checkpoint
+    return controller, scheduler, checkpoint
 
 
-def test_end_conversation_returns_202_and_queues_one_job() -> None:
-    controller, repository, jobs, checkpoint = _controller()
+def _post_end(app: Any, *, body: dict[str, str] | None = None) -> Any:
+    with TestClient(app) as client:
+        return client.post("/api/v1/conversations/conversation-1/end", json=body)
+
+
+def _override_principal(app: Any, email: str = "user-1") -> None:
+    app.dependency_overrides[get_authenticated_principal] = lambda: (
+        AuthenticatedPrincipal(email=email, role_id=2)
+    )
+
+
+def test_end_conversation_returns_202_after_durable_scheduling() -> None:
+    controller, scheduler, checkpoint = _controller()
     app = create_app()
     app.dependency_overrides[get_conversation_end_controller] = lambda: controller
+    _override_principal(app)
 
-    with TestClient(app) as client:
-        response = client.post(
-            "/api/v1/conversations/conversation-1/end",
-            json={"user_id": "user-1"},
-        )
+    response = _post_end(app)
 
     app.dependency_overrides.clear()
     assert response.status_code == 202
-    body = response.json()
-    assert body["conversation_id"] == "conversation-1"
-    assert body["status"] == "ended"
-    assert body["summary_status"] == "queued"
-    assert repository.status == "ended"
-    assert len(jobs.jobs) == 1
+    assert response.json() == {
+        "conversation_id": "conversation-1",
+        "request_id": "stable-request-1",
+        "job_id": "job-1",
+        "status": "ended",
+        "summary_status": "queued",
+    }
+    assert scheduler.calls == [{"conversation_id": "conversation-1", "email": "user-1"}]
     assert checkpoint.deleted == ["conversation-1"]
 
 
-def test_repeated_end_is_conflict_and_does_not_create_a_second_job() -> None:
-    controller, _, jobs, _ = _controller()
+def test_repeated_end_returns_the_same_durable_job_idempotently() -> None:
+    controller, scheduler, _ = _controller()
     app = create_app()
     app.dependency_overrides[get_conversation_end_controller] = lambda: controller
+    _override_principal(app)
 
-    with TestClient(app) as client:
-        first = client.post(
-            "/api/v1/conversations/conversation-1/end",
-            json={"user_id": "user-1"},
-        )
-        second = client.post(
-            "/api/v1/conversations/conversation-1/end",
-            json={"user_id": "user-1"},
-        )
+    first = _post_end(app)
+    second = _post_end(app)
 
     app.dependency_overrides.clear()
-    assert first.status_code == 202
-    assert second.status_code == 409
-    assert second.json()["error"]["code"] == "CONVERSATION_ALREADY_ENDED"
-    assert len(jobs.jobs) == 1
+    assert first.status_code == second.status_code == 202
+    assert first.json()["job_id"] == second.json()["job_id"] == "job-1"
+    assert first.json()["request_id"] == second.json()["request_id"]
+    assert len(scheduler.calls) == 2
 
 
-def test_redis_failure_returns_retryable_503_without_calling_another_job() -> None:
-    publisher = FakePublisher(fail=True)
-    controller, _, jobs, checkpoint = _controller(publisher=publisher)
+def test_end_response_reports_current_durable_job_state() -> None:
+    controller, _, _ = _controller(status="completed")
     app = create_app()
     app.dependency_overrides[get_conversation_end_controller] = lambda: controller
+    _override_principal(app)
 
-    with TestClient(app) as client:
-        response = client.post(
-            "/api/v1/conversations/conversation-1/end",
-            json={"user_id": "user-1"},
-        )
+    response = _post_end(app)
 
     app.dependency_overrides.clear()
-    assert response.status_code == 503
-    assert response.json()["error"]["code"] == "SUMMARY_QUEUE_UNAVAILABLE"
-    assert len(jobs.jobs) == 1
-    assert checkpoint.deleted == ["conversation-1"]
+    assert response.status_code == 202
+    assert response.json()["summary_status"] == "completed"
 
 
-def test_end_conversation_rejects_blank_user_id() -> None:
+def test_end_conversation_does_not_need_identity_in_body() -> None:
     app = create_app()
-    controller, *_ = _controller()
+    controller, _, _ = _controller()
     app.dependency_overrides[get_conversation_end_controller] = lambda: controller
+    _override_principal(app)
 
-    with TestClient(app) as client:
-        response = client.post(
-            "/api/v1/conversations/conversation-1/end",
-            json={"user_id": " "},
-        )
+    response = _post_end(app)
 
     app.dependency_overrides.clear()
-    assert response.status_code == 422
+    assert response.status_code == 202
 
 
 def test_end_conversation_does_not_cross_user_boundary() -> None:
-    controller, *_ = _controller()
     app = create_app()
+    controller, _, _ = _controller()
     app.dependency_overrides[get_conversation_end_controller] = lambda: controller
 
-    with TestClient(app) as client:
-        response = client.post(
-            "/api/v1/conversations/conversation-1/end",
-            json={"user_id": "other-user"},
-        )
+    _override_principal(app, email="other-user")
+    response = _post_end(app)
 
     app.dependency_overrides.clear()
     assert response.status_code == 404

@@ -25,10 +25,10 @@ TurnStatus = Literal[
 
 class RequestContext(TypedDict):
     request_id: str
-    user_id: str
+    email: str
+    role_id: NotRequired[int]
     conversation_id: str
     sent_at: datetime
-    sanitized_message: NotRequired[str]
     is_new_conversation: NotRequired[bool]
     is_resuming_conversation: NotRequired[bool]
     trace_id: NotRequired[str]
@@ -44,8 +44,6 @@ class InputGuardrailResult(TypedDict):
     reason_code: str
     reason: str
     redactions: list[str]
-    sanitized_message: NotRequired[str]
-    pii_map: NotRequired[dict[str, str]]
 
 
 class OutputGuardrailResult(TypedDict):
@@ -68,7 +66,7 @@ class RoutingDecision(TypedDict):
 
 class Evidence(TypedDict):
     evidence_id: str
-    source_type: Literal["metric", "faq_document"]
+    source_type: Literal["metric", "faq_document", "product_workflow"]
     source_id: str
     content: str
     metadata: dict[str, str]

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from functools import lru_cache, partial
-from typing import Annotated, Any, cast
+from ipaddress import ip_address
+from typing import Any, cast
 
-from fastapi import Depends, Query
+from fastapi import Depends, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph.state import CompiledStateGraph
 from pymongo import MongoClient
@@ -16,17 +18,37 @@ from src.agents.faq.ingestion.embedding.google_embedding_provider import (
 )
 from src.agents.faq.ingestion.vectorstore.qdrant_store import QdrantStore
 from src.agents.faq.retrieval.qdrant_retriever import QdrantRetriever
-from src.agents.faq.tools.faq_tool import create_faq_search_tool
 from src.agents.judge.executor import JudgeExecutor
+from src.agents.product_workflow.executor import ProductWorkflowExecutor
+from src.agents.product_workflow.repository import (
+    PostgresProductWorkflowRepository,
+)
 from src.agents.router.executor import RouterExecutor
-from src.agents.tool_registry import TOOL_REGISTRY
 from src.api.controllers.conversation_controller import ConversationController
+from src.api.controllers.conversation_delete_controller import (
+    ConversationDeleteController,
+)
 from src.api.controllers.conversation_end_controller import ConversationEndController
 from src.api.controllers.conversation_list_controller import ConversationListController
+from src.api.services.conversation_delete_service import ConversationDeleteService
 from src.api.services.conversation_end_service import ConversationEndService
 from src.api.services.conversation_list_service import ConversationListService
 from src.api.services.conversation_service import ConversationService
-from src.graphs.adapters import GraphNode, run_faq_node
+from src.api.services.health_service import HealthService
+from src.auth.account_repository import PostgresAccountRepository
+from src.auth.errors import (
+    AccountLookupError,
+    AuthenticationConfigurationError,
+    InvalidCredentialError,
+)
+from src.auth.models import AuthenticatedPrincipal
+from src.auth.service import AuthenticationService
+from src.auth.token import JWTEmailDecoder
+from src.graphs.adapters import (
+    GraphNode,
+    run_faq_node,
+    run_product_workflow_node,
+)
 from src.graphs.agent_graph import create_agent_graph
 from src.graphs.state import RouteName
 from src.guardrails.config import GuardrailConfig
@@ -35,15 +57,87 @@ from src.guardrails.output_guardrail import create_output_guardrail_node
 from src.memory.checkpointer import create_local_checkpointer
 from src.memory.enrich_context import ConversationContextEnricher
 from src.memory.message_service import MemoryMessageService
-from src.memory.mongo_repository import (
-    CONVERSATIONS_COLLECTION_NAME,
-    MongoConversationRepository,
+from src.memory.mongo_repository import MongoConversationRepository
+from src.memory.summary_job_repository import MongoSummaryJobRepository
+from src.memory.summary_queue import RedisSummaryQueue
+from src.memory.summary_scheduler import (
+    ConversationDeletionScheduler,
+    ConversationSummaryScheduler,
 )
-from src.memory.summary_job_repository import (
-    SUMMARY_JOBS_COLLECTION_NAME,
-    MongoSummaryJobRepository,
-)
-from src.memory.summary_queue import RedisSummaryJobPublisher
+from src.observability.audit import record_authentication_denial
+
+_bearer_scheme = HTTPBearer(auto_error=False)
+
+
+def get_postgres_pool(request: Request) -> Any:
+    pool = getattr(request.app.state, "postgres_pool", None)
+    if pool is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Serviço temporariamente indisponível.",
+        )
+    return pool
+
+
+def get_authenticated_principal(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+) -> AuthenticatedPrincipal:
+    settings = config.get_settings()
+    client = request.client
+    if settings.auth_bypass_local_tests and client is not None:
+        try:
+            is_loopback = ip_address(client.host).is_loopback
+        except ValueError:
+            is_loopback = False
+        if is_loopback:
+            return AuthenticatedPrincipal(
+                email=settings.auth_bypass_email,
+                role_id=settings.auth_bypass_role_id,
+            )
+
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        record_authentication_denial("credential_missing")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credencial inválida.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    try:
+        pool = get_postgres_pool(request)
+        service = AuthenticationService(
+            JWTEmailDecoder(settings.jwt_secret),
+            PostgresAccountRepository(
+                pool,
+                statement_timeout_ms=int(settings.postgres_pool_timeout_seconds * 1000),
+            ),
+        )
+        return service.authenticate(credentials.credentials)
+    except InvalidCredentialError:
+        record_authentication_denial("credential_invalid")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credencial inválida.",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from None
+    except AuthenticationConfigurationError:
+        record_authentication_denial("authentication_misconfigured")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Serviço temporariamente indisponível.",
+        ) from None
+    except PermissionError:
+        record_authentication_denial("role_forbidden")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acesso não permitido.",
+        ) from None
+    except AccountLookupError:
+        record_authentication_denial("account_lookup_failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Serviço temporariamente indisponível.",
+        ) from None
 
 
 def _database_name() -> str:
@@ -58,20 +152,29 @@ def get_mongo_client() -> MongoClient[Any]:
     settings = config.get_settings()
     if not settings.mongodb_uri or not settings.mongodb_db:
         raise RuntimeError("MONGODB_URI e MONGODB_DB são obrigatórios")
-    return MongoClient(settings.mongodb_uri)
+    timeout_ms = int(settings.health_probe_timeout_seconds * 1000)
+    return MongoClient(
+        settings.mongodb_uri,
+        serverSelectionTimeoutMS=timeout_ms,
+        connectTimeoutMS=timeout_ms,
+        socketTimeoutMS=timeout_ms,
+    )
 
 
 @lru_cache
 def get_conversation_repository() -> MongoConversationRepository:
+    settings = config.get_settings()
     return MongoConversationRepository(
-        get_mongo_client()[_database_name()][CONVERSATIONS_COLLECTION_NAME]
+        get_mongo_client()[_database_name()][settings.memory_conversations_collection]
     )
 
 
 @lru_cache
 def get_summary_job_repository() -> MongoSummaryJobRepository:
+    settings = config.get_settings()
     repository = MongoSummaryJobRepository(
-        get_mongo_client()[_database_name()][SUMMARY_JOBS_COLLECTION_NAME]
+        get_mongo_client()[_database_name()][settings.memory_summary_jobs_collection],
+        max_attempts=settings.summary_job_max_attempts,
     )
     repository.ensure_indexes()
     return repository
@@ -83,20 +186,34 @@ def get_checkpointer() -> MemorySaver:
 
 
 @lru_cache
-def get_summary_job_publisher() -> RedisSummaryJobPublisher:
+def get_summary_queue() -> RedisSummaryQueue:
     settings = config.get_settings()
     from redis import Redis
 
-    return RedisSummaryJobPublisher(
+    return RedisSummaryQueue(
         client=Redis.from_url(settings.redis_url),
         stream_name=settings.summary_queue_stream,
+        consumer_group=settings.summary_queue_group,
     )
 
 
 @lru_cache
-def get_graph() -> CompiledStateGraph:
+def get_conversation_summary_scheduler() -> ConversationSummaryScheduler:
+    return ConversationSummaryScheduler(
+        conversations=get_conversation_repository(),
+        jobs=get_summary_job_repository(),
+        queue=get_summary_queue(),
+    )
+
+
+def get_graph(request: Request) -> CompiledStateGraph:
+    cached_graph = getattr(request.app.state, "agent_graph", None)
+    if cached_graph is not None:
+        return cast(CompiledStateGraph, cached_graph)
+
     settings = config.get_settings()
     repository = get_conversation_repository()
+    postgres_pool = get_postgres_pool(request)
 
     qdrant_client = config.create_qdrant_client(settings)
     embedding_provider = GoogleEmbeddingProvider()
@@ -110,25 +227,28 @@ def get_graph() -> CompiledStateGraph:
         top_k=settings.faq_retrieval_k,
         min_score=settings.faq_retrieval_min_relevance,
     )
-    TOOL_REGISTRY["faq_search"] = create_faq_search_tool(faq_retriever)
-
-    faq_executor = FAQExecutor()
+    faq_executor = FAQExecutor(retriever=faq_retriever)
+    product_workflow_executor = ProductWorkflowExecutor(
+        repository=PostgresProductWorkflowRepository(
+            postgres_pool,
+            statement_timeout_ms=int(settings.postgres_pool_timeout_seconds * 1000),
+        ),
+    )
     capabilities: dict[RouteName, GraphNode] = {
         "faq": partial(
             run_faq_node,
             executor=faq_executor,
-        )
+        ),
+        "product_workflow": partial(
+            run_product_workflow_node,
+            executor=product_workflow_executor,
+        ),
     }
 
-    return create_agent_graph(
+    graph = create_agent_graph(
         input_guardrail=cast(
             GraphNode,
-            partial(
-                input_guardrail_node,
-                guardrail_config=GuardrailConfig(
-                    classify_semantically=False,
-                ),
-            ),
+            partial(input_guardrail_node, guardrail_config=GuardrailConfig()),
         ),
         router=RouterExecutor(),
         capabilities=capabilities,
@@ -142,6 +262,8 @@ def get_graph() -> CompiledStateGraph:
         message_service=MemoryMessageService(repository),
         checkpointer=get_checkpointer(),
     )
+    request.app.state.agent_graph = graph
+    return graph
 
 
 def get_conversation_controller(
@@ -153,17 +275,43 @@ def get_conversation_controller(
 def get_conversation_end_controller() -> ConversationEndController:
     return ConversationEndController(
         ConversationEndService(
-            conversation_repository=get_conversation_repository(),
-            job_repository=get_summary_job_repository(),
-            job_publisher=get_summary_job_publisher(),
+            scheduler=get_conversation_summary_scheduler(),
             checkpoint_cleanup=get_checkpointer(),
         )
     )
 
 
-def get_conversation_list_controller(
-    _: Annotated[str, Query(alias="user_id", min_length=1)],
-) -> ConversationListController:
+def get_conversation_delete_controller() -> ConversationDeleteController:
+    return ConversationDeleteController(
+        ConversationDeleteService(
+            scheduler=ConversationDeletionScheduler(
+                conversations=get_conversation_repository(),
+                jobs=get_summary_job_repository(),
+                queue=get_summary_queue(),
+            ),
+            checkpoint_cleanup=get_checkpointer(),
+        )
+    )
+
+
+def get_conversation_list_controller() -> ConversationListController:
     return ConversationListController(
         ConversationListService(get_conversation_repository())
     )
+
+
+def get_health_service(request: Request) -> HealthService:
+    settings = config.get_settings()
+    return HealthService(
+        settings=settings,
+        postgres_pool=getattr(request.app.state, "postgres_pool", None),
+        mongo_client=get_mongo_client_if_configured(settings),
+    )
+
+
+def get_mongo_client_if_configured(
+    settings: config.Settings,
+) -> MongoClient[Any] | None:
+    if not settings.mongodb_uri or not settings.mongodb_db:
+        return None
+    return get_mongo_client()

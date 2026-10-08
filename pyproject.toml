@@ -15,12 +15,21 @@ dependencies = [
     "qdrant-client>=1.0.0",
     "pypdf>=5.0.0",
     "pydantic-settings>=2.0.0",
+    "PyJWT>=2,<3",
+    "psycopg[binary,pool]>=3.2,<4",
     "python-dotenv>=1.0.0",
     "pymongo>=4.13,<5",
-    "redis>=5.0.0",
+    "redis>=5.0,<9",
     "fastapi>=0.141.1",
     "uvicorn>=0.53.0",
+    "langchain-openai>=1.0.0",
 ]
+
+[project.scripts]
+quistock-summary-worker = "src.memory.worker.run_summary_worker:main"
+quistock-memory-reconcile = "scripts.reconcile_memory:main"
+quistock-faq-index = "scripts.index_faq:main"
+quistock-faq-validate = "scripts.validate_faq_index:main"
 
 [dependency-groups]
 dev = [

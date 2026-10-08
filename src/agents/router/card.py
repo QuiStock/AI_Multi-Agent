@@ -1,8 +1,4 @@
 from src.agents.schemas.agent_card import AgentCard, AgentRole
-from src.agents.schemas.policies import (
-    EvidencePolicy,
-    MemoryPolicy,
-)
 from src.agents.schemas.tool_binding import ToolBinding
 
 from .router_prompt import ROUTER_SYSTEM_PROMPT
@@ -24,16 +20,6 @@ ROUTER_CARD = AgentCard(
             ),
         )
     ],
-    memory_policy=MemoryPolicy(
-        enabled=True,
-        mode="long_term",
-        max_items=3,
-    ),
-    evidence_policy=EvidencePolicy(
-        requires_evidence=False,
-        requires_citations=False,
-        minimum_sources=0,
-    ),
     tags=["router", "classification"],
     routing_intents=[
         "faq",

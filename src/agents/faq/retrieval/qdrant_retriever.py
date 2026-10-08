@@ -1,7 +1,11 @@
 import logging
+from collections.abc import Sequence
 from time import perf_counter
 from typing import Any
 
+from qdrant_client import models
+
+from src.agents.faq.ingestion.audience import VALID_AUDIENCES, Audience
 from src.agents.faq.ingestion.embedding.google_embedding_provider import (
     GoogleEmbeddingProvider,
 )
@@ -23,17 +27,37 @@ class QdrantRetriever:
         self.top_k = top_k
         self.min_score = min_score
 
-    def search(self, query: str) -> list[dict[str, Any]]:
+    def search(
+        self,
+        query: str,
+        *,
+        allowed_audiences: Sequence[Audience],
+    ) -> list[dict[str, Any]]:
         started_at = perf_counter()
         candidates_count = 0
         results_count = 0
 
         try:
+            audiences = tuple(dict.fromkeys(allowed_audiences))
+            if not audiences or any(
+                audience not in VALID_AUDIENCES for audience in audiences
+            ):
+                raise ValueError("O escopo de audiência do FAQ é inválido.")
+
             query_vector = self.embedding_provider.embed_query(query)
 
             points = self.vector_store.search(
                 query_vector=query_vector,
                 limit=self.top_k,
+                query_filter=models.Filter(
+                    should=[
+                        models.FieldCondition(
+                            key="audience",
+                            match=models.MatchValue(value=audience),
+                        )
+                        for audience in audiences
+                    ]
+                ),
             )
             candidates_count = len(points)
 

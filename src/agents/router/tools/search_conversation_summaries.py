@@ -26,7 +26,7 @@ class SummarySearchService(Protocol):
     def search_context(
         self,
         *,
-        user_id: str,
+        email: str,
         conversation_id: str,
         query: str,
     ) -> SummaryContextSelection: ...
@@ -36,7 +36,7 @@ class SummarySearchService(Protocol):
 class SummarySearchToolContext:
     """Authenticated and sanitized request data bound to the router tool."""
 
-    user_id: str
+    email: str
     conversation_id: str
     query: str
     request_id: str
@@ -51,11 +51,11 @@ def build_search_conversation_summaries_tool(
 ) -> BaseTool:
     """Bind authenticated request context outside the model-visible arguments."""
     if (
-        not context.user_id.strip()
+        not context.email.strip()
         or not context.conversation_id.strip()
         or not context.query.strip()
     ):
-        raise ValueError("user_id, conversation_id e query são obrigatórios")
+        raise ValueError("email, conversation_id e query são obrigatórios")
     if not context.request_id.strip():
         raise ValueError("request_id é obrigatório")
 
@@ -75,7 +75,7 @@ def build_search_conversation_summaries_tool(
         )
         try:
             selection = service.search_context(
-                user_id=context.user_id,
+                email=context.email,
                 conversation_id=context.conversation_id,
                 query=context.query,
             )

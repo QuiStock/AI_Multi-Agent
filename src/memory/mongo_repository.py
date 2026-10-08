@@ -2,17 +2,15 @@
 
 from datetime import datetime, timezone
 
+from pymongo import ReturnDocument
 from pymongo.collection import Collection
 
 from .contracts import (
-    MAX_SUMMARY_RESULTS,
-    ConversationDocument,
     ConversationListItem,
-    ConversationSummary,
+    ConversationMetadata,
     ConversationSummarySnapshot,
+    ConversationTurn,
     StoredMessage,
-    SummaryCommit,
-    VersionedConversationSummary,
 )
 
 CONVERSATIONS_COLLECTION_NAME = "conversations"
@@ -62,19 +60,19 @@ class MongoConversationRepository:
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        email: str,
         ended_at: datetime,
     ) -> datetime:
         """Close a conversation and return its stable closure timestamp."""
-        if not conversation_id.strip() or not user_id.strip():
-            raise ValueError("conversation_id e user_id são obrigatórios")
+        if not conversation_id.strip() or not email.strip():
+            raise ValueError("conversation_id e email são obrigatórios")
         if ended_at.tzinfo is None or ended_at.utcoffset() is None:
             raise ValueError("ended_at precisa incluir timezone")
 
         result = self._collection.update_one(
             {
                 "_id": conversation_id,
-                "user_id": user_id,
+                "email": email,
                 "status": "active",
             },
             {
@@ -88,7 +86,7 @@ class MongoConversationRepository:
             return ended_at
 
         existing = self._collection.find_one(
-            {"_id": conversation_id, "user_id": user_id},
+            {"_id": conversation_id, "email": email},
             {"status": 1, "ended_at": 1},
         )
         if existing is None:
@@ -101,28 +99,30 @@ class MongoConversationRepository:
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        email: str,
+        summary: str | None = None,
+        summary_version: int = 0,
+        summarized_through_message_id: str | None = None,
     ) -> ConversationSummarySnapshot:
-        """Load the owned conversation and its current summary boundary."""
-        if not conversation_id.strip() or not user_id.strip():
-            raise ValueError("conversation_id e user_id são obrigatórios")
+        """Assemble runtime summary state from Mongo messages and Qdrant data."""
+        if not conversation_id.strip() or not email.strip():
+            raise ValueError("conversation_id e email são obrigatórios")
 
         document = self._collection.find_one(
-            {"_id": conversation_id, "user_id": user_id},
+            {"_id": conversation_id, "email": email},
             {
                 "_id": 1,
-                "user_id": 1,
+                "email": 1,
                 "title": 1,
                 "status": 1,
-                "summary": 1,
-                "summary_version": 1,
-                "summarized_through_message_id": 1,
                 "messages": 1,
                 "updated_at": 1,
             },
         )
         if document is None:
             raise ConversationNotFoundError(conversation_id)
+        if document.get("status") != "ended":
+            raise ConversationNotEndedError(conversation_id)
 
         messages = []
         for stored in document.get("messages", []):
@@ -132,12 +132,12 @@ class MongoConversationRepository:
 
         return ConversationSummarySnapshot(
             conversation_id=document["_id"],
-            user_id=document["user_id"],
+            email=document["email"],
             title=document.get("title"),
             status=document["status"],
-            summary=document.get("summary"),
-            summary_version=document.get("summary_version", 0),
-            summarized_through_message_id=document.get("summarized_through_message_id"),
+            summary=summary,
+            summary_version=summary_version,
+            summarized_through_message_id=summarized_through_message_id,
             messages=messages,
             updated_at=_as_aware_utc(document.get("updated_at")),
         )
@@ -146,19 +146,19 @@ class MongoConversationRepository:
         self,
         *,
         conversation_id: str,
-        user_id: str,
+        email: str,
         resumed_at: datetime,
     ) -> list[StoredMessage]:
         """Reopen an owned ended conversation and return its ordered history."""
-        if not conversation_id.strip() or not user_id.strip():
-            raise ValueError("conversation_id e user_id são obrigatórios")
+        if not conversation_id.strip() or not email.strip():
+            raise ValueError("conversation_id e email são obrigatórios")
         if resumed_at.tzinfo is None or resumed_at.utcoffset() is None:
             raise ValueError("resumed_at precisa incluir timezone")
 
         result = self._collection.update_one(
             {
                 "_id": conversation_id,
-                "user_id": user_id,
+                "email": email,
                 "status": "ended",
             },
             {
@@ -171,7 +171,7 @@ class MongoConversationRepository:
         )
         if result.matched_count != 1:
             existing = self._collection.find_one(
-                {"_id": conversation_id, "user_id": user_id},
+                {"_id": conversation_id, "email": email},
                 {"status": 1},
             )
             if existing is None:
@@ -179,7 +179,7 @@ class MongoConversationRepository:
             raise ConversationNotEndedError(conversation_id)
 
         document = self._collection.find_one(
-            {"_id": conversation_id, "user_id": user_id, "status": "active"},
+            {"_id": conversation_id, "email": email, "status": "active"},
             {"messages": 1},
         )
         if document is None:
@@ -193,13 +193,13 @@ class MongoConversationRepository:
 
         return sorted(messages, key=lambda message: message.created_at)
 
-    def list_ended_conversations(self, *, user_id: str) -> list[ConversationListItem]:
+    def list_ended_conversations(self, *, email: str) -> list[ConversationListItem]:
         """Return IDs and titles of this user's ended conversations for the API."""
-        if not user_id.strip():
-            raise ValueError("user_id é obrigatório")
+        if not email.strip():
+            raise ValueError("email é obrigatório")
 
         documents = self._collection.find(
-            {"user_id": user_id, "status": "ended"},
+            {"email": email, "status": "ended"},
             {"_id": 1, "title": 1, "updated_at": 1},
         ).sort([("updated_at", -1), ("_id", -1)])
         conversations: list[ConversationListItem] = []
@@ -222,306 +222,319 @@ class MongoConversationRepository:
             )
         return conversations
 
-    def save_summary_if_current(self, commit: SummaryCommit) -> bool:
-        """Commit one summary version only if its source boundary is unchanged."""
-        if not commit.summary.strip():
-            raise ValueError("summary não pode estar vazio")
-        if not commit.summarized_through_message_id.strip():
-            raise ValueError("summarized_through_message_id é obrigatório")
-        if commit.expected_summary_version < 0:
-            raise ValueError("expected_summary_version não pode ser negativo")
-
-        result = self._collection.update_one(
-            {
-                "_id": commit.conversation_id,
-                "user_id": commit.user_id,
-                "status": "ended",
-                "summary_version": commit.expected_summary_version,
-                "summarized_through_message_id": commit.expected_message_id,
-            },
-            {
-                "$set": {
-                    "summary": commit.summary,
-                    "summary_version": commit.expected_summary_version + 1,
-                    "summarized_through_message_id": (
-                        commit.summarized_through_message_id
-                    ),
-                }
-            },
-        )
-        return result.modified_count == 1
-
-    def save_title_if_missing(
-        self,
-        *,
-        conversation_id: str,
-        user_id: str,
-        expected_summary_version: int,
-        title: str,
-    ) -> bool:
-        """Save a generated title only while its source summary is current."""
-        if not title.strip():
-            raise ValueError("title não pode estar vazio")
-        if expected_summary_version < 1:
-            raise ValueError("expected_summary_version deve ser positivo")
-
-        result = self._collection.update_one(
-            {
-                "_id": conversation_id,
-                "user_id": user_id,
-                "status": "ended",
-                "summary_version": expected_summary_version,
-                "$or": [{"title": None}, {"title": {"$exists": False}}],
-            },
-            {"$set": {"title": title.strip()}},
-        )
-        return result.modified_count == 1
-
-    def get_ended_summaries_by_ids(
-        self,
-        *,
-        user_id: str,
-        conversation_ids: list[str],
-    ) -> dict[str, VersionedConversationSummary]:
-        """Return authoritative summaries for owned, ended Qdrant candidates."""
-        if not user_id.strip():
-            raise ValueError("user_id é obrigatório")
-        if not conversation_ids:
-            return {}
-
-        documents = self._collection.find(
-            {
-                "_id": {"$in": conversation_ids},
-                "user_id": user_id,
-                "status": "ended",
-                "summary": {"$type": "string", "$ne": ""},
-            },
-            {"_id": 1, "title": 1, "summary": 1, "summary_version": 1, "updated_at": 1},
-        )
-
-        summaries: dict[str, VersionedConversationSummary] = {}
-        for document in documents:
-            conversation_id = document.get("_id")
-            summary = document.get("summary")
-            version = document.get("summary_version")
-            title = document.get("title")
-            updated_at = _as_timestamp(document.get("updated_at"))
-            if not isinstance(conversation_id, str):
-                continue
-            if not isinstance(summary, str) or not summary.strip():
-                continue
-            if not isinstance(version, int) or isinstance(version, bool) or version < 1:
-                continue
-            if title is not None and not isinstance(title, str):
-                continue
-            if updated_at is None:
-                continue
-            summaries[conversation_id] = {
-                "conversation_id": conversation_id,
-                "title": title,
-                "summary": summary,
-                "updated_at": updated_at,
-                "summary_version": version,
-            }
-
-        return summaries
-
-    def get_latest_ended_summaries(
-        self,
-        *,
-        user_id: str,
-        exclude_conversation_id: str,
-        limit: int = 3,
-    ) -> list[ConversationSummary]:
-        """Return the user's most recently updated ended summaries."""
-        if not user_id.strip():
-            raise ValueError("user_id é obrigatório")
-        if not 1 <= limit <= MAX_SUMMARY_RESULTS:
-            raise ValueError("limit deve estar entre um e três")
-
+    def list_ended_summary_snapshots(
+        self, *, limit: int = 100
+    ) -> list[ConversationSummarySnapshot]:
+        if limit < 1:
+            raise ValueError("limit precisa ser positivo")
         documents = (
             self._collection.find(
-                {
-                    "user_id": user_id,
-                    "status": "ended",
-                    "_id": {"$ne": exclude_conversation_id},
-                    "summary": {"$type": "string", "$ne": ""},
-                },
+                {"status": "ended"},
                 {
                     "_id": 1,
+                    "email": 1,
                     "title": 1,
-                    "summary": 1,
+                    "status": 1,
+                    "messages": 1,
                     "updated_at": 1,
                 },
             )
             .sort([("updated_at", -1), ("_id", -1)])
             .limit(limit)
         )
+        snapshots: list[ConversationSummarySnapshot] = []
+        for document in documents:
+            messages = [
+                StoredMessage.model_validate(
+                    {
+                        **stored,
+                        "created_at": _as_aware_utc(stored.get("created_at")),
+                    }
+                )
+                for stored in document.get("messages", [])
+            ]
+            snapshots.append(
+                ConversationSummarySnapshot(
+                    conversation_id=document["_id"],
+                    email=document["email"],
+                    title=document.get("title"),
+                    status="ended",
+                    summary=None,
+                    summary_version=0,
+                    summarized_through_message_id=None,
+                    messages=messages,
+                    updated_at=_as_aware_utc(document.get("updated_at")),
+                )
+            )
+        return snapshots
 
-        summaries: list[ConversationSummary] = []
+    def list_conversation_states(self, *, limit: int = 100) -> dict[str, str]:
+        if limit < 1:
+            raise ValueError("limit precisa ser positivo")
+        documents = self._collection.find({}, {"_id": 1, "status": 1}).limit(limit)
+        return {
+            str(document["_id"]): str(document.get("status", ""))
+            for document in documents
+            if document.get("_id") is not None
+        }
+
+    def save_title_if_missing(
+        self,
+        *,
+        conversation_id: str,
+        email: str,
+        title: str,
+    ) -> bool:
+        """Save a generated title only while its source summary is current."""
+        if not title.strip():
+            raise ValueError("title não pode estar vazio")
+        result = self._collection.update_one(
+            {
+                "_id": conversation_id,
+                "email": email,
+                "status": "ended",
+                "$or": [{"title": None}, {"title": {"$exists": False}}],
+            },
+            {"$set": {"title": title.strip()}},
+        )
+        return result.modified_count == 1
+
+    def get_ended_conversation_metadata_by_ids(
+        self,
+        *,
+        email: str,
+        conversation_ids: list[str],
+    ) -> dict[str, ConversationMetadata]:
+        """Validate ownership/status and return metadata, never summary text."""
+        if not email.strip():
+            raise ValueError("email é obrigatório")
+        if not conversation_ids:
+            return {}
+
+        documents = self._collection.find(
+            {
+                "_id": {"$in": conversation_ids},
+                "email": email,
+                "status": "ended",
+            },
+            {"_id": 1, "title": 1, "updated_at": 1},
+        )
+
+        metadata: dict[str, ConversationMetadata] = {}
         for document in documents:
             conversation_id = document.get("_id")
             title = document.get("title")
-            summary = document.get("summary")
             updated_at = _as_timestamp(document.get("updated_at"))
             if not isinstance(conversation_id, str):
                 continue
             if title is not None and not isinstance(title, str):
                 continue
-            if not isinstance(summary, str) or not summary.strip():
-                continue
             if updated_at is None:
                 continue
+            metadata[conversation_id] = {
+                "conversation_id": conversation_id,
+                "title": title,
+                "updated_at": updated_at,
+            }
 
-            summaries.append(
-                {
-                    "conversation_id": conversation_id,
-                    "title": title,
-                    "summary": summary,
-                    "updated_at": updated_at,
-                }
-            )
+        return metadata
 
-        return summaries
+    def mark_deleting(self, *, conversation_id: str, email: str) -> bool:
+        """Transition an owned conversation to deleting before cross-store cleanup."""
+        result = self._collection.update_one(
+            {
+                "_id": conversation_id,
+                "email": email,
+                "status": {"$in": ["active", "ended", "deleting"]},
+            },
+            {"$set": {"status": "deleting"}},
+        )
+        return result.matched_count == 1
 
-    def append_message(
+    def delete_conversation(self, *, conversation_id: str, email: str) -> bool:
+        result = self._collection.delete_one(
+            {"_id": conversation_id, "email": email, "status": "deleting"}
+        )
+        return result.deleted_count == 1
+
+    def append_turn(
         self,
         *,
         conversation_id: str,
-        user_id: str,
-        message: StoredMessage,
-    ) -> bool:
-        """Append one message atomically and idempotently.
+        email: str,
+        turn: ConversationTurn,
+    ) -> None:
+        """Append a complete user/assistant turn with one atomic Mongo operation."""
+        if not conversation_id.strip() or not email.strip():
+            raise ValueError("conversation_id e email são obrigatórios")
 
-        The first user message creates the conversation document. Assistant
-        messages never create a conversation by themselves.
-        """
-        if message.role == "user":
-            created = self._create_if_missing(
-                conversation_id=conversation_id,
-                user_id=user_id,
-                first_message=message,
-            )
-            if created:
-                return True
+        user_message = turn.user_message.model_dump(mode="python", exclude_none=True)
+        assistant_message = turn.assistant_message.model_dump(
+            mode="python", exclude_none=True
+        )
+        user_id = turn.user_message.message_id
+        assistant_id = turn.assistant_message.message_id
+        user_created_at = turn.user_message.created_at
+        assistant_created_at = turn.assistant_message.created_at
 
-        message_doc = message.model_dump(mode="python", exclude_none=True)
-        message_ids = {
-            "$map": {
-                "input": {"$ifNull": ["$messages", []]},
-                "as": "message",
-                "in": "$$message.message_id",
+        def message_ids_expression() -> dict[str, object]:
+            return {
+                "$map": {
+                    "input": {"$ifNull": ["$messages", []]},
+                    "as": "message",
+                    "in": "$$message.message_id",
+                }
             }
-        }
-        already_saved = {"$in": [{"$literal": message.message_id}, message_ids]}
-        append_pipeline = [
+
+        update_pipeline: list[dict[str, object]] = [
             {
                 "$set": {
+                    "_turn_is_new": {"$eq": [{"$type": "$email"}, "missing"]},
+                    "_turn_can_append": {
+                        "$or": [
+                            {"$eq": [{"$type": "$email"}, "missing"]},
+                            {
+                                "$and": [
+                                    {"$eq": ["$email", {"$literal": email}]},
+                                    {"$eq": ["$status", "active"]},
+                                ]
+                            },
+                        ]
+                    },
+                    "_turn_has_user_message": {
+                        "$in": [{"$literal": user_id}, message_ids_expression()]
+                    },
+                    "_turn_has_assistant_message": {
+                        "$in": [
+                            {"$literal": assistant_id},
+                            message_ids_expression(),
+                        ]
+                    },
+                }
+            },
+            {
+                "$set": {
+                    "email": {
+                        "$cond": ["$_turn_is_new", {"$literal": email}, "$email"]
+                    },
+                    "status": {"$cond": ["$_turn_is_new", "active", "$status"]},
+                    "started_at": {
+                        "$cond": [
+                            "$_turn_is_new",
+                            {"$literal": user_created_at},
+                            "$started_at",
+                        ]
+                    },
+                    "ended_at": {"$cond": ["$_turn_is_new", None, "$ended_at"]},
+                    "title": {"$cond": ["$_turn_is_new", None, "$title"]},
                     "messages": {
                         "$cond": [
-                            already_saved,
-                            {"$ifNull": ["$messages", []]},
+                            {
+                                "$and": [
+                                    "$_turn_can_append",
+                                    {"$not": ["$_turn_has_user_message"]},
+                                    {"$not": ["$_turn_has_assistant_message"]},
+                                ]
+                            },
                             {
                                 "$concatArrays": [
                                     {"$ifNull": ["$messages", []]},
-                                    [{"$literal": message_doc}],
+                                    {
+                                        "$literal": [
+                                            user_message,
+                                            assistant_message,
+                                        ]
+                                    },
                                 ]
                             },
+                            {"$ifNull": ["$messages", []]},
                         ]
                     },
                     "updated_at": {
                         "$cond": [
-                            already_saved,
-                            "$updated_at",
                             {
-                                "$max": [
-                                    "$updated_at",
-                                    {"$literal": message.created_at},
+                                "$and": [
+                                    "$_turn_can_append",
+                                    {"$not": ["$_turn_has_user_message"]},
+                                    {"$not": ["$_turn_has_assistant_message"]},
                                 ]
                             },
+                            {
+                                "$max": [
+                                    {"$ifNull": ["$updated_at", user_created_at]},
+                                    {"$literal": user_created_at},
+                                    {"$literal": assistant_created_at},
+                                ]
+                            },
+                            "$updated_at",
                         ]
                     },
                     "total_turns": {
-                        "$add": [
-                            {"$ifNull": ["$total_turns", 0]},
+                        "$cond": [
+                            "$_turn_is_new",
+                            1,
                             {
-                                "$cond": [
+                                "$add": [
+                                    {"$ifNull": ["$total_turns", 0]},
                                     {
-                                        "$and": [
-                                            {"$not": [already_saved]},
+                                        "$cond": [
                                             {
-                                                "$eq": [
-                                                    {"$literal": message.role},
-                                                    "assistant",
+                                                "$and": [
+                                                    "$_turn_can_append",
+                                                    {
+                                                        "$not": [
+                                                            "$_turn_has_user_message"
+                                                        ]
+                                                    },
+                                                    {
+                                                        "$not": [
+                                                            "$_turn_has_assistant_message"
+                                                        ]
+                                                    },
                                                 ]
                                             },
+                                            1,
+                                            0,
                                         ]
                                     },
-                                    1,
-                                    0,
                                 ]
                             },
                         ]
                     },
                 }
-            }
+            },
+            {
+                "$unset": [
+                    "_turn_is_new",
+                    "_turn_can_append",
+                    "_turn_has_user_message",
+                    "_turn_has_assistant_message",
+                ]
+            },
         ]
 
-        result = self._collection.update_one(
-            {
-                "_id": conversation_id,
-                "user_id": user_id,
-                "status": "active",
-            },
-            append_pipeline,
-        )
-        if result.modified_count == 1:
-            return True
-        if result.matched_count == 1:
-            return False
-
-        conversation = self._collection.find_one(
-            {"_id": conversation_id, "user_id": user_id},
-            {"status": 1, "messages.message_id": 1},
-        )
-        if conversation is None:
-            raise ConversationNotFoundError(conversation_id)
-
-        if any(
-            saved.get("message_id") == message.message_id
-            for saved in conversation.get("messages", [])
-        ):
-            return False
-
-        if conversation.get("status") != "active":
-            raise ConversationClosedError(conversation_id)
-
-        raise RuntimeError("A conversa mudou durante a persistência da mensagem")
-
-    def _create_if_missing(
-        self,
-        *,
-        conversation_id: str,
-        user_id: str,
-        first_message: StoredMessage,
-    ) -> bool:
-        document: ConversationDocument = {
-            "_id": conversation_id,
-            "user_id": user_id,
-            "started_at": first_message.created_at,
-            "updated_at": first_message.created_at,
-            "ended_at": None,
-            "status": "active",
-            "title": None,
-            "summary": None,
-            "summary_version": 0,
-            "summarized_through_message_id": None,
-            "messages": [first_message.model_dump(mode="python", exclude_none=True)],
-            "total_turns": 0,
-        }
-        result = self._collection.update_one(
+        conversation = self._collection.find_one_and_update(
             {"_id": conversation_id},
-            {"$setOnInsert": document},
+            update_pipeline,
             upsert=True,
+            return_document=ReturnDocument.AFTER,
+            projection={"email": 1, "status": 1, "messages.message_id": 1},
         )
-        return result.upserted_id is not None
+
+        if conversation is None or conversation.get("email") != email:
+            raise ConversationNotFoundError(conversation_id)
+        existing_message_ids = {
+            message.get("message_id")
+            for message in conversation.get("messages", [])
+            if isinstance(message, dict)
+        }
+        if {user_id, assistant_id}.issubset(existing_message_ids):
+            return
+        if conversation.get("status") != "active":
+            if conversation.get("status") == "ended":
+                raise ConversationClosedError(conversation_id)
+            raise ConversationNotFoundError(conversation_id)
+        raise RuntimeError(
+            "O turno já possui uma das mensagens persistida; "
+            "a gravação atômica foi interrompida"
+        )

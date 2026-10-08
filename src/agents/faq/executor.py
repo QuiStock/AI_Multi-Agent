@@ -5,22 +5,55 @@ from typing import Any, cast
 from langchain.messages import AIMessage, AnyMessage, ToolMessage
 
 from src.agents.factory import create_agent_from_card
-from src.llm_factory import llm_fast
+from src.agents.faq.ingestion.audience import Audience
+from src.agents.faq.retrieval.qdrant_retriever import QdrantRetriever
+from src.agents.faq.tools.faq_tool import create_faq_search_tool
+from src.llm_factory import llm_groq
 
 from .card import FAQ_CARD
 
+MANAGER_ROLE_ID = 2
+EMPLOYEE_ROLE_ID = 3
+
 
 class FAQExecutor:
-    def __init__(self, model: Any | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        retriever: QdrantRetriever,
+        model: Any | None = None,
+        agent_factory: Any | None = None,
+    ) -> None:
         self.card = FAQ_CARD
-        selected_model = llm_fast if model is None else model
-        self.agent = create_agent_from_card(
-            card=self.card,
-            model=selected_model,
+        self.retriever = retriever
+        self.model = llm_groq if model is None else model
+        self.agent_factory = (
+            create_agent_from_card if agent_factory is None else agent_factory
         )
 
     def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
-        raw_result = cast(dict[str, Any], self.agent.invoke(state))
+        try:
+            allowed_audiences = self._allowed_audiences(state)
+        except KeyError, PermissionError, TypeError, ValueError:
+            return {
+                "answer": "Não foi possível validar o contexto autorizado.",
+                "evidences": [],
+                "error_code": "FAQ_AUTHORIZATION",
+            }
+
+        search_tool = create_faq_search_tool(
+            self.retriever,
+            allowed_audiences=allowed_audiences,
+        )
+        agent = self.agent_factory(
+            card=self.card,
+            model=self.model,
+            tools=[search_tool],
+        )
+        raw_result = cast(
+            dict[str, Any],
+            agent.invoke({"messages": state.get("messages", [])}),
+        )
 
         messages = cast(
             list[AnyMessage],
@@ -31,6 +64,20 @@ class FAQExecutor:
             "answer": self.extract_answer(messages),
             "evidences": self.extract_evidences(messages),
         }
+
+    @staticmethod
+    def _allowed_audiences(state: dict[str, Any]) -> tuple[Audience, ...]:
+        request = state.get("request")
+        if not isinstance(request, dict):
+            raise ValueError("O contexto da requisição é obrigatório.")
+
+        role_id = request.get("role_id")
+        if role_id == MANAGER_ROLE_ID:
+            return ("shared", "manager")
+        if role_id == EMPLOYEE_ROLE_ID:
+            return ("shared", "employee")
+
+        raise PermissionError("Role sem acesso ao FAQ.")
 
     @staticmethod
     def extract_answer(messages: list[AnyMessage]) -> str:

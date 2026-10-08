@@ -1,270 +1,276 @@
-"""Redis Streams worker for asynchronous conversation summaries."""
+"""At-least-once Redis consumer backed by durable Mongo summary job state."""
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+import logging
+import threading
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
-from uuid import uuid4
+from typing import Protocol
 
-from redis import Redis
-from redis.exceptions import ResponseError
+from ..mongo_repository import ConversationNotEndedError, ConversationNotFoundError
+from ..summary_job_repository import (
+    MongoSummaryJobRepository,
+    SummaryJob,
+    retry_delay_seconds,
+)
+from ..summary_lock_repository import (
+    ConversationSummaryLease,
+    MongoConversationSummaryLockRepository,
+)
+from ..summary_queue import RedisSummaryQueue
 
-from ..summary_jobs import SummaryJobRepository
-from .summarizer_end_conversation import EndConversationSummaryWorker
-
-DEFAULT_PENDING_IDLE_MS = 60_000
-MAX_WORKER_BATCH = 1_000
+logger = logging.getLogger(__name__)
+MIN_LEASE_SECONDS = 3
 
 
-class RedisSummaryJobWorker:
-    """Consume summary jobs with at-least-once delivery and bounded retries."""
+@dataclass(frozen=True)
+class SummaryJobWorkerSettings:
+    worker_id: str
+    clock: Callable[[], datetime] | None = None
+    lease_seconds: int = 300
 
-    def __init__(  # noqa: PLR0913 - explicit worker composition boundary
+
+class SummaryProcessor(Protocol):
+    def run(
         self,
         *,
-        client: Redis,
-        stream_name: str,
-        group_name: str,
-        consumer_name: str,
-        job_repository: SummaryJobRepository,
-        summary_worker: EndConversationSummaryWorker,
-        max_attempts: int = 3,
-        clock: Callable[[], datetime] | None = None,
+        email: str,
+        conversation_id: str,
+        before_upsert: Callable[[], None] | None = None,
+    ) -> object: ...
+
+
+class ConversationCleanupProcessor(Protocol):
+    def delete(
+        self,
+        *,
+        email: str,
+        conversation_id: str,
+        before_delete: Callable[[], None] | None = None,
+    ) -> object: ...
+
+
+class SummaryJobLeaseLostError(RuntimeError):
+    """Raised when a worker can no longer prove ownership of its job lease."""
+
+
+class SummaryJobWorker:
+    def __init__(  # noqa: PLR0913 - explicit worker dependency boundary
+        self,
+        *,
+        repository: MongoSummaryJobRepository,
+        conversation_locks: MongoConversationSummaryLockRepository,
+        queue: RedisSummaryQueue,
+        processor: SummaryProcessor,
+        settings: SummaryJobWorkerSettings,
+        cleanup_processor: ConversationCleanupProcessor | None = None,
     ) -> None:
-        if not stream_name.strip() or not group_name.strip():
-            raise ValueError("stream_name e group_name são obrigatórios")
-        if not consumer_name.strip():
-            raise ValueError("consumer_name é obrigatório")
-        if max_attempts < 1:
-            raise ValueError("max_attempts deve ser positivo")
-        self._client = client
-        self._stream_name = stream_name
-        self._group_name = group_name
-        self._consumer_name = consumer_name
-        self._job_repository = job_repository
-        self._summary_worker = summary_worker
-        self._max_attempts = max_attempts
-        self._clock = clock or (lambda: datetime.now(timezone.utc))
+        if not settings.worker_id.strip():
+            raise ValueError("worker_id é obrigatório")
+        if settings.lease_seconds < MIN_LEASE_SECONDS:
+            raise ValueError("lease_seconds inválido")
+        self._repository = repository
+        self._conversation_locks = conversation_locks
+        self._queue = queue
+        self._processor = processor
+        self._cleanup_processor = cleanup_processor
+        self._worker_id = settings.worker_id
+        self._clock = settings.clock or (lambda: datetime.now(timezone.utc))
+        self._lease_seconds = settings.lease_seconds
 
-    def ensure_group(self) -> None:
-        try:
-            self._client.xgroup_create(
-                self._stream_name,
-                self._group_name,
-                id="0-0",
-                mkstream=True,
+    def run_once(self, *, block_ms: int = 1000) -> int:
+        self._queue.ensure_consumer_group()
+        entries = self._queue.reclaim_pending(
+            consumer=self._worker_id,
+            min_idle_ms=self._lease_seconds * 1000,
+        )
+        if not entries:
+            entries = self._queue.read_new(
+                consumer=self._worker_id,
+                count=10,
+                block_ms=block_ms,
             )
-        except ResponseError as exc:
-            if "BUSYGROUP" not in str(exc):
-                raise
-
-    def run_once(self, *, block_ms: int = 1_000) -> bool:
-        """Consume at most one new stream entry."""
-        if block_ms < 0:
-            raise ValueError("block_ms não pode ser negativo")
-        self.ensure_group()
-        if self.reclaim_pending(limit=1) > 0:
-            return True
-        if self.republish_unpublished(limit=1) > 0:
-            return True
-        records: Any = self._client.xreadgroup(
-            groupname=self._group_name,
-            consumername=self._consumer_name,
-            streams={self._stream_name: ">"},
-            count=1,
-            block=block_ms,
-        )
-        for _, entries in records:
-            for entry_id, fields in entries:
-                normalized_id = self._as_text(entry_id)
-                self.process_entry(entry_id=normalized_id, fields=fields)
-                return True
-        return False
-
-    def reclaim_pending(
-        self,
-        *,
-        limit: int = 100,
-        min_idle_ms: int = DEFAULT_PENDING_IDLE_MS,
-    ) -> int:
-        if not 1 <= limit <= MAX_WORKER_BATCH:
-            raise ValueError("limit deve estar entre um e mil")
-        if min_idle_ms < 0:
-            raise ValueError("min_idle_ms não pode ser negativo")
-        result: Any = self._client.xautoclaim(
-            self._stream_name,
-            self._group_name,
-            self._consumer_name,
-            min_idle_ms,
-            start_id="0-0",
-            count=limit,
-        )
-        entries = result[1] if len(result) > 1 else []
         processed = 0
-        for entry_id, fields in entries:
-            self.process_entry(
-                entry_id=self._as_text(entry_id),
-                fields=fields,
-            )
+        for entry_id, job_id in entries:
+            self._process_entry(entry_id=entry_id, job_id=job_id)
             processed += 1
+        self._repository.mark_expired_jobs_failed(now=self._clock())
         return processed
 
-    def republish_unpublished(self, *, limit: int = 100) -> int:
-        """Repair jobs committed in Mongo before an API process stopped."""
-        published = 0
-        for job in self._job_repository.list_unpublished(limit=limit):
-            if not self._job_repository.claim_publication(
-                job_id=job.job_id,
-                updated_at=self._clock(),
-            ):
-                continue
+    def run_forever(self, *, stop: threading.Event) -> None:
+        self._queue.ensure_consumer_group()
+        while not stop.is_set():
             try:
-                self._client.xadd(
-                    self._stream_name,
-                    {
-                        "job_id": job.job_id,
-                        "conversation_id": job.conversation_id,
-                        "user_id": job.user_id,
-                        "request_id": job.request_id,
-                    },
+                self.run_once(block_ms=1000)
+            except Exception as exc:
+                logger.warning(
+                    "Consumer de resumo falhou; error_type=%s", type(exc).__name__
                 )
-                self._job_repository.mark_published(
-                    job_id=job.job_id,
-                    published_at=self._clock(),
-                )
-            except Exception:
-                self._job_repository.release_publication(
-                    job_id=job.job_id,
-                    updated_at=self._clock(),
-                )
-                continue
-            published += 1
-        return published
+                stop.wait(1)
 
-    def run_forever(self, *, block_ms: int = 1_000) -> None:
-        while True:
-            self.run_once(block_ms=block_ms)
-
-    def process_entry(
-        self,
-        *,
-        entry_id: str,
-        fields: Mapping[str | bytes, str | bytes],
-    ) -> None:
-        job_id = self._field(fields, "job_id")
-        conversation_id = self._field(fields, "conversation_id")
-        user_id = self._field(fields, "user_id")
-        claimed = self._job_repository.mark_processing(
-            job_id=job_id,
-            updated_at=self._clock(),
-        )
-        if not claimed:
-            self._client.xack(self._stream_name, self._group_name, entry_id)
+    def _process_entry(self, *, entry_id: str, job_id: str) -> None:
+        job = self._claim_job(job_id)
+        if job is None:
+            # Duplicate signal, completed job, or a retry not due yet.
+            self._queue.acknowledge(entry_id=entry_id)
             return
 
+        lease = self._acquire_conversation_lease(job)
+        if lease is None:
+            self._retry_after_lock_contention(job, entry_id)
+            return
+
+        stop_heartbeat = threading.Event()
+        lease_lost = threading.Event()
+        heartbeat = threading.Thread(
+            target=self._heartbeat,
+            args=(job, lease, entry_id, stop_heartbeat, lease_lost),
+            name=f"summary-lease-{job.job_id}",
+            daemon=True,
+        )
+        heartbeat.start()
         try:
-            self._summary_worker.run(
-                conversation_id=conversation_id,
-                user_id=user_id,
-            )
+            self._process_claimed_job(job, lease, entry_id, lease_lost)
+        except ConversationNotEndedError, ConversationNotFoundError:
+            self._mark_job_superseded(job, entry_id)
         except Exception as exc:
-            status = self._job_repository.mark_failed(
-                job_id=job_id,
-                updated_at=self._clock(),
-                error=str(exc) or exc.__class__.__name__,
-                max_attempts=self._max_attempts,
-            )
-            if status == "queued":
-                self._client.xadd(
-                    self._stream_name,
-                    {
-                        self._as_text(key): self._as_text(value)
-                        for key, value in fields.items()
-                    },
-                )
-            self._client.xack(self._stream_name, self._group_name, entry_id)
-            return
+            self._schedule_job_retry(job, entry_id, exc)
+        finally:
+            stop_heartbeat.set()
+            heartbeat.join(timeout=1)
+            self._release_conversation_lease(lease)
 
-        self._job_repository.mark_completed(
+    def _claim_job(self, job_id: str) -> SummaryJob | None:
+        return self._repository.claim(
             job_id=job_id,
-            updated_at=self._clock(),
+            worker_id=self._worker_id,
+            now=self._clock(),
+            lease_seconds=self._lease_seconds,
         )
-        self._client.xack(self._stream_name, self._group_name, entry_id)
 
-    @staticmethod
-    def _field(
-        fields: Mapping[str | bytes, str | bytes],
-        name: str,
-    ) -> str:
-        value = fields.get(name) or fields.get(name.encode())
-        if value is None:
-            raise ValueError(f"Campo obrigatório ausente no job: {name}")
-        return value.decode() if isinstance(value, bytes) else value
+    def _acquire_conversation_lease(
+        self, job: SummaryJob
+    ) -> ConversationSummaryLease | None:
+        return self._conversation_locks.acquire(
+            conversation_id=job.conversation_id,
+            owner=self._worker_id,
+            now=self._clock(),
+            lease_seconds=self._lease_seconds,
+        )
 
-    @staticmethod
-    def _as_text(value: str | bytes) -> str:
-        return value.decode() if isinstance(value, bytes) else value
+    def _process_claimed_job(
+        self,
+        job: SummaryJob,
+        lease: ConversationSummaryLease,
+        entry_id: str,
+        lease_lost: threading.Event,
+    ) -> None:
+        def validate_lease_before_upsert() -> None:
+            if lease_lost.is_set() or not self._renew(job, lease):
+                lease_lost.set()
+                raise SummaryJobLeaseLostError("summary_job_lease_lost")
 
+        if job.operation == "delete":
+            if self._cleanup_processor is None:
+                raise RuntimeError("conversation_cleanup_processor_unconfigured")
+            self._cleanup_processor.delete(
+                email=job.email,
+                conversation_id=job.conversation_id,
+                before_delete=validate_lease_before_upsert,
+            )
+        else:
+            self._processor.run(
+                email=job.email,
+                conversation_id=job.conversation_id,
+                before_upsert=validate_lease_before_upsert,
+            )
+        if lease_lost.is_set():
+            raise SummaryJobLeaseLostError("summary_job_lease_lost")
+        completed = self._repository.complete(
+            job_id=job.job_id,
+            worker_id=self._worker_id,
+            now=self._clock(),
+        )
+        if completed:
+            self._queue.acknowledge(entry_id=entry_id)
 
-def create_summary_job_worker() -> RedisSummaryJobWorker:
-    """Build the production worker from the application settings."""
-    from pymongo import MongoClient
-    from redis import Redis
+    def _retry_after_lock_contention(self, job: SummaryJob, entry_id: str) -> None:
+        status = self._repository.schedule_retry(
+            job=job,
+            worker_id=self._worker_id,
+            now=self._clock(),
+            delay_seconds=retry_delay_seconds(job.attempts),
+            safe_error_code="conversation_lock_busy",
+        )
+        if status in {"queued", "failed"}:
+            self._queue.acknowledge(entry_id=entry_id)
 
-    from src import config
-    from src.agents.faq.ingestion.embedding.google_embedding_provider import (
-        GoogleEmbeddingProvider,
-    )
-    from src.memory.mongo_repository import (
-        CONVERSATIONS_COLLECTION_NAME,
-        MongoConversationRepository,
-    )
-    from src.memory.qdrant_summary_indexer import QdrantSummaryIndexer
-    from src.memory.summary_job_repository import (
-        SUMMARY_JOBS_COLLECTION_NAME,
-        MongoSummaryJobRepository,
-    )
-    from src.memory.worker.summarizer_end_conversation import LLMSummaryUpdater
+    def _mark_job_superseded(self, job: SummaryJob, entry_id: str) -> None:
+        superseded = self._repository.mark_superseded(
+            job_id=job.job_id,
+            worker_id=self._worker_id,
+            now=self._clock(),
+        )
+        if superseded:
+            self._queue.acknowledge(entry_id=entry_id)
 
-    settings = config.get_settings()
-    if not settings.mongodb_uri or not settings.mongodb_db:
-        raise RuntimeError("MONGODB_URI e MONGODB_DB são obrigatórios")
+    def _schedule_job_retry(
+        self, job: SummaryJob, entry_id: str, error: Exception
+    ) -> None:
+        status = self._repository.schedule_retry(
+            job=job,
+            worker_id=self._worker_id,
+            now=self._clock(),
+            delay_seconds=retry_delay_seconds(job.attempts, max_seconds=300),
+            safe_error_code=type(error).__name__,
+        )
+        if status in {"queued", "failed"}:
+            self._queue.acknowledge(entry_id=entry_id)
+        logger.warning(
+            "Job de resumo terminou com falha; job_id=%s state=%s error_type=%s",
+            job.job_id,
+            status,
+            type(error).__name__,
+        )
 
-    mongo_client: MongoClient[Any] = MongoClient(settings.mongodb_uri)
-    database = mongo_client[settings.mongodb_db]
-    conversation_repository = MongoConversationRepository(
-        database[CONVERSATIONS_COLLECTION_NAME]
-    )
-    job_repository = MongoSummaryJobRepository(database[SUMMARY_JOBS_COLLECTION_NAME])
-    job_repository.ensure_indexes()
+    def _release_conversation_lease(self, lease: ConversationSummaryLease) -> None:
+        try:
+            self._conversation_locks.release(lease=lease, now=self._clock())
+        except Exception as exc:
+            logger.warning(
+                "Lease de resumo expirará naturalmente; error_type=%s",
+                type(exc).__name__,
+            )
 
-    qdrant_client = config.create_qdrant_client(settings)
-    embedding_provider = GoogleEmbeddingProvider()
-    summary_indexer = QdrantSummaryIndexer(
-        client=qdrant_client,
-        embed_text=embedding_provider.embed_query,
-        collection_name=settings.memory_summary_collection,
-    )
-    summary_worker = EndConversationSummaryWorker(
-        repository=conversation_repository,
-        summary_updater=LLMSummaryUpdater(),
-        summary_indexer=summary_indexer,
-    )
-    return RedisSummaryJobWorker(
-        client=Redis.from_url(settings.redis_url),
-        stream_name=settings.summary_queue_stream,
-        group_name=settings.summary_queue_group,
-        consumer_name=f"summary-worker-{uuid4()}",
-        job_repository=job_repository,
-        summary_worker=summary_worker,
-        max_attempts=settings.summary_job_max_attempts,
-    )
+    def _heartbeat(
+        self,
+        job: SummaryJob,
+        lease: ConversationSummaryLease,
+        entry_id: str,
+        stop: threading.Event,
+        lease_lost: threading.Event,
+    ) -> None:
+        interval = max(1, self._lease_seconds // 3)
+        while not stop.wait(interval):
+            if not self._renew(job, lease) or not self._queue.refresh_pending(
+                entry_id=entry_id,
+                consumer=self._worker_id,
+            ):
+                lease_lost.set()
+                return
 
-
-def main() -> None:
-    create_summary_job_worker().run_forever()
-
-
-if __name__ == "__main__":  # pragma: no cover
-    main()
+    def _renew(self, job: SummaryJob, lease: ConversationSummaryLease) -> bool:
+        job_renewed = self._repository.renew_lease(
+            job_id=job.job_id,
+            worker_id=self._worker_id,
+            now=self._clock(),
+            lease_seconds=self._lease_seconds,
+        )
+        lock_renewed = self._conversation_locks.renew(
+            lease=lease,
+            now=self._clock(),
+            lease_seconds=self._lease_seconds,
+        )
+        return job_renewed and lock_renewed

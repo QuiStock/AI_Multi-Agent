@@ -25,12 +25,6 @@ llm_gemini = ChatGoogleGenerativeAI(
     google_api_key=config.GEMINI_API_KEY or "missing-gemini-api-key",
 )
 
-llm_gemini_title = ChatGoogleGenerativeAI(
-    model=config.GEMINI_TITLE_MODEL,
-    temperature=0.0,
-    google_api_key=config.GEMINI_API_KEY or "missing-gemini-api-key",
-)
-
 llm_groq = ChatGroq(
     model=config.GROQ_CHAT_MODEL,
     temperature=config.LLM_TEMPERATURE,
@@ -38,15 +32,16 @@ llm_groq = ChatGroq(
     api_key=_secret(config.GROQ_API_KEY, "groq"),
 )
 
-# Temporary Gemini-only configuration for local flow testing. This prevents
-# the FAQ and guardrail paths from calling the unavailable Groq model.
-llm = llm_gemini
-
-llm_fast = ChatGoogleGenerativeAI(
-    model=config.GEMINI_CHAT_MODEL,
+# The remaining title-generation task uses Hugging Face's OpenAI-compatible
+# router through the already-installed Groq client, avoiding another SDK.
+llm_huggingface = ChatGroq(
+    model=config.HF_TITLE_MODEL,
     temperature=0.0,
-    google_api_key=config.GEMINI_API_KEY or "missing-gemini-api-key",
+    api_key=_secret(config.HF_TOKEN, "huggingface"),
+    base_url="https://router.huggingface.co/v1",
 )
+
+llm = llm_gemini
 
 embeddings = GoogleGenerativeAIEmbeddings(
     model=config.GEMINI_EMBEDDING_MODEL,
@@ -56,30 +51,22 @@ embeddings = GoogleGenerativeAIEmbeddings(
 
 
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
-StructuredModelKind = Literal["default", "fast"]
+StructuredModelProvider = Literal["gemini", "groq"]
 
 
 def get_structured_model(
     schema: type[SchemaT],
     *,
-    kind: StructuredModelKind = "default",
+    provider: StructuredModelProvider = "gemini",
 ) -> Runnable[Any, Any]:
-    """Return a structured model with the appropriate agent model policy.
-
-    ``RunnableWithFallbacks`` does not expose ``with_structured_output``
-    directly. Therefore structured output is bound to each provider first,
-    and only then is the fallback chain assembled.
-    """
-
-    if kind == "fast":
-        return llm_fast.with_structured_output(schema)
-
-    return llm_gemini.with_structured_output(schema)
+    """Bind a schema to the selected provider's structured-output model."""
+    model = llm_gemini if provider == "gemini" else llm_groq
+    return model.with_structured_output(schema)
 
 
 def get_title_model(schema: type[SchemaT]) -> Runnable[Any, Any]:
-    """Return Gemini Flash-Lite structured output for conversation titles."""
-    return llm_gemini_title.with_structured_output(schema)
+    """Return Hugging Face structured output for low-volume title generation."""
+    return llm_huggingface.with_structured_output(schema)
 
 
 __all__ = [
@@ -87,8 +74,7 @@ __all__ = [
     "get_structured_model",
     "get_title_model",
     "llm",
-    "llm_fast",
     "llm_gemini",
-    "llm_gemini_title",
+    "llm_huggingface",
     "llm_groq",
 ]

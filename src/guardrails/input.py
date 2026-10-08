@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Mapping
-from typing import Any, Literal, cast
+from typing import Any
+
+from langchain_core.messages import HumanMessage
 
 from .config import (
     GuardrailConfig,
@@ -13,16 +15,6 @@ CONTROLLED_INPUT_RESPONSE = (
     "Não posso processar essa solicitação. "
     "Posso ajudar com informações documentadas sobre os processos da organização."
 )
-
-
-SemanticCategory = Literal[
-    "APROVADO",
-    "OFENSIVO",
-    "PERIGOSO",
-    "ILICITO",
-    "POLITICA_GOVERNAMENTAL",
-]
-
 
 _PII_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("CPF", re.compile(r"\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b")),
@@ -100,35 +92,6 @@ _GOVERNMENT_POLITICS_PATTERNS = tuple(
         r"minist[eé]rio|congresso\s+nacional",
     )
 )
-
-
-_BLOCKED_CATEGORIES: dict[SemanticCategory, tuple[str, str]] = {
-    "OFENSIVO": (
-        "offensive_content",
-        "A mensagem foi classificada como conteúdo ofensivo.",
-    ),
-    "PERIGOSO": (
-        "dangerous_request",
-        "A mensagem foi classificada como pedido perigoso.",
-    ),
-    "ILICITO": (
-        "illegal_request",
-        "A mensagem foi classificada como pedido ilícito.",
-    ),
-    "POLITICA_GOVERNAMENTAL": (
-        "government_politics",
-        "A mensagem trata de política governamental.",
-    ),
-}
-
-
-_SEMANTIC_PROMPT = """Você é um classificador de segurança.
-Classifique a mensagem sanitizada em uma única categoria:
-APROVADO, OFENSIVO, PERIGOSO, ILICITO ou POLITICA_GOVERNAMENTAL.
-Responda somente no formato: CATEGORIA: <categoria>
-
-Mensagem: {message}
-"""
 
 
 def _content_to_text(content: Any) -> str:
@@ -212,21 +175,6 @@ def _blocked(
     }
 
 
-def _classify_semantically(message: str) -> SemanticCategory:
-    from src.llm_factory import llm_fast
-
-    result = llm_fast.invoke(_SEMANTIC_PROMPT.format(message=message))
-    content = _content_to_text(getattr(result, "content", result))
-
-    for line in content.splitlines():
-        if line.strip().upper().startswith("CATEGORIA:"):
-            category = line.split(":", 1)[1].strip().upper()
-            if category in {"APROVADO", *(_BLOCKED_CATEGORIES.keys())}:
-                return cast(SemanticCategory, category)
-
-    raise ValueError("Classificação semântica inválida.")
-
-
 def _initial_input_result(
     text: str | None,
     config: GuardrailConfig,
@@ -292,51 +240,10 @@ def _static_input_result(
     return None
 
 
-def _semantic_input_result(
-    sanitized: str,
-    redactions: list[str],
-    config: GuardrailConfig,
-    classifier: Callable[[str], SemanticCategory] | None,
-) -> InputGuardrailResult | None:
-    if not config.classify_semantically:
-        return None
-
-    classifier_to_use = classifier or _classify_semantically
-
-    try:
-        category = classifier_to_use(sanitized)
-    except Exception:
-        if config.fail_closed:
-            return _blocked(
-                "classifier_unavailable",
-                "Não foi possível concluir a classificação de segurança.",
-                redactions,
-            )
-        category = "APROVADO"
-
-    if category in _BLOCKED_CATEGORIES:
-        reason_code, reason = _BLOCKED_CATEGORIES[category]
-        return _blocked(
-            reason_code,
-            reason,
-            redactions,
-        )
-
-    if category != "APROVADO":
-        return _blocked(
-            "classifier_unavailable",
-            "A classificação de segurança retornou uma categoria inválida.",
-            redactions,
-        )
-
-    return None
-
-
 def validate_input(
     state: Mapping[str, Any],
     *,
     config: GuardrailConfig | None = None,
-    classifier: Callable[[str], SemanticCategory] | None = None,
 ) -> InputGuardrailResult:
     config = config or GuardrailConfig()
     text = _latest_human_message(state)
@@ -362,15 +269,6 @@ def validate_input(
     if static_result is not None:
         return static_result
 
-    semantic_result = _semantic_input_result(
-        sanitized,
-        redactions,
-        config,
-        classifier,
-    )
-    if semantic_result is not None:
-        return semantic_result
-
     return {
         "status": "passed",
         "reason_code": "approved",
@@ -386,7 +284,6 @@ def input_guardrail_node(
     *,
     validator: Callable[[Mapping[str, Any]], InputGuardrailResult] | None = None,
     guardrail_config: GuardrailConfig | None = None,
-    classifier: Callable[[str], SemanticCategory] | None = None,
 ) -> dict[str, Any]:
     result = (
         validator(state)
@@ -394,25 +291,39 @@ def input_guardrail_node(
         else validate_input(
             state,
             config=guardrail_config,
-            classifier=classifier,
         )
     )
 
+    # Sanitized text and original PII mappings are transient guardrail output.
+    # Only the sanitized message is written into the shared messages channel.
+    sanitized_message = result.get("sanitized_message")
+    pii_map = result.get("pii_map")
+    public_result = {
+        key: value
+        for key, value in result.items()
+        if key not in {"sanitized_message", "pii_map"}
+    }
     update: dict[str, Any] = {
-        "input_guardrail": result,
+        "input_guardrail": public_result,
         "status": ("in_progress" if result["status"] == "passed" else "completed"),
     }
 
-    request = state.get("request")
-    sanitized_message = result.get("sanitized_message")
+    messages = state.get("messages", [])
+    if isinstance(sanitized_message, str) and sanitized_message.strip():
+        latest_human = next(
+            (
+                message
+                for message in reversed(messages)
+                if isinstance(message, HumanMessage)
+            ),
+            None,
+        )
+        if latest_human is None:
+            raise ValueError("A mensagem do usuário não foi encontrada no estado")
+        update["messages"] = [
+            HumanMessage(content=sanitized_message, id=latest_human.id)
+        ]
 
-    if isinstance(request, Mapping) and isinstance(sanitized_message, str):
-        update["request"] = {
-            **request,
-            "sanitized_message": sanitized_message,
-        }
-
-    pii_map = result.get("pii_map")
     if isinstance(pii_map, dict):
         update["pii_map"] = pii_map
 

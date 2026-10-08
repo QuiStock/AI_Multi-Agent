@@ -1,8 +1,4 @@
 from src.agents.schemas.agent_card import AgentCard, AgentRole
-from src.agents.schemas.policies import (
-    EvidencePolicy,
-    MemoryPolicy,
-)
 from src.agents.schemas.tool_binding import (
     ToolBinding,
     ToolProperty,
@@ -35,18 +31,8 @@ FAQ_CARD = AgentCard(
                     required=True,
                 ),
             ],
-            skip_compilation=False,
         )
     ],
-    memory_policy=MemoryPolicy(
-        enabled=False,
-        mode="none",
-        max_items=0,
-        ttl_hours=None,
-    ),
-    evidence_policy=EvidencePolicy(
-        requires_citations=True, requires_evidence=True, minimum_sources=1
-    ),
     tags=["faq", "rag", "documentos"],
     routing_intents=["faq", "politicas", "processos"],
 )

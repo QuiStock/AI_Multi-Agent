@@ -21,14 +21,14 @@ def _as_timestamp(value: object) -> str | None:
 
 def _validate_request(request: SummarySearchRequest) -> None:
     required = {
-        "user_id": request.user_id,
+        "email": request.email,
         "conversation_id": request.conversation_id,
         "query": request.query,
         "collection_name": request.collection_name,
     }
     if any(not value.strip() for value in required.values()):
         raise ValueError(
-            "user_id, conversation_id, query e collection_name são obrigatórios"
+            "email, conversation_id, query e collection_name são obrigatórios"
         )
     if not 1 <= request.limit <= MAX_SUMMARY_RESULTS:
         raise ValueError("limit deve estar entre um e três")
@@ -40,8 +40,8 @@ def _summary_filter(request: SummarySearchRequest) -> models.Filter:
     return models.Filter(
         must=[
             models.FieldCondition(
-                key="user_id",
-                match=models.MatchValue(value=request.user_id),
+                key="email",
+                match=models.MatchValue(value=request.email),
             ),
             models.FieldCondition(
                 key="memory_type",
@@ -61,12 +61,12 @@ def _summary_filter(request: SummarySearchRequest) -> models.Filter:
     )
 
 
-def _has_valid_identity(payload: Mapping[str, Any], user_id: str) -> bool:
+def _has_valid_identity(payload: Mapping[str, Any], email: str) -> bool:
     conversation_id = payload.get("conversation_id")
     return (
         isinstance(conversation_id, str)
         and bool(conversation_id.strip())
-        and payload.get("user_id") == user_id
+        and payload.get("email") == email
         and payload.get("memory_type") == "conversation_summary"
         and payload.get("status") == "ended"
     )
@@ -76,6 +76,7 @@ def _has_valid_summary(payload: Mapping[str, Any]) -> bool:
     title = payload.get("title")
     summary = payload.get("summary")
     version = payload.get("summary_version")
+    watermark = payload.get("summarized_through_message_id")
     return (
         (title is None or isinstance(title, str))
         and isinstance(summary, str)
@@ -83,18 +84,20 @@ def _has_valid_summary(payload: Mapping[str, Any]) -> bool:
         and isinstance(version, int)
         and not isinstance(version, bool)
         and version >= 1
+        and isinstance(watermark, str)
+        and bool(watermark.strip())
     )
 
 
 def _candidate_from_point(
     point: Any,
     *,
-    user_id: str,
+    email: str,
 ) -> SummaryCandidate | None:
     payload = point.payload
     if not isinstance(payload, Mapping):
         return None
-    if not _has_valid_identity(payload, user_id) or not _has_valid_summary(payload):
+    if not _has_valid_identity(payload, email) or not _has_valid_summary(payload):
         return None
 
     updated_at = _as_timestamp(payload.get("updated_at"))
@@ -130,7 +133,7 @@ def get_summary_context(
 
     candidates = []
     for point in result.points:
-        candidate = _candidate_from_point(point, user_id=request.user_id)
+        candidate = _candidate_from_point(point, email=request.email)
         if candidate is not None:
             candidates.append(candidate)
     return candidates

@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable, Sequence
-from datetime import datetime, timezone
 from typing import Any, Protocol
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -13,11 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src.llm_factory import get_structured_model
 
-from ..contracts import ConversationSummarySnapshot, StoredMessage, SummaryCommit
-from ..mongo_repository import (
-    MongoConversationRepository,
-    SummaryUpdateConflictError,
-)
+from ..contracts import ConversationSummarySnapshot, StoredMessage
+from ..mongo_repository import MongoConversationRepository
 from .summary_prompt import SUMMARY_SYSTEM_PROMPT
 from .title_generator import LLMConversationTitleGenerator, TitleGenerator
 
@@ -42,6 +38,8 @@ class SummaryUpdater(Protocol):
 class SummaryIndexer(Protocol):
     def upsert(self, snapshot: ConversationSummarySnapshot) -> None: ...
 
+    def get(self, conversation_id: str) -> dict[str, object] | None: ...
+
 
 class SummaryBoundaryNotFoundError(ValueError):
     """The persisted summary marker no longer exists in the conversation."""
@@ -55,7 +53,11 @@ class LLMSummaryUpdater:
     """Use the application LLM to create or incrementally update a summary."""
 
     def __init__(self, model: Any | None = None) -> None:
-        self._model = get_structured_model(SummaryText) if model is None else model
+        self._model = (
+            get_structured_model(SummaryText, provider="groq")
+            if model is None
+            else model
+        )
 
     def update(
         self,
@@ -93,7 +95,6 @@ class EndConversationSummaryWorker:
         summary_updater: SummaryUpdater,
         summary_indexer: SummaryIndexer,
         title_generator: TitleGenerator | None = None,
-        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._repository = repository
         self._summary_updater = summary_updater
@@ -103,22 +104,30 @@ class EndConversationSummaryWorker:
             if title_generator is None
             else title_generator
         )
-        self._clock = clock or (lambda: datetime.now(timezone.utc))
 
     def run(
         self,
         *,
-        user_id: str,
+        email: str,
         conversation_id: str,
+        before_upsert: Callable[[], None] | None = None,
     ) -> ConversationSummarySnapshot:
-        self._repository.mark_ended(
-            conversation_id=conversation_id,
-            user_id=user_id,
-            ended_at=self._clock(),
-        )
+        point = self._summary_indexer.get(conversation_id)
+        previous_summary = point.get("summary") if point else None
+        if not isinstance(previous_summary, str) or not previous_summary.strip():
+            previous_summary = None
+        previous_version = point.get("summary_version", 0) if point else 0
+        if not isinstance(previous_version, int) or isinstance(previous_version, bool):
+            previous_version = 0
+        previous_marker = point.get("summarized_through_message_id") if point else None
         snapshot = self._repository.get_summary_snapshot(
             conversation_id=conversation_id,
-            user_id=user_id,
+            email=email,
+            summary=previous_summary,
+            summary_version=previous_version,
+            summarized_through_message_id=(
+                previous_marker if isinstance(previous_marker, str) else None
+            ),
         )
         new_messages = self._messages_after_summary_marker(snapshot)
 
@@ -130,22 +139,12 @@ class EndConversationSummaryWorker:
             if not updated_summary.strip():
                 raise ValueError("O resumo gerado não pode estar vazio")
 
-            committed = self._repository.save_summary_if_current(
-                SummaryCommit(
-                    conversation_id=conversation_id,
-                    user_id=user_id,
-                    expected_summary_version=snapshot.summary_version,
-                    expected_message_id=snapshot.summarized_through_message_id,
-                    summary=updated_summary,
-                    summarized_through_message_id=new_messages[-1].message_id,
-                )
-            )
-            if not committed:
-                raise SummaryUpdateConflictError(conversation_id)
-
             snapshot = self._repository.get_summary_snapshot(
                 conversation_id=conversation_id,
-                user_id=user_id,
+                email=email,
+                summary=updated_summary,
+                summary_version=snapshot.summary_version + 1,
+                summarized_through_message_id=new_messages[-1].message_id,
             )
         elif snapshot.summary is None:
             raise InvalidSummaryStateError(
@@ -153,6 +152,8 @@ class EndConversationSummaryWorker:
             )
 
         snapshot = self._generate_missing_title(snapshot)
+        if before_upsert is not None:
+            before_upsert()
         self._summary_indexer.upsert(snapshot)
         return snapshot
 
@@ -175,13 +176,15 @@ class EndConversationSummaryWorker:
 
         self._repository.save_title_if_missing(
             conversation_id=snapshot.conversation_id,
-            user_id=snapshot.user_id,
-            expected_summary_version=snapshot.summary_version,
+            email=snapshot.email,
             title=title,
         )
         return self._repository.get_summary_snapshot(
             conversation_id=snapshot.conversation_id,
-            user_id=snapshot.user_id,
+            email=snapshot.email,
+            summary=snapshot.summary,
+            summary_version=snapshot.summary_version,
+            summarized_through_message_id=snapshot.summarized_through_message_id,
         )
 
     @staticmethod

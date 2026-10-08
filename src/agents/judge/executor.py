@@ -25,7 +25,7 @@ class JudgeExecutor:
         self.model = (
             get_structured_model(
                 JudgeDecision,
-                kind="fast",
+                provider="gemini",
             )
             if model is None
             else model

@@ -8,6 +8,7 @@ from langchain_core.messages import AnyMessage, HumanMessage, RemoveMessage
 from langchain_core.runnables import RunnableLambda
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.graph.state import CompiledStateGraph
 
 from src.graphs.adapters import (
@@ -88,10 +89,55 @@ def judge_blocked_node(state: GraphState) -> GraphState:
     }
 
 
+def product_workflow_unavailable_node(state: GraphState) -> GraphState:
+    result = state.get("agent_results", {}).get("product_workflow", {})
+    content = result.get("answer") or (
+        "Não consegui consultar os dados do produto agora. Tente novamente mais tarde."
+    )
+    return {
+        "final_response": {
+            "content": content,
+            "status": "error",
+        },
+        "status": "completed",
+    }
+
+
+def decide_after_product_workflow(state: GraphState) -> str:
+    result = state.get("agent_results", {}).get("product_workflow", {})
+    return (
+        "compiler"
+        if result.get("status") == "success"
+        else "product_workflow_unavailable"
+    )
+
+
 def _as_runnable(
     node: GraphNode,
 ) -> RunnableLambda[GraphState, GraphState]:
     return RunnableLambda(node)
+
+
+def _run_context_enrichment_for_graph(
+    state: GraphState,
+    *,
+    context_enricher: ConversationContextEnricherPort,
+) -> GraphState:
+    """Apply the context adapter with reducer-safe message replacement."""
+    update = run_context_enrichment_node(
+        state,
+        context_enricher=context_enricher,
+    )
+    messages = update.get("messages")
+    if messages and isinstance(messages[0], RemoveMessage):
+        return {
+            **update,
+            "messages": [
+                RemoveMessage(id=REMOVE_ALL_MESSAGES),
+                *messages[1:],
+            ],
+        }
+    return update
 
 
 def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
@@ -129,7 +175,7 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
         "context_enrichment",
         _as_runnable(
             partial(
-                run_context_enrichment_node,
+                _run_context_enrichment_for_graph,
                 context_enricher=context_enricher,
             )
         ),
@@ -198,6 +244,12 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
     )
 
     graph.add_node(
+        "product_workflow_unavailable",
+        _as_runnable(product_workflow_unavailable_node),
+        input_schema=GraphState,
+    )
+
+    graph.add_node(
         "persist_turn",
         _as_runnable(
             partial(
@@ -244,7 +296,17 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
     )
 
     for route in capabilities:
-        graph.add_edge(route, "compiler")
+        if route == "product_workflow":
+            graph.add_conditional_edges(
+                route,
+                decide_after_product_workflow,
+                {
+                    "compiler": "compiler",
+                    "product_workflow_unavailable": "product_workflow_unavailable",
+                },
+            )
+        else:
+            graph.add_edge(route, "compiler")
 
     graph.add_edge(
         "compiler",
@@ -269,6 +331,7 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
         "clarification_required",
         "out_of_scope",
         "judge_blocked",
+        "product_workflow_unavailable",
     ):
         graph.add_edge(terminal_node, "persist_turn")
 

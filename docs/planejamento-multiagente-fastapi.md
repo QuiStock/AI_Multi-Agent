@@ -535,7 +535,7 @@ O estado deve representar um turno de conversa, não o trace inteiro. O trace de
 
 - `session_id`: identifica a conversa;
 - `turn_id`: identifica a mensagem atual;
-- `user_id`: identificador autorizado do usuário, sem dados desnecessários;
+- `email`: identificador autorizado extraído da claim `email` do JWT HS256 e validado pela API;
 - `user_role`: funcionário, gerente ou gerente regional;
 - `user_message`: mensagem recebida;
 - `messages`: histórico necessário para o agente, com limite definido;

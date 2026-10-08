@@ -4,7 +4,6 @@ from unittest.mock import Mock
 
 import pytest
 
-from src.memory.contracts import SummaryCommit
 from src.memory.mongo_repository import (
     ConversationNotEndedError,
     ConversationNotFoundError,
@@ -15,7 +14,7 @@ from src.memory.mongo_repository import (
 def _mongo_document() -> dict[str, object]:
     return {
         "_id": "conversation-1",
-        "user_id": "user-1",
+        "email": "user-1",
         "title": "Title",
         "status": "ended",
         "summary": "Previous summary",
@@ -33,25 +32,46 @@ def _mongo_document() -> dict[str, object]:
     }
 
 
-def test_summary_snapshot_scopes_by_owner_and_normalizes_mongo_dates() -> None:
+def test_summary_snapshot_uses_qdrant_runtime_state_not_mongo_fields() -> None:
     collection = Mock()
     collection.find_one.return_value = _mongo_document()
     repository = MongoConversationRepository(collection)
 
     snapshot = repository.get_summary_snapshot(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
+        summary="Qdrant summary",
+        summary_version=3,
+        summarized_through_message_id="m1",
     )
 
     assert collection.find_one.call_args.args[0] == {
         "_id": "conversation-1",
-        "user_id": "user-1",
+        "email": "user-1",
     }
-    assert snapshot.summary == "Previous summary"
-    assert snapshot.summary_version == 2
+    assert snapshot.summary == "Qdrant summary"
+    assert snapshot.summary_version == 3
     assert snapshot.summarized_through_message_id == "m1"
     assert snapshot.messages[0].created_at.tzinfo == timezone.utc
     assert snapshot.updated_at.tzinfo == timezone.utc
+    projection = collection.find_one.call_args.args[1]
+    assert "summary" not in projection
+    assert "summary_version" not in projection
+    assert "summarized_through_message_id" not in projection
+
+
+def test_summary_snapshot_rejects_a_conversation_resumed_before_job_execution() -> None:
+    collection = Mock()
+    active_document = _mongo_document()
+    active_document["status"] = "active"
+    collection.find_one.return_value = active_document
+    repository = MongoConversationRepository(collection)
+
+    with pytest.raises(ConversationNotEndedError):
+        repository.get_summary_snapshot(
+            conversation_id="conversation-1",
+            email="user-1",
+        )
 
 
 def test_mark_ended_updates_only_an_active_owned_conversation() -> None:
@@ -62,13 +82,13 @@ def test_mark_ended_updates_only_an_active_owned_conversation() -> None:
 
     repository.mark_ended(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         ended_at=ended_at,
     )
 
     assert collection.update_one.call_args.args[0] == {
         "_id": "conversation-1",
-        "user_id": "user-1",
+        "email": "user-1",
         "status": "active",
     }
     assert collection.update_one.call_args.args[1] == {
@@ -100,13 +120,13 @@ def test_resume_reopens_owned_conversation_and_returns_ordered_message_ids() -> 
 
     messages = repository.resume_conversation(
         conversation_id="conversation-1",
-        user_id="user-1",
+        email="user-1",
         resumed_at=resumed_at,
     )
 
     assert collection.update_one.call_args.args[0] == {
         "_id": "conversation-1",
-        "user_id": "user-1",
+        "email": "user-1",
         "status": "ended",
     }
     assert collection.update_one.call_args.args[1] == {
@@ -125,7 +145,7 @@ def test_resume_rejects_other_user_and_already_active_conversations() -> None:
     with pytest.raises(ConversationNotFoundError):
         repository.resume_conversation(
             conversation_id="conversation-1",
-            user_id="other-user",
+            email="other-user",
             resumed_at=datetime(2026, 9, 21, tzinfo=timezone.utc),
         )
 
@@ -133,7 +153,7 @@ def test_resume_rejects_other_user_and_already_active_conversations() -> None:
     with pytest.raises(ConversationNotEndedError):
         repository.resume_conversation(
             conversation_id="conversation-1",
-            user_id="user-1",
+            email="user-1",
             resumed_at=datetime(2026, 9, 21, tzinfo=timezone.utc),
         )
 
@@ -151,10 +171,10 @@ def test_list_ended_conversations_only_queries_authenticated_user() -> None:
     collection.find.return_value = cursor
     repository = MongoConversationRepository(collection)
 
-    result = repository.list_ended_conversations(user_id="user-1")
+    result = repository.list_ended_conversations(email="user-1")
 
     assert collection.find.call_args.args[0] == {
-        "user_id": "user-1",
+        "email": "user-1",
         "status": "ended",
     }
     assert cursor.sort.call_args.args[0] == [
@@ -170,58 +190,48 @@ def test_list_ended_conversations_only_queries_authenticated_user() -> None:
     ]
 
 
-def test_summary_commit_checks_version_and_message_boundary() -> None:
+def test_candidate_validation_reads_metadata_without_summary_content() -> None:
     collection = Mock()
-    collection.update_one.return_value = SimpleNamespace(modified_count=1)
+    collection.find.return_value = [
+        {
+            "_id": "conversation-1",
+            "title": "Title",
+            "updated_at": datetime(2026, 9, 20, tzinfo=timezone.utc),
+            "summary": "must not be projected",
+        }
+    ]
     repository = MongoConversationRepository(collection)
 
-    saved = repository.save_summary_if_current(
-        SummaryCommit(
-            conversation_id="conversation-1",
-            user_id="user-1",
-            expected_summary_version=2,
-            expected_message_id="m1",
-            summary="Updated summary",
-            summarized_through_message_id="m2",
-        )
+    metadata = repository.get_ended_conversation_metadata_by_ids(
+        email="user-1", conversation_ids=["conversation-1"]
     )
 
-    query, update = collection.update_one.call_args.args
-    assert query == {
-        "_id": "conversation-1",
-        "user_id": "user-1",
-        "status": "ended",
-        "summary_version": 2,
-        "summarized_through_message_id": "m1",
-    }
-    assert update == {
-        "$set": {
-            "summary": "Updated summary",
-            "summary_version": 3,
-            "summarized_through_message_id": "m2",
+    assert metadata == {
+        "conversation-1": {
+            "conversation_id": "conversation-1",
+            "title": "Title",
+            "updated_at": "2026-09-20T00:00:00+00:00",
         }
     }
-    assert saved is True
+    assert "summary" not in collection.find.call_args.args[1]
 
 
-def test_title_commit_requires_missing_title_and_current_summary_version() -> None:
+def test_title_write_requires_missing_title_without_summary_marker() -> None:
     collection = Mock()
     collection.update_one.return_value = SimpleNamespace(modified_count=1)
     repository = MongoConversationRepository(collection)
 
     saved = repository.save_title_if_missing(
         conversation_id="conversation-1",
-        user_id="user-1",
-        expected_summary_version=2,
+        email="user-1",
         title="Conversation title",
     )
 
     query, update = collection.update_one.call_args.args
     assert query == {
         "_id": "conversation-1",
-        "user_id": "user-1",
+        "email": "user-1",
         "status": "ended",
-        "summary_version": 2,
         "$or": [{"title": None}, {"title": {"$exists": False}}],
     }
     assert update == {"$set": {"title": "Conversation title"}}

@@ -22,14 +22,13 @@ Snapshot atual:
 - Agentes, cards, executores e tools em `src/agents/`.
 - Guardrails de entrada/saída em `src/guardrails/`.
 - Memória de conversa em `src/memory/`.
-- MongoDB mantém mensagens e resumos; Redis Streams transporta jobs de
-  resumo; Qdrant atende FAQ e índice de resumos; o checkpointer local é
-  `MemorySaver` para desenvolvimento/testes.
+- MongoDB mantém mensagens e metadados de jobs; Redis Streams transporta IDs
+  de jobs de resumo/exclusão; Qdrant mantém o conteúdo dos resumos e atende
+  FAQ. O checkpointer local é `MemorySaver` para desenvolvimento/testes.
 - `src/observability/{audit,metrics,traces}.py` ainda é placeholder.
-- A composição de produção em `src/api/dependencies.py` ativa somente a rota
-  `faq`. Os papéis `router`, `faq_rag`, `evidence_judge` e `compiler` estão
-  registrados; `product_workflow` existe no tipo de rota, mas ainda não tem
-  card/executor registrado nem tool comercial.
+- A composição de produção em `src/api/dependencies.py` registra `faq` e
+  `product_workflow`. O Product Workflow tem card, tools e repositório
+  PostgreSQL direto, com consultas parametrizadas e somente leitura.
 - MCP e A2A são requisitos acadêmicos futuros; não são capacidades ativas
   nesta implementação.
 - O roadmap confirmado para autenticação, rota A2A, `product_workflow`, MCP,
@@ -65,7 +64,7 @@ Fluxo executável atual:
 
 ```text
 HTTP -> input_guardrail -> context_enrichment -> normalize_user_message
-     -> router -> faq (única capacidade ativa)
+     -> router -> faq ou product_workflow
      -> compiler -> evidence_judge -> output_guardrail
      -> persist_turn -> resposta HTTP
 ```
@@ -83,7 +82,7 @@ Guardrails não são agentes: são controles obrigatórios do fluxo.
 |---|---|---|
 | `router` | Classificar a intenção e escolher uma rota permitida. | Registrado e usado pelo grafo. |
 | `faq_rag` | Responder em português usando apenas documentos recuperados. | Registrado e única capacidade de domínio ativa. |
-| `product_workflow` | Consultar e explicar métricas, análises ML, sugestões e decisões comerciais. | Papel previsto; não implementado/registrado nesta branch. |
+| `product_workflow` | Consultar e explicar sugestões e triagem comercial em modo read-only. | Card, executor, duas tools e repositório PostgreSQL direto registrados; sem decisões ou operações de escrita. |
 | `evidence_judge` | Avaliar se o rascunho está sustentado pelas evidências e citações. | Registrado e usado após o compiler. |
 | `response_compiler` (`compiler`) | Sintetizar os resultados especializados em uma resposta candidata. | Registrado e usado antes do judge. |
 
@@ -98,15 +97,23 @@ comerciais e não cria rotas para capacidades ausentes.
 
 Pode buscar trechos `.txt`, `.md` e `.pdf` no Qdrant via `faq_search`, redigir
 uma resposta documental em português e indicar arquivo/página quando
-disponíveis. Não usa conhecimento externo, não inventa evidência, não
-recalcula regras do ML e deve recusar quando não houver suporte suficiente.
+disponíveis. Cada chunk possui `audience=shared`, `audience=employee` ou
+`audience=manager`; o executor converte `role_id=2` para gerente e
+`role_id=3` para funcionário e aplica o filtro server-side antes da busca.
+Não usa conhecimento externo, não inventa evidência, não recalcula regras do ML
+e deve recusar quando não houver suporte suficiente.
 
 ### Product Workflow
 
-Quando implementado, será somente leitura: consultará dados publicados e
-explicará o resultado do ML. Não poderá recalcular fluxo, alterar sugestões,
-criar pedidos, ativar promoções ou escrever no banco. Até lá, qualquer pedido
-de recomendação ou operação deve cair em rota controlada.
+É somente leitura: consulta dados publicados no PostgreSQL e explica o
+resultado do ML e da triagem. Expõe somente
+`get_suggestion_for_product` e `get_suggestion_detail`: o funcionário consulta
+somente sugestões `IN_EMPLOYEE_TRIAGE` disponíveis para validação e o gerente
+consulta apenas sugestões `SENT_TO_MANAGER`. A busca exclui eventos `EXPIRED`;
+o detalhe do gerente inclui apenas dados de `suggestion_triage`, sem
+`suggestion_decision` ou histórico de `suggestion_log`. O log é consultado
+internamente somente para excluir `EXPIRED`. Não pode recalcular fluxo, alterar
+sugestões, criar pedidos, ativar promoções ou escrever no banco.
 
 ### Evidence Judge
 
@@ -140,8 +147,8 @@ O contrato declarativo fica em `src/agents/schemas/agent_card.py`:
   `evidence_judge`, `response_compiler`;
 - `id` em `snake_case`, versão SemVer, prompt não vazio e tools sem IDs
   duplicados;
-- `MemoryPolicy`, `EvidencePolicy` e `FailurePolicy` descrevem intenção e
-  devem ser acompanhadas por validação runtime e testes.
+- `FailurePolicy` descreve comportamento de timeout, retry e fallback e deve
+  ser acompanhada por validação runtime e testes.
 
 O card não substitui a implementação: `src/agents/registry.py` define o que
 está registrado e `src/api/dependencies.py` define o que entra no grafo.
@@ -151,15 +158,16 @@ está registrado e `src/api/dependencies.py` define o que entra no grafo.
 | Agente | Tool/capacidade | Limite |
 |---|---|---|
 | Router | `search_conversation_summaries` | Somente memória do próprio usuário; até 3 resumos encerrados, score inicial `>= 0.5`, conversa atual excluída e validação posterior no MongoDB. |
-| FAQ/RAG | `faq_search` | Consulta apenas o Qdrant da coleção FAQ; `top_k=4`, relevância mínima padrão `0.30`; sem busca externa. |
-| Product Workflow | Nenhuma ativa | Futuras tools devem ser queries/repositórios predefinidos, read-only, parametrizados e com escopo de loja aplicado no servidor. |
+| FAQ/RAG | `faq_search` | Consulta apenas a collection FAQ configurada; escopo `shared + manager` para `role_id=2` e `shared + employee` para `role_id=3`, `top_k=4`, relevância mínima padrão `0.30`; sem busca externa. |
+| Product Workflow | `get_suggestion_for_product`, `get_suggestion_detail` | Repositório PostgreSQL read-only, busca por produto, filtros de cargo/loja, exclusão de `EXPIRED`, card e triagem autorizados com evidência original. |
 | Judge | Nenhuma | Validação pura do payload recebido. |
 | Compiler | Nenhuma | Usa somente resultados e evidências já presentes no estado. |
 
 Detalhes de wiring importantes:
 
-- `TOOL_REGISTRY` começa vazio. A composição registra `faq_search` antes de
-  construir o `FAQExecutor`; IDs ausentes devem falhar explicitamente.
+- A composição injeta o retriever base no `FAQExecutor`; a tool `faq_search` é
+  construída por requisição com o escopo do `role_id` e não guarda role em
+  estado global mutável.
 - O card do router declara a tool de memória, mas o `get_graph()` atual cria
   `RouterExecutor()` sem `summary_search_service`; portanto essa tool não está
   ativa no caminho HTTP padrão. Testes podem injetá-la.
@@ -167,10 +175,8 @@ Detalhes de wiring importantes:
   `ToolResult[FAQSearchData]`; a migração deve usar
   `src/agents/tooling/result_factory.py`, sem documentar o legado como contrato
   final.
-- `run_faq_node` hoje extrai o texto da resposta do executor, mas ainda inicializa
-  `citation_ids` vazio e não projeta as evidências do retorno legado para
-  `GraphState.evidences`; a trilha FAQ totalmente grounded só deve ser tratada
-  como concluída após essa migração e seus testes.
+- `run_faq_node` encaminha o `request` sanitizado ao FAQ e projeta as evidências
+  retornadas para `GraphState.evidences`.
 - `ToolBinding` descreve argumentos; não concede autorização. Autorização,
   tenant/store scope, limites, timeout e filtros pertencem ao servidor.
 
@@ -178,7 +184,6 @@ Detalhes de wiring importantes:
 
 Não há chamadas diretas entre agentes. A comunicação passa por `GraphState` e
 pelos adapters em `src/graphs/adapters.py`.
-
 ```text
 input_guardrail
   -> context_enrichment -> normalize_user_message -> router
@@ -204,7 +209,7 @@ Ownership de escrita:
 `add_messages`; `agent_results` preserva resultados por agente; `evidences`
 faz merge por `evidence_id`. Não adicione chaves ad hoc.
 
-O router recebe `messages` sanitizadas e `request` com `request_id`, `user_id`,
+O router recebe `messages` sanitizadas e `request` com `request_id`, `email`,
 `conversation_id`, `sent_at` e `sanitized_message`. O compiler recebe todos os
 resultados/evidências disponíveis. O judge recebe o draft e as evidências. A
 resposta final é produzida pelo guardrail/finalização, não pelo judge.
@@ -217,14 +222,16 @@ Mensagem:
 
 ```json
 {
-  "user_id": "user-123",
   "message": "Como funciona o processo documentado?",
   "sent_at": "2026-09-23T12:00:00Z",
   "is_resuming_conversation": false
 }
 ```
 
-Endpoint: `POST /api/v1/conversations/{conversation_id}/messages`.
+Endpoint: `POST /api/v1/conversations/{conversation_id}/messages`, autenticado
+por `Authorization: Bearer <JWT>` HS256; o email vem da claim assinada e é
+associado a `user_account` antes do grafo. A API não valida `exp` conforme a
+premissa de que tokens inválidos/expirados não chegam ao serviço.
 `ConversationRequest` rejeita campos extras, mensagem vazia e mensagens acima
 de 4.000 caracteres. A resposta contém `conversation_id`, `request_id`,
 `response` e status `success`, `rejected`, `clarification_required`,
@@ -234,7 +241,7 @@ Memória:
 
 - `POST /api/v1/conversations/{conversation_id}/end` retorna `202` e enfileira
   um job de resumo.
-- `GET /api/v1/conversations/ended?user_id=...` lista conversas encerradas.
+- `GET /api/v1/conversations/ended` lista conversas encerradas da identidade autenticada.
 - A retomada autorizada restaura mensagens do MongoDB em ordem e não duplica a
   mensagem atual.
 
@@ -278,7 +285,10 @@ Quando regras colidirem, preserve nesta ordem:
 `input_guardrail` rejeita vazio/excesso, mascara CPF, CNPJ, e-mail, telefone,
 cartão e credenciais, detecta prompt injection, pedidos de dados internos,
 política governamental e classificação semântica bloqueada. O padrão é
-`fail_closed`; indisponibilidade do classificador bloqueia a entrada.
+As decisões dos guardrails são determinísticas e implementadas no código:
+limites, PII, prompt injection, pedidos internos, política governamental,
+formatação, fontes FAQ, emojis e alegações comerciais. A análise de suporte
+semântico permanece sob responsabilidade do evidence judge, não dos guardrails.
 
 ### Saída e groundedness
 
@@ -289,11 +299,12 @@ troca o conteúdo por resposta controlada; nunca expõe regra interna.
 
 ### Identidade e dados comerciais
 
-O código atual recebe `user_id` na requisição e ainda não compara esse valor
-com token autenticado. Isso é uma limitação explícita do MVP, não uma permissão
-para confiar em IDs enviados pelo modelo. Ao implementar tools comerciais,
-derive identidade/role/store scope no servidor, use queries parametrizadas,
-limite de linhas, timeout, logs de auditoria e credencial read-only. Cubra
+As rotas de conversa recebem um JWT Bearer HS256 e derivam o email autenticado
+do principal validado pela API antes de executar o grafo. A identidade não vem do
+body nem da query e é propagada em todo o fluxo de memória. Consultas de
+identidade ao PostgreSQL usam credencial somente de leitura e SQL parametrizado.
+Ao implementar tools comerciais, derive role/store scope no servidor, use
+queries parametrizadas, limite de linhas, timeout e logs de auditoria; cubra
 SQL arbitrário, injection e acesso entre lojas com casos negativos.
 
 ### Validação
@@ -326,13 +337,13 @@ Não faça retries ilimitados.
 
 - `enrich_context` só restaura histórico quando `is_resuming_conversation` está
   ativo; conversa nova não busca Qdrant automaticamente.
-- Resumos no Qdrant são filtrados por `user_id`, status encerrado, versão
+- Resumos no Qdrant são filtrados por `email`, status encerrado, versão
   validada no MongoDB e exclusão da conversa atual. O fallback permitido é de
   até três conversas encerradas recentes.
 - O encerramento é assíncrono: MongoDB registra o job, Redis Streams entrega,
   o worker faz retry limitado e o resumo incremental usa
   `summarized_through_message_id`. O mesmo `conversation_id` recebe upsert no
-  índice de resumos.
+  índice de resumos no Qdrant; MongoDB não armazena o conteúdo do resumo.
 - Checkpoints locais são efêmeros; o histórico durável é o MongoDB.
 - Preserve `request_id`, `tool_call_id` e `trace_id` nas fronteiras existentes.
   Não registre conteúdo sensível, credenciais, PII ou prompts privados.

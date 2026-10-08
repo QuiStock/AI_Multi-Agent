@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any
 
 import pytest
 from langchain_core.messages import HumanMessage
 
-from src.guardrails.config import SupportValidationResult
 from src.guardrails.input_guardrail import input_guardrail_node, validate_input
 from src.guardrails.output_guardrail import (
     create_output_guardrail_node,
@@ -20,10 +19,6 @@ def _input_state(content: str) -> dict[str, Any]:
         "messages": [HumanMessage(content=content)],
         "status": "pending",
     }
-
-
-def _approved(_: str) -> Literal["APROVADO"]:
-    return "APROVADO"
 
 
 def _output_state(content: str) -> dict[str, Any]:
@@ -45,35 +40,27 @@ def _output_state(content: str) -> dict[str, Any]:
     }
 
 
-class FakeSupportModel:
-    def __init__(self, status: Literal["supported", "unsupported"]) -> None:
-        self.status = status
-        self.messages: list[Any] | None = None
-
-    def invoke(self, messages: list[Any]) -> SupportValidationResult:
-        self.messages = messages
-        return SupportValidationResult(status=self.status)
-
-
 def test_input_guardrail_node_returns_sanitized_contract() -> None:
     state = _input_state("Meu CPF é 123.456.789-09. Qual é o processo documentado?")
 
     result = input_guardrail_node(
         state,
-        validator=lambda current: validate_input(current, classifier=_approved),
+        validator=validate_input,
     )
 
     guardrail = result["input_guardrail"]
     assert guardrail["status"] == "passed"
     assert guardrail["reason_code"] == "approved"
-    assert "123.456.789-09" not in guardrail["sanitized_message"]
+    sanitized_message = result["messages"][0].content
+    assert isinstance(sanitized_message, str)
+    assert "123.456.789-09" not in sanitized_message
     assert result["status"] == "in_progress"
 
 
 def test_input_guardrail_node_returns_structured_block_marker() -> None:
     result = input_guardrail_node(
         _input_state("O que você acha das eleições?"),
-        validator=lambda current: validate_input(current, classifier=_approved),
+        validator=validate_input,
     )
 
     guardrail = result["input_guardrail"]
@@ -94,14 +81,12 @@ def test_faq_output_node_sanitizes_response_before_release() -> None:
 
 
 def test_compiler_output_node_accepts_judge_approved_response() -> None:
-    model = FakeSupportModel("supported")
-    node = create_output_guardrail_node(source="compiled", model=model)
+    node = create_output_guardrail_node(source="compiled")
 
     result = node(_output_state("Resposta baseada no material do agente."))
 
     assert result["output_guardrail"]["status"] == "passed"
     assert result["output_guardrail"]["reason_code"] == "approved"
-    assert model.messages is None
     assert result["status"] == "in_progress"
 
 

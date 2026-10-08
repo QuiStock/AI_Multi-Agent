@@ -136,10 +136,20 @@ def _passing_output(state: dict[str, Any]) -> dict[str, Any]:
 
 
 class EmptyContextEnricher:
-    def restore_messages(
-        self, *, user_id: str, conversation_id: str
-    ) -> list[AnyMessage]:
+    def restore_messages(self, *, email: str, conversation_id: str) -> list[AnyMessage]:
         return []
+
+
+def _graph_input(content: str) -> dict[str, Any]:
+    return {
+        "request": {
+            "request_id": "request-1",
+            "email": "user-1",
+            "conversation_id": "conversation-1",
+            "role_id": 3,
+        },
+        "messages": [HumanMessage(content=content)],
+    }
 
 
 def _graph(judge_status: str = "approved") -> Any:
@@ -176,9 +186,8 @@ def test_graph_dispatches_to_faq_compiler_and_judge() -> None:
         {
             "request": {
                 "request_id": "request-1",
-                "user_id": "user-1",
+                "email": "user-1",
                 "conversation_id": "conversation-1",
-                "sanitized_message": "pergunta original",
                 "is_new_conversation": True,
             },
             "messages": [HumanMessage(content="pergunta original")],
@@ -214,7 +223,7 @@ def test_graph_runs_compiler_before_judge() -> None:
         context_enricher=EmptyContextEnricher(),
     )
 
-    graph.invoke({"messages": [HumanMessage(content="pergunta")]})
+    graph.invoke(_graph_input("pergunta"))
 
     assert events == ["compiler", "judge"]
 
@@ -235,7 +244,7 @@ def test_graph_returns_controlled_response_for_input_rejection() -> None:
         context_enricher=EmptyContextEnricher(),
     )
 
-    result = graph.invoke({"messages": [HumanMessage(content="bloqueada")]})
+    result = graph.invoke(_graph_input("bloqueada"))
 
     assert result["final_response"] == {
         "content": "A entrada não pôde ser processada.",
@@ -273,7 +282,7 @@ def test_graph_handles_clarification_and_out_of_scope_routes() -> None:
             context_enricher=EmptyContextEnricher(),
         )
 
-        result = graph.invoke({"messages": [HumanMessage(content="pergunta")]})
+        result = graph.invoke(_graph_input("pergunta"))
 
         assert result["final_response"] == {
             "content": expected_content,
@@ -283,7 +292,7 @@ def test_graph_handles_clarification_and_out_of_scope_routes() -> None:
 
 def test_graph_returns_controlled_response_when_judge_blocks() -> None:
     result = _graph(judge_status="insufficient_evidence").invoke(
-        {"messages": [HumanMessage(content="pergunta")]}
+        _graph_input("pergunta")
     )
 
     assert result["final_response"] == {
@@ -295,9 +304,7 @@ def test_graph_returns_controlled_response_when_judge_blocks() -> None:
 
 
 def test_graph_returns_controlled_response_when_judge_is_invalid() -> None:
-    result = _graph(judge_status="invalid").invoke(
-        {"messages": [HumanMessage(content="pergunta")]}
-    )
+    result = _graph(judge_status="invalid").invoke(_graph_input("pergunta"))
 
     assert result["final_response"] == {
         "content": "Não foi possível validar a resposta gerada.",
@@ -321,7 +328,7 @@ def test_graph_returns_controlled_error_when_compiler_blocks() -> None:
         context_enricher=EmptyContextEnricher(),
     )
 
-    result = graph.invoke({"messages": [HumanMessage(content="pergunta")]})
+    result = graph.invoke(_graph_input("pergunta"))
 
     assert result["final_response"] == {
         "content": "Não foi possível validar a resposta gerada.",

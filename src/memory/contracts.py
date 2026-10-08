@@ -34,30 +34,46 @@ class StoredMessage(BaseModel):
         return self
 
 
+class ConversationTurn(BaseModel):
+    """The two ordered messages written atomically for one completed turn."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    user_message: StoredMessage
+    assistant_message: StoredMessage
+
+    @model_validator(mode="after")
+    def validate_turn_messages(self) -> "ConversationTurn":
+        if self.user_message.role != "user":
+            raise ValueError("user_message precisa ter role=user")
+        if self.assistant_message.role != "assistant":
+            raise ValueError("assistant_message precisa ter role=assistant")
+        if self.user_message.message_id == self.assistant_message.message_id:
+            raise ValueError("As mensagens do turno precisam de IDs distintos")
+        return self
+
+
 class ConversationDocument(TypedDict):
-    """Initial persisted shape for a conversation document."""
+    """Persisted conversation shape; summary state belongs to Qdrant."""
 
     _id: str
-    user_id: str
+    email: str
     started_at: datetime
     updated_at: datetime
     ended_at: datetime | None
-    status: Literal["active", "ended"]
+    status: Literal["active", "ended", "deleting"]
     title: str | None
-    summary: str | None
-    summary_version: int
-    summarized_through_message_id: str | None
     messages: list[dict[str, object]]
     total_turns: int
 
 
 class ConversationSummarySnapshot(BaseModel):
-    """MongoDB fields needed for an incremental summary update."""
+    """Runtime summary context assembled from Mongo messages and Qdrant point."""
 
     model_config = ConfigDict(extra="forbid")
 
     conversation_id: str = Field(min_length=1)
-    user_id: str = Field(min_length=1)
+    email: str = Field(min_length=1)
     title: str | None = None
     status: Literal["active", "ended"]
     summary: str | None = None
@@ -75,12 +91,12 @@ class ConversationSummarySnapshot(BaseModel):
 
 
 class SummaryCommit(BaseModel):
-    """Optimistic-concurrency payload for committing a summary revision."""
+    """Runtime summary revision; it must only be persisted in Qdrant."""
 
     model_config = ConfigDict(extra="forbid")
 
     conversation_id: str = Field(min_length=1)
-    user_id: str = Field(min_length=1)
+    email: str = Field(min_length=1)
     expected_summary_version: int = Field(ge=0)
     expected_message_id: str | None
     summary: str = Field(min_length=1)
@@ -91,7 +107,7 @@ class SummaryCommit(BaseModel):
 class SummarySearchRequest:
     """Inputs for one semantic summary search."""
 
-    user_id: str
+    email: str
     conversation_id: str
     query: str
     collection_name: str
@@ -100,7 +116,7 @@ class SummarySearchRequest:
 
 
 class ConversationSummary(TypedDict):
-    """Summary fields shared by MongoDB, Qdrant, and graph memory context."""
+    """Summary fields returned to graph memory context from Qdrant."""
 
     conversation_id: str
     title: str | None
@@ -109,9 +125,17 @@ class ConversationSummary(TypedDict):
 
 
 class VersionedConversationSummary(ConversationSummary):
-    """Authoritative MongoDB summary and version for a Qdrant candidate."""
+    """Summary point returned by Qdrant after Mongo ownership validation."""
 
     summary_version: int
+
+
+class ConversationMetadata(TypedDict):
+    """Mongo metadata used only to validate owner and ended status."""
+
+    conversation_id: str
+    title: str | None
+    updated_at: str
 
 
 class ConversationListItem(TypedDict):
@@ -139,12 +163,12 @@ class SummaryContextSelection(TypedDict):
 class ConversationRepository(Protocol):
     """Persistence interface consumed by the message service."""
 
-    def append_message(
+    def append_turn(
         self,
         *,
         conversation_id: str,
-        user_id: str,
-        message: StoredMessage,
-    ) -> bool:
-        """Return True if inserted, or False if this message was already stored."""
+        email: str,
+        turn: ConversationTurn,
+    ) -> None:
+        """Append the user and assistant messages in one atomic Mongo update."""
         ...

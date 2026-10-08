@@ -28,13 +28,13 @@ class Settings(BaseSettings):
     # Credentials
     gemini_api_key: str | None = None
     groq_api_key: str | None = None
+    hf_token: str | None = None
 
     # Models
     gemini_chat_model: str = "gemini-3.6-flash"
-    gemini_title_model: str = "gemini-2.5-flash-lite"
-    gemini_embedding_model: str = "gemini-embedding-2-preview"
-    groq_chat_model: str = "llama-3.3-70b-versatile"
-    groq_fast_model: str = "llama-3.3-70b-versatile"
+    gemini_embedding_model: str = "gemini-embedding-2"
+    groq_chat_model: str = "qwen/qwen3.8-27b"
+    hf_title_model: str = "openai/gpt-oss-20b:fastest"
 
     # Model parameters
     llm_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
@@ -43,6 +43,13 @@ class Settings(BaseSettings):
     # Optional settings already present in the local .env file
     database_url: str | None = None
     postgres_password: str | None = None
+    postgres_dsn: str | None = None
+    jwt_secret: str | None = None
+    auth_bypass_local_tests: bool = False
+    auth_bypass_email: str = "jwt-bypass@localhost.invalid"
+    auth_bypass_role_id: int = 2
+    postgres_pool_timeout_seconds: float = Field(default=2.0, gt=0)
+    health_probe_timeout_seconds: float = Field(default=2.0, gt=0)
     mongodb_uri: str | None = None
     mongodb_db: str | None = None
     qdrant_url: str | None = None
@@ -50,7 +57,11 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     summary_queue_stream: str = "quistock:conversation-summary"
     summary_queue_group: str = "summary-workers"
-    summary_job_max_attempts: int = Field(default=3, ge=1, le=10)
+    summary_job_max_attempts: int = Field(default=5, ge=1, le=10)
+    summary_reconciliation_interval_seconds: int = Field(default=60, ge=1)
+    memory_conversations_collection: str = "conversations"
+    memory_summary_jobs_collection: str = "conversation_summary_jobs"
+    memory_summary_locks_collection: str = "conversation_summary_locks"
 
     # FAQ RAG directories
     faq_data_dir: Path = PROJECT_ROOT / "src" / "data"
@@ -67,7 +78,7 @@ class Settings(BaseSettings):
         ge=0.0,
         le=1.0,
     )
-    faq_vectorstore_collection: str = "faq"
+    faq_vectorstore_collection: str = "faq_v2"
 
     # Conversational memory retrieval
     memory_summary_collection: str = "conversation_summaries"
@@ -124,6 +135,8 @@ def validate_required_settings(
 
 def create_qdrant_client(
     current_settings: Settings | None = None,
+    *,
+    timeout: int | None = None,
 ) -> QdrantClient:
     """Create the Qdrant Cloud client from the configured URL and API key."""
     current_settings = current_settings or get_settings()
@@ -135,6 +148,7 @@ def create_qdrant_client(
     return QdrantClient(
         url=current_settings.qdrant_url,
         api_key=current_settings.qdrant_api_key,
+        timeout=timeout,
     )
 
 
@@ -162,9 +176,9 @@ QDRANT_URL = settings.qdrant_url
 QDRANT_API_KEY = settings.qdrant_api_key
 
 GEMINI_CHAT_MODEL = settings.gemini_chat_model
-GEMINI_TITLE_MODEL = settings.gemini_title_model
 GEMINI_EMBEDDING_MODEL = settings.gemini_embedding_model
 GROQ_CHAT_MODEL = settings.groq_chat_model
-GROQ_FAST_MODEL = settings.groq_fast_model
+HF_TOKEN = settings.hf_token
+HF_TITLE_MODEL = settings.hf_title_model
 LLM_TEMPERATURE = settings.llm_temperature
 LLM_TOP_P = settings.llm_top_p

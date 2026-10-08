@@ -5,6 +5,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from qdrant_client import QdrantClient, models
 
+from src.agents.faq.ingestion.audience import VALID_AUDIENCES
 from src.agents.faq.ingestion.processing.models import Chunk
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,7 @@ class QdrantStore:
                 ),
             )
 
-        for field_name in ("doc_id", "source_hash"):
+        for field_name in ("doc_id", "source_hash", "audience"):
             self.qdrant_client.create_payload_index(
                 collection_name=self.collection_name,
                 field_name=field_name,
@@ -58,6 +59,14 @@ class QdrantStore:
         if vector_size == 0:
             raise ValueError("O tamanho do vetor não pode ser zero.")
 
+        chunk_audiences = {chunk.audience for chunk in chunks}
+        if len(chunk_audiences) != 1 or None in chunk_audiences:
+            raise ValueError("Todos os chunks precisam ter a mesma audiência válida.")
+
+        audience = next(iter(chunk_audiences))
+        if audience not in VALID_AUDIENCES:
+            raise ValueError("A audiência do FAQ é inválida.")
+
         self.ensure_collection(vector_size=vector_size)
 
         points: list[models.PointStruct] = []
@@ -73,6 +82,7 @@ class QdrantStore:
                 "doc_id": doc_id,
                 "source_hash": source_hash,
                 "pipeline_version": pipeline_version,
+                "audience": audience,
                 "source_name": chunk.metadata.get("source_name"),
                 "file_type": chunk.metadata.get("file_type"),
                 "part_index": chunk.metadata.get("part_index"),
@@ -257,11 +267,16 @@ class QdrantStore:
         self,
         query_vector: Sequence[float],
         limit: int = 4,
+        query_filter: models.Filter | None = None,
     ) -> list[models.ScoredPoint]:
+        if query_filter is None:
+            raise ValueError("A busca FAQ exige filtro de audiência.")
+
         result = self.qdrant_client.query_points(
             collection_name=self.collection_name,
             query=list(query_vector),
             limit=limit,
+            query_filter=query_filter,
             with_payload=True,
         )
 

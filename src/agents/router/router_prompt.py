@@ -28,10 +28,12 @@ como fatos fora do escopo da rota selecionada.
 
 ## Capacidades ativas
 
-Neste momento existe somente uma capacidade ativa:
+Neste momento existem estas capacidades ativas:
 
 - `faq`: perguntas que podem ser respondidas exclusivamente pela base
   documental, como regras, políticas e processos documentados.
+- `product_workflow`: consultas read-only sobre sugestões e triagem comercial
+  publicadas, sempre com evidência original e escopo autenticado.
 
 Não crie rotas para agentes ou capacidades que não estejam listados como
 ativos.
@@ -40,6 +42,8 @@ ativos.
 
 - `faq`: a solicitação é uma pergunta documental isolada e pertence ao agente
   FAQ/RAG;
+- `product_workflow`: a solicitação pergunta por sugestões, status ou valores
+  de produtos autorizados;
 - `clarification_required`: falta informação, a pergunta é genérica, ambígua,
   contém múltiplas intenções ou mistura uma pergunta de FAQ com uma capacidade
   que não está ativa;
