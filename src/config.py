@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -25,14 +25,23 @@ class Settings(BaseSettings):
         extra="forbid",
     )
 
+    # Deployment metadata
+    app_environment: Literal["development", "qa", "production"] = "development"
+
     # Credentials
+    openai_api_key: str | None = None
     gemini_api_key: str | None = None
+
+    # Legacy .env values are accepted for compatibility but are unused at runtime.
     groq_api_key: str | None = None
     hf_token: str | None = None
 
     # Models
-    gemini_chat_model: str = "gemini-3.6-flash"
+    openai_model: str = "gpt-6-luna"
     gemini_embedding_model: str = "gemini-embedding-2"
+    gemini_embedding_tier: Literal["free", "paid"] = "free"
+    # Legacy .env values are accepted for compatibility but are unused at runtime.
+    gemini_chat_model: str = "gemini-3.6-flash"
     groq_chat_model: str = "qwen/qwen3.8-27b"
     hf_title_model: str = "openai/gpt-oss-20b:fastest"
 
@@ -113,18 +122,21 @@ def get_settings() -> Settings:
 def validate_required_settings(
     current_settings: Settings | None = None,
 ) -> Settings:
-    """Validate the credentials required by the configured LLM providers."""
+    """Validate chat and embedding provider credentials."""
     current_settings = current_settings or get_settings()
     missing_variables: list[str] = []
+
+    if (
+        not current_settings.openai_api_key
+        or not current_settings.openai_api_key.strip()
+    ):
+        missing_variables.append("OPENAI_API_KEY")
 
     if (
         not current_settings.gemini_api_key
         or not current_settings.gemini_api_key.strip()
     ):
         missing_variables.append("GEMINI_API_KEY")
-
-    if not current_settings.groq_api_key or not current_settings.groq_api_key.strip():
-        missing_variables.append("GROQ_API_KEY")
 
     if missing_variables:
         variables = ", ".join(missing_variables)
@@ -170,15 +182,10 @@ MEMORY_SUMMARY_TOP_K = settings.memory_summary_top_k
 MEMORY_SUMMARY_MIN_SCORE = settings.memory_summary_min_score
 MEMORY_SUMMARY_FALLBACK_LIMIT = settings.memory_summary_fallback_limit
 
+OPENAI_API_KEY = settings.openai_api_key
+OPENAI_MODEL = settings.openai_model
 GEMINI_API_KEY = settings.gemini_api_key
-GROQ_API_KEY = settings.groq_api_key
 QDRANT_URL = settings.qdrant_url
 QDRANT_API_KEY = settings.qdrant_api_key
 
-GEMINI_CHAT_MODEL = settings.gemini_chat_model
 GEMINI_EMBEDDING_MODEL = settings.gemini_embedding_model
-GROQ_CHAT_MODEL = settings.groq_chat_model
-HF_TOKEN = settings.hf_token
-HF_TITLE_MODEL = settings.hf_title_model
-LLM_TEMPERATURE = settings.llm_temperature
-LLM_TOP_P = settings.llm_top_p

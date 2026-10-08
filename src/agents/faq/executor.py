@@ -8,7 +8,7 @@ from src.agents.factory import create_agent_from_card
 from src.agents.faq.ingestion.audience import Audience
 from src.agents.faq.retrieval.qdrant_retriever import QdrantRetriever
 from src.agents.faq.tools.faq_tool import create_faq_search_tool
-from src.llm_factory import llm_groq
+from src.llm_factory import llm_openai
 
 from .card import FAQ_CARD
 
@@ -26,7 +26,7 @@ class FAQExecutor:
     ) -> None:
         self.card = FAQ_CARD
         self.retriever = retriever
-        self.model = llm_groq if model is None else model
+        self.model = llm_openai if model is None else model
         self.agent_factory = (
             create_agent_from_card if agent_factory is None else agent_factory
         )

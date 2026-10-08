@@ -15,25 +15,27 @@ class FakeRetriever:
         return []
 
 
-def _set_fake_key(monkeypatch: pytest.MonkeyPatch) -> None:
+def _set_fake_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config, "OPENAI_API_KEY", "fake-key-for-integration")
+    monkeypatch.setenv("OPENAI_API_KEY", "fake-key-for-integration")
     monkeypatch.setattr(config, "GEMINI_API_KEY", "fake-key-for-integration")
     monkeypatch.setenv("GEMINI_API_KEY", "fake-key-for-integration")
 
 
 def test_chat_model_uses_configured_model(monkeypatch: pytest.MonkeyPatch) -> None:
-    _set_fake_key(monkeypatch)
-    assert get_chat_model().model == config.GEMINI_CHAT_MODEL
+    _set_fake_keys(monkeypatch)
+    assert get_chat_model().model == config.OPENAI_MODEL
 
 
 def test_embeddings_uses_configured_model(monkeypatch: pytest.MonkeyPatch) -> None:
-    _set_fake_key(monkeypatch)
+    _set_fake_keys(monkeypatch)
     assert get_embeddings().model == config.GEMINI_EMBEDDING_MODEL
 
 
 def test_faq_executor_builds_compiled_graph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _set_fake_key(monkeypatch)
+    _set_fake_keys(monkeypatch)
     executor = FAQExecutor(retriever=FakeRetriever())
     tool = create_faq_search_tool(
         FakeRetriever(),
@@ -44,7 +46,7 @@ def test_faq_executor_builds_compiled_graph(
     assert tool.name == "faq_search"
 
 
-def test_structured_model_binds_fast_and_gemini_paths(
+def test_structured_model_binds_openai_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class FakeRunnable:
@@ -65,14 +67,10 @@ def test_structured_model_binds_fast_and_gemini_paths(
         ) -> FakeRunnable:
             return FakeRunnable()
 
-    monkeypatch.setattr(llm_factory, "llm_groq", FakeProvider())
-    monkeypatch.setattr(llm_factory, "llm_gemini", FakeProvider())
-    monkeypatch.setattr(llm_factory, "llm_groq", FakeProvider())
+    monkeypatch.setattr(llm_factory, "llm_openai", FakeProvider())
 
-    groq = llm_factory.get_structured_model(RouteDecision, provider="groq")
     default = llm_factory.get_structured_model(RouteDecision)
 
-    assert isinstance(groq, FakeRunnable)
     assert isinstance(default, FakeRunnable)
     assert default.fallbacks == []
 

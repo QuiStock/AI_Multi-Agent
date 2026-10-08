@@ -1,0 +1,88 @@
+.service-status i.offline{background:var(--red);box-shadow:0 0 0 3px #cb5c6920}
+.empty-cell{height:84px;text-align:center;color:#a39baa;font-size:8px}
+
+/* Brand alignment and more readable UI typography. */
+.sidebar .brand{align-items:flex-start;gap:10px}
+.brand-feather{width:30px;height:30px;flex:none}
+.brand strong{font:800 20px/30px Montserrat,Manrope,sans-serif}
+.brand small{font-size:10px;line-height:14px;letter-spacing:1.8px;margin-top:0}
+
+.workspace strong,.service-status strong{font-size:12px}
+.workspace small,.service-status small{font-size:10px}
+.nav-label{font-size:11px}
+.nav-item{font-size:13px}
+.nav-item span{font-size:18px}
+.nav-item b{font-size:10px}
+.service-ports{font-size:10px}
+.breadcrumbs{font-size:12px}
+.env-pill{font-size:11px}
+.filterbar label{font-size:11px}
+.filterbar select,.filterbar input{height:36px;font-size:12px}
+.button{height:36px;font-size:12px}
+.eyebrow{font-size:10px}
+.page-heading h1{font-size:30px}
+.page-heading p{font-size:13px;line-height:1.5}
+.live-indicator{font-size:12px}
+.subtle-label{font-size:12px}
+.metric-title{font-size:12px}
+.metric-card>strong{font-size:26px}
+.metric-card>small{font-size:11px}
+.panel-heading h2{font-size:14px}
+.panel-heading p{font-size:11px;line-height:1.45}
+.bar-row,.bar-row strong{font-size:11px}
+.chart-empty,.empty-note{font-size:12px}
+th{font-size:10px}
+td{height:44px;font-size:11px}
+.trace-id{font-size:11px}
+.status-pill{font-size:10px}
+.text-button{font-size:11px}
+.pagination{font-size:11px}
+.pagination button{height:29px;font-size:11px}
+.empty-state h3{font-size:14px}
+.empty-state p{font-size:11px}
+.detail-head h2{font-size:12px}
+.detail-head p{font-size:11px}
+.detail-section-title{font-size:12px}
+.detail-section-title small{font-size:10px}
+.timeline-top strong{font-size:11px}
+.timeline-top small,.timeline-meta,.timeline-body{font-size:10px}
+.conversation-item strong{font-size:11px}
+.conversation-item small,.message small{font-size:10px}
+.conversation-preview,.message{font-size:11px}
+.conversation-head h2{font-size:12px}
+.conversation-head p{font-size:11px}
+.related-trace{font-size:11px}
+.related-trace small{font-size:10px}
+.draft-badge{font-size:10px}
+.form-grid,.textarea-label{font-size:11px}
+.form-grid input{height:36px;font-size:12px}
+.textarea-label textarea{font-size:12px}
+.history-heading h3{font-size:12px}
+.history-heading p{font-size:10px}
+.lab-message select,.lab-message textarea{font-size:11px}
+.lab-actions small{font-size:10px}
+.lab-result pre{font-size:11px}
+.mono-label{font-size:10px}
+.event-row,.event-row time,.fetch-row,.fetch-row strong,.fetch-row span,.fetch-row small{font-size:10px}
+.event-row strong{font-size:11px}
+.event-row small{font-size:10px}
+.cost-note{font-size:11px}
+.toast{font-size:12px}
+.empty-cell{font-size:11px}
+
+@media(max-width:760px){
+  .brand>span{display:none}
+  .brand-feather{width:30px;height:30px}
+  .page-heading h1{font-size:26px}
+}
+
+.message.lab-launch{cursor:pointer;transition:border-color .16s ease,box-shadow .16s ease}
+.message.lab-launch:hover{border-color:#cbb2f3;box-shadow:0 2px 10px #7f3aef12}
+.message.lab-launch:focus-visible{outline:3px solid #7f3aef55;outline-offset:2px}
+.message-lab-hint{display:block;margin-top:8px;color:#7132d5;font-size:11px;font-weight:700}
+#lab-prompt{min-height:300px;line-height:1.65}
+#lab-messages{min-height:230px;line-height:1.65}
+.context-hint{display:block;color:#968b9d;font-size:10px;font-weight:400;line-height:1.5}
+.form-grid select{height:36px;border:1px solid #e7e2eb;border-radius:5px;padding:0 8px;color:#594f62;background:#fff;font:12px "DM Sans",sans-serif;outline:none}
+.form-grid select:focus{border-color:#ab84ef;box-shadow:0 0 0 3px #7f3aef14}
+.form-grid input[readonly]{background:#faf9fb;color:#766a80}

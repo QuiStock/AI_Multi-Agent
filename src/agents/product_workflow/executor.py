@@ -7,7 +7,7 @@ from langchain_core.messages import AIMessage, AnyMessage, ToolMessage
 
 from src.agents.factory import create_agent_from_card
 from src.graphs.state import Evidence, GraphState
-from src.llm_factory import llm_groq
+from src.llm_factory import llm_openai
 
 from .card import PRODUCT_WORKFLOW_CARD
 from .models import ProductWorkflowContext
@@ -25,7 +25,7 @@ class ProductWorkflowExecutor:
     ) -> None:
         self.card = PRODUCT_WORKFLOW_CARD
         self.repository = repository
-        self.model = llm_groq if model is None else model
+        self.model = llm_openai if model is None else model
         self.agent_factory = agent_factory
 
     def invoke(self, state: GraphState) -> dict[str, Any]:

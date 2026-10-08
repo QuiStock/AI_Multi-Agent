@@ -44,7 +44,13 @@ class QdrantRetriever:
             ):
                 raise ValueError("O escopo de audiência do FAQ é inválido.")
 
-            query_vector = self.embedding_provider.embed_query(query)
+            if isinstance(self.embedding_provider, GoogleEmbeddingProvider):
+                query_vector = self.embedding_provider.embed_query(
+                    query,
+                    source="faq_embedding_query",
+                )
+            else:
+                query_vector = self.embedding_provider.embed_query(query)
 
             points = self.vector_store.search(
                 query_vector=query_vector,

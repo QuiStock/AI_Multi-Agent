@@ -1,8 +1,9 @@
 """MongoDB persistence adapter for conversation messages."""
 
 from datetime import datetime, timezone
+from typing import Any, Literal
 
-from pymongo import ReturnDocument
+from pymongo import ASCENDING, DESCENDING, ReturnDocument
 from pymongo.collection import Collection
 
 from .contracts import (
@@ -55,6 +56,200 @@ class MongoConversationRepository:
 
     def __init__(self, collection: Collection) -> None:
         self._collection = collection
+        self._email_index_ready = False
+        self._observability_indexes_ready = False
+
+    def list_observability_conversations(
+        self,
+        *,
+        consumer_id: str | None = None,
+        conversation_id: str | None = None,
+        updated_from: datetime | None = None,
+        updated_to: datetime | None = None,
+        status: Literal["active", "ended"] | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """List conversation metadata without loading embedded message history."""
+        if not 1 <= limit <= 200:
+            raise ValueError("limit precisa estar entre 1 e 200")
+        if not 0 <= offset <= 100_000:
+            raise ValueError("offset precisa estar entre 0 e 100000")
+        if consumer_id is not None and not consumer_id.strip():
+            raise ValueError("consumer_id não pode estar vazio")
+        if conversation_id is not None and not conversation_id.strip():
+            raise ValueError("conversation_id não pode estar vazio")
+
+        self._ensure_observability_indexes()
+        query: dict[str, Any] = {
+            "status": status if status is not None else {"$in": ["active", "ended"]}
+        }
+        if consumer_id is not None:
+            query["email"] = consumer_id.strip()
+        if conversation_id is not None:
+            query["_id"] = conversation_id.strip()
+
+        updated_filter: dict[str, datetime] = {}
+        if updated_from is not None:
+            updated_filter["$gte"] = self._query_timestamp(updated_from, "updated_from")
+        if updated_to is not None:
+            updated_filter["$lte"] = self._query_timestamp(updated_to, "updated_to")
+        if updated_from is not None and updated_to is not None:
+            if updated_filter["$gte"] > updated_filter["$lte"]:
+                raise ValueError("updated_from não pode ser posterior a updated_to")
+        if updated_filter:
+            query["updated_at"] = updated_filter
+
+        projection = {
+            "_id": 1,
+            "title": 1,
+            "status": 1,
+            "started_at": 1,
+            "updated_at": 1,
+            "ended_at": 1,
+        }
+        cursor = (
+            self._collection.find(query, projection)
+            .sort([("updated_at", DESCENDING), ("_id", DESCENDING)])
+            .skip(offset)
+            .limit(limit)
+        )
+        conversations = []
+        for document in cursor:
+            conversation_id_value = document.get("_id")
+            started_at = document.get("started_at")
+            updated_at = document.get("updated_at")
+            if not isinstance(conversation_id_value, str):
+                continue
+            if not isinstance(started_at, datetime) or not isinstance(
+                updated_at, datetime
+            ):
+                continue
+            ended_at = document.get("ended_at")
+            conversations.append(
+                {
+                    "conversation_id": conversation_id_value,
+                    "title": document.get("title"),
+                    "status": document.get("status"),
+                    "started_at": _as_aware_utc(started_at),
+                    "updated_at": _as_aware_utc(updated_at),
+                    "ended_at": (
+                        _as_aware_utc(ended_at)
+                        if isinstance(ended_at, datetime)
+                        else None
+                    ),
+                }
+            )
+        return conversations, int(self._collection.count_documents(query))
+
+    def get_observability_conversation(
+        self,
+        *,
+        conversation_id: str,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any] | None:
+        """Read one conversation and a bounded, insertion-ordered message page."""
+        if not conversation_id.strip():
+            raise ValueError("conversation_id é obrigatório")
+        if not 1 <= limit <= 200:
+            raise ValueError("limit precisa estar entre 1 e 200")
+        if not 0 <= offset <= 100_000:
+            raise ValueError("offset precisa estar entre 0 e 100000")
+
+        self._ensure_observability_indexes()
+        document = self._collection.find_one(
+            {
+                "_id": conversation_id.strip(),
+                "status": {"$in": ["active", "ended"]},
+            },
+            {
+                "_id": 1,
+                "title": 1,
+                "status": 1,
+                "started_at": 1,
+                "updated_at": 1,
+                "ended_at": 1,
+                "messages": {"$slice": [offset, limit + 1]},
+            },
+        )
+        if document is None:
+            return None
+
+        raw_messages = document.get("messages", [])
+        if not isinstance(raw_messages, list):
+            raw_messages = []
+        has_more = len(raw_messages) > limit
+        messages: list[dict[str, Any]] = []
+        for raw_message in raw_messages[:limit]:
+            if not isinstance(raw_message, dict):
+                continue
+            message = dict(raw_message)
+            created_at = message.get("created_at")
+            if isinstance(created_at, datetime):
+                message["created_at"] = _as_aware_utc(created_at)
+            messages.append(message)
+
+        started_at = document.get("started_at")
+        updated_at = document.get("updated_at")
+        if not isinstance(started_at, datetime) or not isinstance(updated_at, datetime):
+            raise ValueError("Metadados de data da conversa estão incompletos")
+        ended_at = document.get("ended_at")
+        return {
+            "conversation_id": str(document["_id"]),
+            "title": document.get("title"),
+            "status": document.get("status"),
+            "started_at": _as_aware_utc(started_at),
+            "updated_at": _as_aware_utc(updated_at),
+            "ended_at": (
+                _as_aware_utc(ended_at) if isinstance(ended_at, datetime) else None
+            ),
+            "messages": messages,
+            "limit": limit,
+            "offset": offset,
+            "has_more": has_more,
+            "next_offset": offset + len(messages) if has_more else None,
+        }
+
+    def _ensure_observability_indexes(self) -> None:
+        if self._observability_indexes_ready:
+            return
+        self._collection.create_index(
+            [("updated_at", DESCENDING), ("_id", DESCENDING)],
+            name="ix_conversations_updated_at",
+        )
+        self._collection.create_index(
+            [("email", ASCENDING), ("updated_at", DESCENDING), ("_id", DESCENDING)],
+            name="ix_conversations_email_updated_at",
+        )
+        self._collection.create_index(
+            [("status", ASCENDING), ("updated_at", DESCENDING), ("_id", DESCENDING)],
+            name="ix_conversations_status_updated_at",
+        )
+        self._observability_indexes_ready = True
+
+    @staticmethod
+    def _query_timestamp(value: datetime, field_name: str) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError(f"{field_name} precisa incluir timezone")
+        return value.astimezone(timezone.utc)
+
+    def list_conversation_ids_for_email(self, *, email: str) -> list[str]:
+        """Resolve an operator's consumer filter without copying email into traces."""
+        normalized_email = email.strip()
+        if not normalized_email:
+            raise ValueError("email é obrigatório")
+        if not self._email_index_ready:
+            self._collection.create_index(
+                [("email", ASCENDING)],
+                name="ix_conversations_email",
+            )
+            self._email_index_ready = True
+        cursor = self._collection.find(
+            {"email": normalized_email},
+            {"_id": 1},
+        )
+        return [str(document["_id"]) for document in cursor]
 
     def mark_ended(
         self,

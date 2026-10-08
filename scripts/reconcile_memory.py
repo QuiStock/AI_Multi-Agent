@@ -17,6 +17,10 @@ from src.memory.summary_job_repository import MongoSummaryJobRepository
 from src.memory.summary_queue import RedisSummaryQueue
 from src.memory.summary_reconciler import SummaryReconciler
 from src.memory.summary_scheduler import ConversationSummaryScheduler
+from src.observability.ai_usage_repository import (
+    AI_USAGE_COLLECTION_NAME,
+    MongoAIUsageRepository,
+)
 
 
 def main() -> None:
@@ -29,6 +33,7 @@ def main() -> None:
     qdrant_client = config.create_qdrant_client(settings)
     try:
         database = mongo_client[settings.mongodb_db]
+        ai_usage = MongoAIUsageRepository(database[AI_USAGE_COLLECTION_NAME])
         conversations = MongoConversationRepository(
             database[settings.memory_conversations_collection]
         )
@@ -42,10 +47,17 @@ def main() -> None:
             stream_name=settings.summary_queue_stream,
             consumer_group=settings.summary_queue_group,
         )
-        embeddings = GoogleEmbeddingProvider()
+        embeddings = GoogleEmbeddingProvider(usage_repository=ai_usage)
         indexer = QdrantSummaryIndexer(
             client=qdrant_client,
             embed_text=embeddings.embed_query,
+            embed_text_with_context=lambda text, conversation_id: (
+                embeddings.embed_query(
+                    text,
+                    source="memory_embedding_index",
+                    conversation_id=conversation_id,
+                )
+            ),
             collection_name=settings.memory_summary_collection,
         )
         scheduler = ConversationSummaryScheduler(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from typing import Any, Protocol, cast
@@ -23,6 +24,7 @@ from src.graphs.state import (
 
 GraphUpdate = GraphState
 GraphNode = Callable[[GraphState], GraphUpdate]
+logger = logging.getLogger(__name__)
 
 
 class RouterExecutorPort(Protocol):
@@ -93,12 +95,22 @@ def run_router_node(
     router: RouterExecutorPort,
 ) -> GraphUpdate:
     current_state = sanitized_state(state)
+    decision = router.invoke(
+        current_state.get("messages", []),
+        request_context=current_state.get("request"),
+    )
+    logger.info(
+        "router_decision_completed",
+        extra={
+            "event": "router_decision_completed",
+            "route": decision["route"],
+            "outcome": decision["outcome"],
+            "target_agent": decision["target_agent"] or "none",
+        },
+    )
 
     return {
-        "routing_decision": router.invoke(
-            current_state.get("messages", []),
-            request_context=current_state.get("request"),
-        ),
+        "routing_decision": decision,
         "status": "in_progress",
     }
 
@@ -132,6 +144,15 @@ def run_faq_node(
     error_code = result.get("error_code")
     if isinstance(error_code, str) and error_code:
         faq_result["error_code"] = error_code
+    logger.info(
+        "faq_agent_completed",
+        extra={
+            "event": "agent_completed",
+            "status": faq_result["status"],
+            "evidence_count": len(evidences),
+            "reason_code": error_code if isinstance(error_code, str) else None,
+        },
+    )
 
     return {
         "agent_results": {
@@ -162,6 +183,15 @@ def run_product_workflow_node(
     }
     if isinstance(error_code, str) and error_code:
         product_result["error_code"] = error_code
+    logger.info(
+        "product_workflow_agent_completed",
+        extra={
+            "event": "agent_completed",
+            "status": product_result["status"],
+            "evidence_count": len(evidences),
+            "reason_code": error_code if isinstance(error_code, str) else None,
+        },
+    )
     return {
         "agent_results": {
             "product_workflow": product_result,
@@ -187,6 +217,15 @@ def run_judge_node(
             "evidence_ids": [],
             "error_code": "JUDGE_ADAPTER_FAILURE",
         }
+    logger.info(
+        "judge_agent_completed",
+        extra={
+            "event": "agent_completed",
+            "status": judge_result["status"],
+            "evidence_count": len(judge_result["evidence_ids"]),
+            "reason_code": judge_result.get("error_code"),
+        },
+    )
 
     return {
         "agent_results": {
@@ -201,6 +240,14 @@ def run_compiler_node(
     compiler: CompilerExecutorPort,
 ) -> GraphUpdate:
     result = compiler.invoke(sanitized_state(state))
+    logger.info(
+        "response_compiler_completed",
+        extra={
+            "event": "agent_completed",
+            "status": result["status"],
+            "citation_count": len(result["citations"]),
+        },
+    )
 
     return {
         "response_draft": result,
@@ -229,6 +276,13 @@ def run_context_enrichment_node(
     restored_messages = context_enricher.restore_messages(
         email=email,
         conversation_id=conversation_id,
+    )
+    logger.info(
+        "conversation_context_restored",
+        extra={
+            "event": "conversation_context_restored",
+            "message_count": len(restored_messages),
+        },
     )
 
     current_human = next(
@@ -357,6 +411,13 @@ def run_persist_turn_node(
             assistant_content=content,
             consulted_agents=consulted_agents,
             sent_at=sent_at,
+        )
+        logger.info(
+            "conversation_turn_persisted",
+            extra={
+                "event": "conversation_turn_persisted",
+                "message_count": 2,
+            },
         )
 
     return {
