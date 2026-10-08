@@ -2,13 +2,13 @@
 
 from typing import Any
 
-from src.llm_factory import embeddings, llm_gemini
+from src.llm_factory import embeddings, llm_openai
 
 
 def get_chat_model() -> Any:
-    """Return the primary Gemini chat model."""
+    """Return the configured primary chat model."""
 
-    return llm_gemini
+    return llm_openai
 
 
 def get_embeddings() -> Any:

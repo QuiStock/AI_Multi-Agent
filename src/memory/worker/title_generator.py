@@ -8,7 +8,10 @@ from typing import Any, Protocol
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from src import config
 from src.llm_factory import get_title_model
+from src.observability.ai_usage import invoke_with_usage
+from src.observability.ai_usage_repository import MongoAIUsageRepository
 
 from .title_prompt import CONVERSATION_TITLE_PROMPT
 
@@ -32,20 +35,30 @@ class TitleGenerator(Protocol):
 
 
 class LLMConversationTitleGenerator:
-    """Use the Hugging Face structured-output model for conversation titles."""
+    """Use the configured OpenAI model for structured conversation titles."""
 
-    def __init__(self, model: Any | None = None) -> None:
+    def __init__(
+        self,
+        model: Any | None = None,
+        *,
+        usage_repository: MongoAIUsageRepository | None = None,
+    ) -> None:
         self._model = get_title_model(ConversationTitle) if model is None else model
+        self._usage_repository = usage_repository
 
     def generate(self, *, summary: str) -> str:
         if not summary.strip():
             raise ValueError("summary é obrigatório para gerar title")
         request = {"summary": summary}
-        result = self._model.invoke(
+        result = invoke_with_usage(
+            self._model,
             [
                 SystemMessage(content=CONVERSATION_TITLE_PROMPT),
                 HumanMessage(content=json.dumps(request, ensure_ascii=False)),
-            ]
+            ],
+            repository=self._usage_repository,
+            source="title_generation",
+            model_name=config.OPENAI_MODEL,
         )
         if not isinstance(result, ConversationTitle):
             result = ConversationTitle.model_validate(result)

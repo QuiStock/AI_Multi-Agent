@@ -11,6 +11,7 @@ from src.api.routes.conversation_delete import router as conversation_delete_rou
 from src.api.routes.conversation_end import router as conversation_end_router
 from src.api.routes.conversation_list import router as conversation_list_router
 from src.api.routes.health import router as health_router
+from src.api.routes.observability import router as observability_router
 from src.auth.postgres import create_postgres_pool
 
 
@@ -43,6 +44,7 @@ def create_app() -> FastAPI:
     app.include_router(conversation_delete_router, prefix="/api/v1")
     app.include_router(conversation_end_router, prefix="/api/v1")
     app.include_router(conversation_list_router, prefix="/api/v1")
+    app.include_router(observability_router, prefix="/api/v1")
     return app
 
 

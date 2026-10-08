@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
+
+from pymongo import MongoClient
 
 from src import config
 from src.agents.faq.ingestion.embedding.google_embedding_provider import (
@@ -18,11 +21,19 @@ from src.agents.faq.ingestion.readers.reader_registry import (
 from src.agents.faq.ingestion.state.change_detector import ChangeDetector
 from src.agents.faq.ingestion.state.manifest_store import ManifestStore
 from src.agents.faq.ingestion.vectorstore.qdrant_store import QdrantStore
+from src.observability.ai_usage_repository import (
+    AI_USAGE_COLLECTION_NAME,
+    MongoAIUsageRepository,
+)
 
 PIPELINE_VERSION = "faq-v2-audience-v1"
 
 
-def build_indexer(settings: config.Settings) -> Indexer:
+def build_indexer(
+    settings: config.Settings,
+    *,
+    usage_repository: MongoAIUsageRepository | None = None,
+) -> Indexer:
     documents_root = settings.faq_docs_dir
     if documents_root is None:
         raise RuntimeError("FAQ_DOCS_DIR não foi configurado")
@@ -43,7 +54,7 @@ def build_indexer(settings: config.Settings) -> Indexer:
                 overlap_chars=settings.faq_chunk_overlap,
             )
         ),
-        embedding_provider=GoogleEmbeddingProvider(),
+        embedding_provider=GoogleEmbeddingProvider(usage_repository=usage_repository),
         vector_store=QdrantStore(
             qdrant_client=qdrant,
             collection_name=settings.faq_vectorstore_collection,
@@ -56,7 +67,21 @@ def build_indexer(settings: config.Settings) -> Indexer:
 
 def main() -> None:
     settings = config.get_settings()
-    summary = build_indexer(settings).run()
+    mongo_client: MongoClient[Any] | None = None
+    usage_repository = None
+    if settings.mongodb_uri and settings.mongodb_db:
+        mongo_client = MongoClient(settings.mongodb_uri)
+        usage_repository = MongoAIUsageRepository(
+            mongo_client[settings.mongodb_db][AI_USAGE_COLLECTION_NAME]
+        )
+    try:
+        summary = build_indexer(
+            settings,
+            usage_repository=usage_repository,
+        ).run()
+    finally:
+        if mongo_client is not None:
+            mongo_client.close()
 
     print(
         "FAQ indexada: "

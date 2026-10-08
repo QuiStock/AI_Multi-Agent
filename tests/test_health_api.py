@@ -12,7 +12,14 @@ def test_health_endpoint_returns_ok() -> None:
     app = create_app()
     ready_probes = {
         name: lambda: None
-        for name in ("postgresql", "mongodb", "redis", "qdrant", "gemini", "groq")
+        for name in (
+            "postgresql",
+            "mongodb",
+            "redis",
+            "qdrant",
+            "gemini",
+            "openai",
+        )
     }
     app.dependency_overrides[get_health_service] = lambda: HealthService(
         settings=Settings(),
@@ -34,7 +41,7 @@ def test_health_endpoint_returns_ok() -> None:
             "redis": "ok",
             "qdrant": "ok",
             "gemini": "ok",
-            "groq": "ok",
+            "openai": "ok",
         },
     }
     app.dependency_overrides.clear()
@@ -48,7 +55,14 @@ def test_health_reports_failed_dependency_without_leaking_errors() -> None:
 
     probes = {
         name: lambda: None
-        for name in ("postgresql", "mongodb", "redis", "qdrant", "gemini", "groq")
+        for name in (
+            "postgresql",
+            "mongodb",
+            "redis",
+            "qdrant",
+            "gemini",
+            "openai",
+        )
     }
     probes["mongodb"] = fail_with_secret
     app.dependency_overrides[get_health_service] = lambda: HealthService(
@@ -73,7 +87,7 @@ def test_provider_probes_use_model_catalog_without_generation(
 ) -> None:
     from src.api.services import health_service
 
-    calls = {"gemini_list": 0, "groq_list": 0, "generated": 0}
+    calls = {"gemini_list": 0, "openai_list": 0, "generated": 0}
 
     class Models:
         def __init__(self, key: str) -> None:
@@ -92,7 +106,7 @@ def test_provider_probes_use_model_catalog_without_generation(
 
     settings = Settings(
         gemini_api_key="test-key",
-        groq_api_key="test-key",
+        openai_api_key="test-key",
     )
     service = HealthService(
         settings=settings,
@@ -106,21 +120,28 @@ def test_provider_probes_use_model_catalog_without_generation(
     )
     monkeypatch.setattr(
         health_service,
-        "Groq",
-        lambda **_: ProviderClient("groq_list"),
+        "OpenAI",
+        lambda **_: ProviderClient("openai_list"),
     )
 
     service._probe_gemini()
-    service._probe_groq()
+    service._probe_openai()
 
-    assert calls == {"gemini_list": 1, "groq_list": 1, "generated": 0}
+    assert calls == {"gemini_list": 1, "openai_list": 1, "generated": 0}
 
 
 def test_health_marks_probe_timeout_unavailable() -> None:
     settings = Settings(health_probe_timeout_seconds=0.02)
     probes = {
         name: lambda: None
-        for name in ("postgresql", "mongodb", "redis", "qdrant", "gemini", "groq")
+        for name in (
+            "postgresql",
+            "mongodb",
+            "redis",
+            "qdrant",
+            "gemini",
+            "openai",
+        )
     }
 
     def slow_probe() -> None:

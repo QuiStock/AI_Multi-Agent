@@ -25,7 +25,26 @@ Snapshot atual:
 - MongoDB mantém mensagens e metadados de jobs; Redis Streams transporta IDs
   de jobs de resumo/exclusão; Qdrant mantém o conteúdo dos resumos e atende
   FAQ. O checkpointer local é `MemorySaver` para desenvolvimento/testes.
-- `src/observability/{audit,metrics,traces}.py` ainda é placeholder.
+- `src/observability/audit.py` ainda é placeholder. `traces.py` coleta spans
+  por turno, incluindo `attributes.agent_id` nos nós de agentes, e
+  `trace_repository.py` os persiste no MongoDB. `metrics.py` agrega
+  latência, erros e uso de tokens; custos dependem de uma tabela de preços
+  fornecida pelo chamador e a taxa de fallback depende de sinal explícito no
+  trace. As rotas GET de métricas, traces e conversas em
+  `/api/v1/observability` são públicas, sem autenticação. O protótipo também
+  expõe `POST /api/v1/observability/lab/run` publicamente; ele faz uma chamada
+  direta a um modelo de chat configurado, sem executar o grafo, agentes ou
+  tools e sem alterar a conversa de produção. `GET
+  /api/v1/observability/agents/{agent_id}` entrega metadados do `AgentCard` e o
+  prompt de sistema, sem incluir tools. Logs Python INFO+ emitidos durante um
+  turno são bufferizados com `span_id` e `agent_id` no documento do trace, na
+  coleção `agent_traces`, e retornados em
+  `GET /api/v1/observability/traces/{trace_id}`. Durante a execução, spans e
+  logs também são publicados por `GET /api/v1/observability/traces/live`, um
+  feed incremental com cursor mantido em memória por processo (buffer limitado;
+  não compartilhado entre workers). `src/observability/front-observer/` é o
+  frontend Vite independente que consulta esse feed a cada quatro segundos; workers
+  ainda não têm captura de logs.
 - A composição de produção em `src/api/dependencies.py` registra `faq` e
   `product_workflow`. O Product Workflow tem card, tools e repositório
   PostgreSQL direto, com consultas parametrizadas e somente leitura.
@@ -56,6 +75,8 @@ src/agents/schemas/                 # AgentCard, ToolBinding e ToolResult
 src/agents/tooling/                 # factories e projeções de ToolResult
 src/guardrails/                     # segurança de entrada e saída
 src/memory/                         # MongoDB, Qdrant, Redis e retomada
+src/observability/                  # traces, métricas e logs correlacionados
+  front-observer/                   # frontend Vite executado separado da API
 src/llm_factory.py                  # modelos, embeddings e structured output
 tests/                              # contratos, unitários e integração
 ```

@@ -30,19 +30,16 @@ class FakeModel:
         return FakeStructuredRunnable(schema)
 
 
-def test_factory_uses_configured_provider_models() -> None:
-    assert llm_factory.llm_gemini.model == config.GEMINI_CHAT_MODEL
-    assert llm_factory.llm_groq.model == config.GROQ_CHAT_MODEL
-    assert llm_factory.llm_huggingface.model == config.HF_TITLE_MODEL
-    assert llm_factory.llm_groq.model == config.GROQ_CHAT_MODEL
+def test_factory_uses_openai_for_chat_and_google_for_embeddings() -> None:
+    assert llm_factory.llm_openai.model == config.OPENAI_MODEL
     assert llm_factory.embeddings.model == config.GEMINI_EMBEDDING_MODEL
 
 
-def test_default_structured_model_binds_schema_to_gemini(
+def test_structured_model_binds_schema_to_openai(
     monkeypatch: Any,
 ) -> None:
     primary = FakeModel()
-    monkeypatch.setattr(llm_factory, "llm_gemini", primary)
+    monkeypatch.setattr(llm_factory, "llm_openai", primary)
 
     result = llm_factory.get_structured_model(RouteDecision)
 
@@ -51,24 +48,9 @@ def test_default_structured_model_binds_schema_to_gemini(
     assert result.fallbacks == []
 
 
-def test_groq_structured_model_uses_selected_provider(
-    monkeypatch: Any,
-) -> None:
-    groq_model = FakeModel()
-    gemini_model = FakeModel()
-    monkeypatch.setattr(llm_factory, "llm_groq", groq_model)
-    monkeypatch.setattr(llm_factory, "llm_gemini", gemini_model)
-
-    result = llm_factory.get_structured_model(CompilerResult, provider="groq")
-
-    assert isinstance(result, FakeStructuredRunnable)
-    assert groq_model.schemas == [CompilerResult]
-    assert gemini_model.schemas == []
-
-
-def test_title_model_uses_huggingface_model(monkeypatch: Any) -> None:
+def test_title_model_uses_openai_model(monkeypatch: Any) -> None:
     title_model = FakeModel()
-    monkeypatch.setattr(llm_factory, "llm_huggingface", title_model)
+    monkeypatch.setattr(llm_factory, "llm_openai", title_model)
 
     result = llm_factory.get_title_model(ConversationTitle)
 
@@ -76,7 +58,19 @@ def test_title_model_uses_huggingface_model(monkeypatch: Any) -> None:
     assert title_model.schemas == [ConversationTitle]
 
 
-def test_faq_executor_uses_groq_model_by_default(monkeypatch: Any) -> None:
+def test_structured_model_uses_configured_openai_model(
+    monkeypatch: Any,
+) -> None:
+    openai_model = FakeModel()
+    monkeypatch.setattr(llm_factory, "llm_openai", openai_model)
+
+    result = llm_factory.get_structured_model(CompilerResult)
+
+    assert isinstance(result, FakeStructuredRunnable)
+    assert openai_model.schemas == [CompilerResult]
+
+
+def test_faq_executor_uses_openai_model_by_default(monkeypatch: Any) -> None:
     sentinel_model = object()
     captured: dict[str, Any] = {}
 
@@ -104,7 +98,7 @@ def test_faq_executor_uses_groq_model_by_default(monkeypatch: Any) -> None:
         captured["tools"] = tools
         return FakeAgent()
 
-    monkeypatch.setattr(faq_module, "llm_groq", sentinel_model)
+    monkeypatch.setattr(faq_module, "llm_openai", sentinel_model)
     monkeypatch.setattr(
         faq_module,
         "create_agent_from_card",
@@ -141,17 +135,12 @@ def test_router_uses_default_structured_model(monkeypatch: Any) -> None:
     assert captured["schema"] is RouteDecision
 
 
-def test_compiler_uses_gemini_structured_model(monkeypatch: Any) -> None:
+def test_compiler_uses_openai_structured_model(monkeypatch: Any) -> None:
     sentinel_model = object()
     captured: dict[str, Any] = {}
 
-    def fake_structured_model(
-        schema: type[Any],
-        *,
-        provider: str = "gemini",
-    ) -> object:
+    def fake_structured_model(schema: type[Any]) -> object:
         captured["schema"] = schema
-        captured["provider"] = provider
         return sentinel_model
 
     monkeypatch.setattr(
@@ -163,20 +152,15 @@ def test_compiler_uses_gemini_structured_model(monkeypatch: Any) -> None:
     executor = compiler_module.CompilerExecutor()
 
     assert executor.model is sentinel_model
-    assert captured == {"schema": CompilerResult, "provider": "gemini"}
+    assert captured == {"schema": CompilerResult}
 
 
-def test_judge_uses_gemini_structured_model(monkeypatch: Any) -> None:
+def test_judge_uses_openai_structured_model(monkeypatch: Any) -> None:
     sentinel_model = object()
     captured: dict[str, Any] = {}
 
-    def fake_structured_model(
-        schema: type[Any],
-        *,
-        provider: str = "gemini",
-    ) -> object:
+    def fake_structured_model(schema: type[Any]) -> object:
         captured["schema"] = schema
-        captured["provider"] = provider
         return sentinel_model
 
     monkeypatch.setattr(
@@ -188,4 +172,4 @@ def test_judge_uses_gemini_structured_model(monkeypatch: Any) -> None:
     executor = judge_module.JudgeExecutor()
 
     assert executor.model is sentinel_model
-    assert captured == {"schema": JudgeDecision, "provider": "gemini"}
+    assert captured == {"schema": JudgeDecision}

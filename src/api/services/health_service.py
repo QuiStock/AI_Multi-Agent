@@ -6,7 +6,7 @@ from typing import Any
 
 from google import genai
 from google.genai import types as genai_types
-from groq import Groq
+from openai import OpenAI
 from psycopg_pool import ConnectionPool
 from pymongo import MongoClient
 from redis import Redis
@@ -40,7 +40,7 @@ class HealthService:
             "redis": self._probe_redis,
             "qdrant": self._probe_qdrant,
             "gemini": self._probe_gemini,
-            "groq": self._probe_groq,
+            "openai": self._probe_openai,
         }
         executor = ThreadPoolExecutor(max_workers=len(targets))
         try:
@@ -127,11 +127,11 @@ class HealthService:
         finally:
             client.close()
 
-    def _probe_groq(self) -> None:
-        if not self._settings.groq_api_key:
-            raise RuntimeError("Groq credentials are not configured")
-        client = Groq(
-            api_key=self._settings.groq_api_key,
+    def _probe_openai(self) -> None:
+        if not self._settings.openai_api_key:
+            raise RuntimeError("OpenAI credentials are not configured")
+        client = OpenAI(
+            api_key=self._settings.openai_api_key,
             timeout=self._settings.health_probe_timeout_seconds,
             max_retries=0,
         )

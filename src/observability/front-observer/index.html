@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#11061f" />
+    <title>QuiStock Observe</title>
+    <link rel="icon" href="/assets/quistock-app-icon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Montserrat:wght@800&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <a class="brand" href="#overview" data-view="overview" aria-label="QuiStock Observe">
+          <img class="brand-feather" src="/assets/quistock-feather.svg" alt="" />
+          <span><strong>QuiStock</strong><small>OBSERVE</small></span>
+        </a>
+        <div class="workspace"><span class="workspace-icon">Q</span><span><strong>Quistock AI</strong><small>Workspace</small></span></div>
+        <p class="nav-label">PLATAFORMA</p>
+        <nav class="main-nav" aria-label="Navegação principal">
+          <button class="nav-item active" data-view="overview"><span>◫</span>Visão geral</button>
+          <button class="nav-item" data-view="traces"><span>⌘</span>Traces <b id="nav-live-count">0</b></button>
+          <button class="nav-item" data-view="conversations"><span>▤</span>Conversas</button>
+          <button class="nav-item" data-view="lab"><span>◈</span>Laboratório</button>
+        </nav>
+        <div class="sidebar-bottom">
+          <div class="service-status"><i id="api-status-dot"></i><span><strong id="api-status">Conectando à API</strong><small>Serviços independentes</small></span></div>
+          <div class="service-ports"><span>Front <b>5173</b></span><span>API <b>8000</b></span></div>
+        </div>
+      </aside>
+
+      <main class="main-area">
+        <header class="topbar">
+          <div class="breadcrumbs"><span>Quistock AI</span><i>/</i><strong id="breadcrumb">Visão geral</strong></div>
+          <div class="topbar-right"><span class="env-pill"><i></i><span id="environment-label">Ambiente filtrado</span></span><button class="icon-button" id="refresh-button" title="Atualizar dados">↻</button></div>
+        </header>
+
+        <div class="page-wrap">
+          <section class="filterbar" aria-label="Filtros globais">
+            <label><span>Período</span><select id="period-filter"><option value="24h">Últimas 24 horas</option><option value="7d">Últimos 7 dias</option><option value="30d">Últimos 30 dias</option><option value="custom">Personalizado</option></select></label>
+            <label><span>De</span><input id="date-from" type="date" /></label>
+            <label><span>Até</span><input id="date-to" type="date" /></label>
+            <label class="consumer-filter"><span>consumer_id / email</span><input id="consumer-filter" type="search" placeholder="Filtrar por usuário" /></label>
+            <label><span>conversation_id</span><input id="conversation-filter" type="search" placeholder="ID da conversa" /></label>
+            <label><span>Ambiente</span><select id="environment-filter"><option value="">Todos</option><option value="development">Development</option><option value="qa">QA</option><option value="production">Production</option></select></label>
+            <label><span>Status</span><select id="status-filter"><option value="">Todos</option><option value="completed">Concluído</option><option value="error">Erro</option></select></label>
+            <button class="button button-primary" id="apply-filters">Aplicar</button>
+          </section>
+
+          <section class="page-view active" id="view-overview">
+            <div class="page-heading"><div><div class="eyebrow">OBSERVABILIDADE / OVERVIEW</div><h1>Visão geral</h1><p>Métricas e execuções carregadas da API de observabilidade.</p></div><div class="live-indicator"><i></i><span id="poll-label">Feed ao vivo: inicializando</span></div></div>
+            <div class="metric-grid">
+              <article class="metric-card"><div class="metric-title">Traces no período <span class="metric-icon violet">⌘</span></div><strong id="metric-runs">—</strong><small>Execuções persistidas</small></article>
+              <article class="metric-card"><div class="metric-title">Latência p95 <span class="metric-icon purple">◷</span></div><strong id="metric-p95">—</strong><small id="metric-latency-samples">Sem amostras</small></article>
+              <article class="metric-card"><div class="metric-title">Taxa de erro <span class="metric-icon red">!</span></div><strong id="metric-errors">—</strong><small id="metric-error-count">Do período selecionado</small></article>
+              <article class="metric-card"><div class="metric-title">Tokens nos turnos <span class="metric-icon green">✳</span></div><strong id="metric-tokens">—</strong><small id="metric-token-calls">Chamadas de modelo em trace</small></article>
+              <article class="metric-card"><div class="metric-title">Turnos concluídos <span class="metric-icon green">✓</span></div><strong id="metric-success">—</strong><small id="metric-success-count">SLI · no período</small></article>
+              <article class="metric-card"><div class="metric-title">Sucesso dos modelos <span class="metric-icon purple">◉</span></div><strong id="metric-model-success">—</strong><small id="metric-model-success-count">SLI · chamadas de modelo</small></article>
+              <article class="metric-card"><div class="metric-title">Custo LLM por turno concluído <span class="metric-icon violet">$</span></div><strong id="metric-cost-per-turn">—</strong><small id="metric-cost-per-turn-note">Estimativa GPT-6 Luna</small></article>
+              <article class="metric-card"><div class="metric-title">Custo total de IA <span class="metric-icon violet">$</span></div><strong id="metric-app-cost">—</strong><small id="metric-app-cost-note">Todas as origens no período</small></article>
+            </div>
+            <article class="panel slo-panel">
+              <div class="panel-heading"><div><h2>Objetivos de nível de serviço</h2><p>Janela móvel de 28 dias · duração do trace no servidor · ambiente selecionado</p></div><span id="slo-window-label" class="mono-label">Carregando janela…</span></div>
+              <div class="slo-card-grid">
+                <section class="slo-card" aria-labelledby="slo-completion-title">
+                  <div class="slo-card-heading"><h3 id="slo-completion-title">Conclusão técnica dos turnos</h3><span id="slo-completion-status" class="slo-status" role="status">—</span></div>
+                  <strong class="slo-value" id="slo-completion-value">—</strong>
+                  <p class="slo-target" id="slo-completion-target">Meta ≥ 99,5%</p>
+                  <div class="slo-budget" id="slo-completion-budget">Aguardando amostras</div>
+                  <div class="slo-progress" role="progressbar" aria-label="Orçamento de erro consumido na conclusão dos turnos" aria-valuemin="0" aria-valuemax="100"><span id="slo-completion-progress"></span></div>
+                  <small id="slo-completion-samples">Sem amostras</small>
+                </section>
+                <section class="slo-card" aria-labelledby="slo-latency-title">
+                  <div class="slo-card-heading"><h3 id="slo-latency-title">Duração do turno</h3><span id="slo-latency-status" class="slo-status" role="status">—</span></div>
+                  <strong class="slo-value" id="slo-latency-value">—</strong>
+                  <p class="slo-target" id="slo-latency-target">Meta p95 ≤ 20 s</p>
+                  <div class="slo-latency-rate" id="slo-latency-rate">—</div>
+                  <div class="slo-budget" id="slo-latency-budget">Aguardando amostras</div>
+                  <div class="slo-progress" role="progressbar" aria-label="Orçamento de erro consumido na duração dos turnos" aria-valuemin="0" aria-valuemax="100"><span id="slo-latency-progress"></span></div>
+                  <small id="slo-latency-samples">Sem amostras</small>
+                </section>
+              </div>
+              <div class="slo-models">
+                <div class="panel-heading"><div><h3>Sucesso das chamadas LLM por modelo</h3><p>Meta ≥ 99% para cada modelo</p></div></div>
+                <div class="table-scroll"><table><thead><tr><th>MODELO</th><th>SUCESSO</th><th>META</th><th>ORÇAMENTO DE ERRO</th><th>CHAMADAS</th><th>ESTADO</th></tr></thead><tbody id="slo-model-rows"></tbody></table></div>
+              </div>
+            </article>
+            <div class="overview-grid">
+              <article class="panel"><div class="panel-heading"><div><h2>Latência média por componente</h2><p>Valores reais agregados dos spans no intervalo selecionado</p></div></div><div id="component-chart" class="bar-chart"></div></article>
+              <article class="panel"><div class="panel-heading"><div><h2>Uso por modelo</h2><p>Tokens, chamadas, sucesso e latência</p></div></div><div class="table-scroll"><table><thead><tr><th>MODELO</th><th>CHAMADAS</th><th>TOKENS</th><th>P95</th><th>SUCESSO</th></tr></thead><tbody id="model-rows"></tbody></table></div><div class="cost-note" id="cost-note"></div></article>
+            </div>
+            <article class="panel table-panel cost-origin-panel"><div class="panel-heading"><div><h2>Custo estimado por origem</h2><p id="application-cost-scope">Período selecionado · todos os ambientes · sem filtros de usuário/status · entradas GPT sem cache</p></div><strong id="application-cost-total" class="cost-total">—</strong></div><div class="table-scroll"><table><thead><tr><th>ORIGEM</th><th>MODELO</th><th>CHAMADAS</th><th>TOKENS DE ENTRADA</th><th>TOKENS DE SAÍDA</th><th>CUSTO ESTIMADO</th></tr></thead><tbody id="cost-origin-rows"></tbody></table></div></article>
+            <article class="panel table-panel"><div class="panel-heading"><div><h2>Execuções recentes</h2><p>Os traces em andamento aparecem antes de serem persistidos.</p></div><button class="text-button" data-view="traces">Ver traces →</button></div><div class="table-scroll"><table><thead><tr><th>TRACE ID</th><th>CONVERSATION ID</th><th>ETAPAS</th><th>DURAÇÃO</th><th>STATUS</th><th>INÍCIO</th></tr></thead><tbody id="recent-traces"></tbody></table></div></article>
+          </section>
+
+          <section class="page-view" id="view-traces">
+            <div class="page-heading"><div><div class="eyebrow">INVESTIGAÇÃO / EXECUÇÕES</div><h1>Trace Explorer</h1><p>Selecione um trace para ver spans, logs correlacionados e o caminho até a resposta.</p></div><span class="subtle-label" id="trace-total">0 traces</span></div>
+            <div class="trace-layout"><article class="panel table-panel trace-list-panel"><div class="table-scroll"><table><thead><tr><th>TRACE</th><th>CONVERSA</th><th>STATUS</th><th>DURAÇÃO</th><th>INÍCIO</th></tr></thead><tbody id="all-traces"></tbody></table></div><div class="pagination"><button id="trace-prev">← Anterior</button><span id="trace-page-label">Página 1</span><button id="trace-next">Próxima →</button></div></article><article class="panel trace-detail" id="trace-detail"><div class="empty-state"><span>⌘</span><h3>Selecione uma execução</h3><p>O detalhe combina os spans persistidos com logs associados pelo span_id.</p></div></article></div>
+          </section>
+
+          <section class="page-view" id="view-conversations">
+            <div class="page-heading"><div><div class="eyebrow">INVESTIGAÇÃO / HISTÓRICO</div><h1>Conversas</h1><p>Histórico de mensagens do MongoDB, independente do email quando não há filtro.</p></div><span class="subtle-label" id="conversation-total">0 conversas</span></div>
+            <div class="conversation-layout"><article class="panel conversation-list"><div id="conversation-items"></div><div class="pagination"><button id="conversation-prev">← Anterior</button><span id="conversation-page-label">Página 1</span><button id="conversation-next">Próxima →</button></div></article><article class="panel conversation-detail" id="conversation-detail"><div class="empty-state"><span>▤</span><h3>Selecione uma conversa</h3><p>Veja as mensagens salvas, traces relacionados e abra um turno no laboratório.</p></div></article></div>
+          </section>
+
+          <section class="page-view" id="view-lab">
+            <div class="page-heading"><div><div class="eyebrow">EXPERIMENTAÇÃO / PROMPT</div><h1>Laboratório de agente</h1><p>Edite um rascunho de prompt e o histórico para uma chamada isolada ao modelo.</p></div><span class="draft-badge">RASCUNHO LOCAL</span></div>
+            <div class="lab-layout"><div class="lab-main">
+              <article class="panel lab-config"><div class="panel-heading"><div><h2>Configuração do experimento</h2><p id="lab-agent-caption">Selecione uma resposta de agente em uma conversa para carregar seu contexto.</p></div><button class="button button-secondary" id="load-agent-prompt">Carregar prompt do agente</button></div><div class="form-grid"><label>Agent ID<input id="lab-agent-id" placeholder="ex.: faq_rag" readonly /></label><label>Modelo<select id="lab-model-id" aria-label="Modelo para o experimento"><option value="">Carregando modelos…</option></select></label></div><label class="textarea-label">Prompt<textarea id="lab-prompt" rows="16" spellcheck="false" placeholder="O prompt do agente aparecerá aqui."></textarea><small class="context-hint">Este prompt vale somente para a chamada isolada ao modelo.</small></label></article>
+              <article class="panel lab-messages-panel"><div class="panel-heading"><div><h2>Mensagens</h2><p>Histórico enviado junto com o prompt</p></div><span id="lab-message-count" class="mono-label">0 mensagens</span></div><label class="textarea-label">Histórico da conversa<textarea id="lab-messages" rows="10" spellcheck="false" placeholder="Usuário: escreva a mensagem. Assistente: resposta anterior (opcional)."></textarea><small class="context-hint">Use uma linha por papel: “Usuário:” ou “Assistente:”. Mensagens com mais de uma linha são aceitas.</small></label><div class="lab-actions"><small>O laboratório chama apenas o modelo. O grafo, as tools e a conversa de produção não são executados ou alterados.</small><button class="button button-primary" id="run-lab">Executar experimento</button></div></article>
+              <article class="panel lab-result"><div class="panel-heading"><div><h2>Resposta do modelo</h2><p>Resultado desta execução isolada</p></div><span id="lab-run-time" class="subtle-label">Aguardando execução</span></div><pre id="lab-result">A resposta aparecerá aqui.</pre></article>
+            </div><aside class="lab-side"><article class="panel live-panel"><div class="panel-heading"><div><h2>Eventos ao vivo</h2><p>Eventos recebidos do feed do trace</p></div><span class="mono-label" id="live-event-count">0</span></div><div id="live-events" class="event-list"><p class="empty-note">Aguardando eventos da API.</p></div></article><article class="panel fetch-panel"><div class="panel-heading"><div><h2>Tempo dos fetches</h2><p>Horário e duração de cada consulta à API</p></div><span class="mono-label">4s</span></div><div id="fetch-history" class="fetch-history"></div></article></aside></div>
+          </section>
+        </div>
+      </main>
+    </div>
+    <div id="toast" class="toast" role="status"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

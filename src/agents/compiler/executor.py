@@ -19,10 +19,7 @@ class CompilerExecutor:
     def __init__(self, model: Any | None = None) -> None:
         self.card = COMPILER_CARD
         self.model = (
-            get_structured_model(
-                CompilerResult,
-                provider="gemini",
-            )
+            get_structured_model(CompilerResult)
             if model is None
             else model
         )

@@ -11,6 +11,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.graph.state import CompiledStateGraph
 
+from src.agents.registry import AGENT_ID_BY_GRAPH_NODE
 from src.graphs.adapters import (
     CompilerExecutorPort,
     ConversationContextEnricherPort,
@@ -191,25 +192,30 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
     graph.add_node(
         "router",
         _as_runnable(partial(run_router_node, router=router)),
+        metadata={"agent_id": AGENT_ID_BY_GRAPH_NODE["router"]},
         input_schema=GraphState,
     )
 
     for route, node in capabilities.items():
+        agent_id = AGENT_ID_BY_GRAPH_NODE.get(route)
         graph.add_node(
             route,
             _as_runnable(node),
+            metadata={"agent_id": agent_id} if agent_id is not None else None,
             input_schema=GraphState,
         )
 
     graph.add_node(
         "judge",
         _as_runnable(partial(run_judge_node, judge=judge)),
+        metadata={"agent_id": AGENT_ID_BY_GRAPH_NODE["judge"]},
         input_schema=GraphState,
     )
 
     graph.add_node(
         "compiler",
         _as_runnable(partial(run_compiler_node, compiler=compiler)),
+        metadata={"agent_id": AGENT_ID_BY_GRAPH_NODE["compiler"]},
         input_schema=GraphState,
     )
 

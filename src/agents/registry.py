@@ -13,6 +13,14 @@ AGENT_CARDS = {
     PRODUCT_WORKFLOW_CARD.id: PRODUCT_WORKFLOW_CARD,
 }
 
+AGENT_ID_BY_GRAPH_NODE = {
+    "router": ROUTER_CARD.id,
+    "faq": FAQ_CARD.id,
+    "product_workflow": PRODUCT_WORKFLOW_CARD.id,
+    "judge": JUDGE_CARD.id,
+    "compiler": COMPILER_CARD.id,
+}
+
 
 def get_agent_card(agent_id: str) -> AgentCard:
     try:

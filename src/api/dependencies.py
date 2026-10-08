@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timezone
 from functools import lru_cache, partial
 from ipaddress import ip_address
 from typing import Any, cast
@@ -35,6 +36,9 @@ from src.api.services.conversation_end_service import ConversationEndService
 from src.api.services.conversation_list_service import ConversationListService
 from src.api.services.conversation_service import ConversationService
 from src.api.services.health_service import HealthService
+from src.api.services.lab_agent_config_service import LabAgentConfigService
+from src.api.services.lab_run_service import LabRunService
+from src.api.services.observability_service import ObservabilityService
 from src.auth.account_repository import PostgresAccountRepository
 from src.auth.errors import (
     AccountLookupError,
@@ -54,6 +58,7 @@ from src.graphs.state import RouteName
 from src.guardrails.config import GuardrailConfig
 from src.guardrails.input_guardrail import input_guardrail_node
 from src.guardrails.output_guardrail import create_output_guardrail_node
+from src.llm_factory import get_configured_chat_model
 from src.memory.checkpointer import create_local_checkpointer
 from src.memory.enrich_context import ConversationContextEnricher
 from src.memory.message_service import MemoryMessageService
@@ -64,7 +69,15 @@ from src.memory.summary_scheduler import (
     ConversationDeletionScheduler,
     ConversationSummaryScheduler,
 )
+from src.observability.ai_usage_repository import (
+    AI_USAGE_COLLECTION_NAME,
+    MongoAIUsageRepository,
+)
 from src.observability.audit import record_authentication_denial
+from src.observability.trace_repository import (
+    TRACE_COLLECTION_NAME,
+    MongoTraceRepository,
+)
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -158,6 +171,8 @@ def get_mongo_client() -> MongoClient[Any]:
         serverSelectionTimeoutMS=timeout_ms,
         connectTimeoutMS=timeout_ms,
         socketTimeoutMS=timeout_ms,
+        tz_aware=True,
+        tzinfo=timezone.utc,
     )
 
 
@@ -166,6 +181,20 @@ def get_conversation_repository() -> MongoConversationRepository:
     settings = config.get_settings()
     return MongoConversationRepository(
         get_mongo_client()[_database_name()][settings.memory_conversations_collection]
+    )
+
+
+@lru_cache
+def get_trace_repository() -> MongoTraceRepository:
+    return MongoTraceRepository(
+        get_mongo_client()[_database_name()][TRACE_COLLECTION_NAME]
+    )
+
+
+@lru_cache
+def get_ai_usage_repository() -> MongoAIUsageRepository:
+    return MongoAIUsageRepository(
+        get_mongo_client()[_database_name()][AI_USAGE_COLLECTION_NAME]
     )
 
 
@@ -216,7 +245,9 @@ def get_graph(request: Request) -> CompiledStateGraph:
     postgres_pool = get_postgres_pool(request)
 
     qdrant_client = config.create_qdrant_client(settings)
-    embedding_provider = GoogleEmbeddingProvider()
+    embedding_provider = GoogleEmbeddingProvider(
+        usage_repository=get_ai_usage_repository()
+    )
     faq_store = QdrantStore(
         qdrant_client=qdrant_client,
         collection_name=settings.faq_vectorstore_collection,
@@ -268,8 +299,33 @@ def get_graph(request: Request) -> CompiledStateGraph:
 
 def get_conversation_controller(
     graph: CompiledStateGraph = Depends(get_graph),
+    trace_repository: MongoTraceRepository = Depends(get_trace_repository),
 ) -> ConversationController:
-    return ConversationController(ConversationService(graph))
+    return ConversationController(
+        ConversationService(
+            graph,
+            trace_repository=trace_repository,
+        )
+    )
+
+
+def get_observability_service() -> ObservabilityService:
+    return ObservabilityService(
+        traces=get_trace_repository(),
+        conversations=get_conversation_repository(),
+        ai_usage=get_ai_usage_repository(),
+    )
+
+
+def get_lab_run_service() -> LabRunService:
+    return LabRunService(
+        model_resolver=get_configured_chat_model,
+        usage_repository=get_ai_usage_repository(),
+    )
+
+
+def get_lab_agent_config_service() -> LabAgentConfigService:
+    return LabAgentConfigService()
 
 
 def get_conversation_end_controller() -> ConversationEndController:

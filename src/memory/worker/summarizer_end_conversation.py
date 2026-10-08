@@ -10,7 +10,13 @@ from typing import Any, Protocol
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, ConfigDict, Field
 
+from src import config
 from src.llm_factory import get_structured_model
+from src.observability.ai_usage import invoke_with_usage
+from src.observability.ai_usage_repository import (
+    MongoAIUsageRepository,
+    bind_usage_conversation,
+)
 
 from ..contracts import ConversationSummarySnapshot, StoredMessage
 from ..mongo_repository import MongoConversationRepository
@@ -52,12 +58,14 @@ class InvalidSummaryStateError(ValueError):
 class LLMSummaryUpdater:
     """Use the application LLM to create or incrementally update a summary."""
 
-    def __init__(self, model: Any | None = None) -> None:
-        self._model = (
-            get_structured_model(SummaryText, provider="groq")
-            if model is None
-            else model
-        )
+    def __init__(
+        self,
+        model: Any | None = None,
+        *,
+        usage_repository: MongoAIUsageRepository | None = None,
+    ) -> None:
+        self._model = get_structured_model(SummaryText) if model is None else model
+        self._usage_repository = usage_repository
 
     def update(
         self,
@@ -74,11 +82,15 @@ class LLMSummaryUpdater:
                 for message in messages
             ],
         }
-        result = self._model.invoke(
+        result = invoke_with_usage(
+            self._model,
             [
                 SystemMessage(content=SUMMARY_SYSTEM_PROMPT),
                 HumanMessage(content=json.dumps(request, ensure_ascii=False)),
-            ]
+            ],
+            repository=self._usage_repository,
+            source="summary_generation",
+            model_name=config.OPENAI_MODEL,
         )
         if not isinstance(result, SummaryText):
             result = SummaryText.model_validate(result)
@@ -111,6 +123,20 @@ class EndConversationSummaryWorker:
         email: str,
         conversation_id: str,
         before_upsert: Callable[[], None] | None = None,
+    ) -> ConversationSummarySnapshot:
+        with bind_usage_conversation(conversation_id):
+            return self._run_with_usage_context(
+                email=email,
+                conversation_id=conversation_id,
+                before_upsert=before_upsert,
+            )
+
+    def _run_with_usage_context(
+        self,
+        *,
+        email: str,
+        conversation_id: str,
+        before_upsert: Callable[[], None] | None,
     ) -> ConversationSummarySnapshot:
         point = self._summary_indexer.get(conversation_id)
         previous_summary = point.get("summary") if point else None
