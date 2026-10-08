@@ -15,6 +15,8 @@ from .contracts import (
 )
 
 CONVERSATIONS_COLLECTION_NAME = "conversations"
+MAX_OBSERVABILITY_PAGE_SIZE = 200
+MAX_OBSERVABILITY_OFFSET = 100_000
 
 
 def _as_timestamp(value: object) -> str | None:
@@ -59,7 +61,7 @@ class MongoConversationRepository:
         self._email_index_ready = False
         self._observability_indexes_ready = False
 
-    def list_observability_conversations(
+    def list_observability_conversations(  # noqa: C901, PLR0913, PLR0912
         self,
         *,
         consumer_id: str | None = None,
@@ -71,10 +73,14 @@ class MongoConversationRepository:
         offset: int = 0,
     ) -> tuple[list[dict[str, Any]], int]:
         """List conversation metadata without loading embedded message history."""
-        if not 1 <= limit <= 200:
-            raise ValueError("limit precisa estar entre 1 e 200")
-        if not 0 <= offset <= 100_000:
-            raise ValueError("offset precisa estar entre 0 e 100000")
+        if not 1 <= limit <= MAX_OBSERVABILITY_PAGE_SIZE:
+            raise ValueError(
+                f"limit precisa estar entre 1 e {MAX_OBSERVABILITY_PAGE_SIZE}"
+            )
+        if not 0 <= offset <= MAX_OBSERVABILITY_OFFSET:
+            raise ValueError(
+                f"offset precisa estar entre 0 e {MAX_OBSERVABILITY_OFFSET}"
+            )
         if consumer_id is not None and not consumer_id.strip():
             raise ValueError("consumer_id não pode estar vazio")
         if conversation_id is not None and not conversation_id.strip():
@@ -94,9 +100,12 @@ class MongoConversationRepository:
             updated_filter["$gte"] = self._query_timestamp(updated_from, "updated_from")
         if updated_to is not None:
             updated_filter["$lte"] = self._query_timestamp(updated_to, "updated_to")
-        if updated_from is not None and updated_to is not None:
-            if updated_filter["$gte"] > updated_filter["$lte"]:
-                raise ValueError("updated_from não pode ser posterior a updated_to")
+        if (
+            updated_from is not None
+            and updated_to is not None
+            and updated_filter["$gte"] > updated_filter["$lte"]
+        ):
+            raise ValueError("updated_from não pode ser posterior a updated_to")
         if updated_filter:
             query["updated_at"] = updated_filter
 
@@ -152,10 +161,14 @@ class MongoConversationRepository:
         """Read one conversation and a bounded, insertion-ordered message page."""
         if not conversation_id.strip():
             raise ValueError("conversation_id é obrigatório")
-        if not 1 <= limit <= 200:
-            raise ValueError("limit precisa estar entre 1 e 200")
-        if not 0 <= offset <= 100_000:
-            raise ValueError("offset precisa estar entre 0 e 100000")
+        if not 1 <= limit <= MAX_OBSERVABILITY_PAGE_SIZE:
+            raise ValueError(
+                f"limit precisa estar entre 1 e {MAX_OBSERVABILITY_PAGE_SIZE}"
+            )
+        if not 0 <= offset <= MAX_OBSERVABILITY_OFFSET:
+            raise ValueError(
+                f"offset precisa estar entre 0 e {MAX_OBSERVABILITY_OFFSET}"
+            )
 
         self._ensure_observability_indexes()
         document = self._collection.find_one(

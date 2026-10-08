@@ -27,7 +27,7 @@ class ModelPricing:
             raise ValueError("Os preços precisam ser finitos e não negativos")
 
 
-def calculate_metrics(
+def calculate_metrics(  # noqa: C901, PLR0915
     traces: Iterable[Mapping[str, Any]],
     *,
     model_pricing: Mapping[str, ModelPricing] | None = None,
@@ -161,7 +161,7 @@ def calculate_metrics(
     }
 
 
-def calculate_slo_metrics(
+def calculate_slo_metrics(  # noqa: C901
     traces: Iterable[Mapping[str, Any]],
     *,
     window_started_at: datetime,
@@ -245,7 +245,7 @@ def calculate_slo_metrics(
     }
 
 
-def calculate_application_cost(
+def calculate_application_cost(  # noqa: PLR0913
     traces: Iterable[Mapping[str, Any]],
     usage_events: Iterable[Mapping[str, Any]],
     *,

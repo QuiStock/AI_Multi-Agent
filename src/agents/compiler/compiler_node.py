@@ -81,10 +81,7 @@ def create_compiler_node(
 ) -> Callable[[GraphState], dict[str, Any]]:
     """Create a compiler node with optional structured-model injection."""
 
-    structured_model = model or get_structured_model(
-        CompilerResult,
-        provider="gemini",
-    )
+    structured_model = model or get_structured_model(CompilerResult)
     return partial(compile_response_state, structured_model=structured_model)
 
 

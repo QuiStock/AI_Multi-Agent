@@ -22,11 +22,7 @@ JudgeStatus = Literal[
 class JudgeExecutor:
     def __init__(self, model: Any | None = None) -> None:
         self.card = JUDGE_CARD
-        self.model = (
-            get_structured_model(JudgeDecision)
-            if model is None
-            else model
-        )
+        self.model = get_structured_model(JudgeDecision) if model is None else model
 
     @staticmethod
     def _result(

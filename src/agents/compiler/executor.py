@@ -18,11 +18,7 @@ from src.llm_factory import get_structured_model
 class CompilerExecutor:
     def __init__(self, model: Any | None = None) -> None:
         self.card = COMPILER_CARD
-        self.model = (
-            get_structured_model(CompilerResult)
-            if model is None
-            else model
-        )
+        self.model = get_structured_model(CompilerResult) if model is None else model
 
     def _compiler_messages(
         self,

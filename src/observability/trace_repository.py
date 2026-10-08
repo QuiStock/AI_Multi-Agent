@@ -146,7 +146,7 @@ class MongoTraceRepository:
             self._collection.find_one({"_id": trace_id.strip()}),
         )
 
-    def list_traces(
+    def list_traces(  # noqa: PLR0913
         self,
         *,
         started_from: datetime | None = None,
@@ -184,7 +184,7 @@ class MongoTraceRepository:
         )
         return list(cursor)
 
-    def count_traces(
+    def count_traces(  # noqa: PLR0913
         self,
         *,
         started_from: datetime | None = None,
@@ -206,7 +206,7 @@ class MongoTraceRepository:
         )
         return int(self._collection.count_documents(query))
 
-    def iter_traces(
+    def iter_traces(  # noqa: PLR0913
         self,
         *,
         started_from: datetime,
@@ -239,7 +239,7 @@ class MongoTraceRepository:
         yield from cursor
 
     @staticmethod
-    def _build_query(
+    def _build_query(  # noqa: C901, PLR0913
         *,
         started_from: datetime | None,
         started_to: datetime | None,
@@ -341,7 +341,7 @@ class MongoTraceRepository:
         return document
 
     @staticmethod
-    def _sanitize_log(
+    def _sanitize_log(  # noqa: C901
         log: object,
         *,
         trace_id: str,
@@ -399,7 +399,7 @@ class MongoTraceRepository:
         return document
 
     @staticmethod
-    def _sanitize_span(span: object) -> dict[str, Any]:
+    def _sanitize_span(span: object) -> dict[str, Any]:  # noqa: C901, PLR0912
         if not isinstance(span, Mapping):
             raise ValueError("Cada span precisa ser um objeto")
 

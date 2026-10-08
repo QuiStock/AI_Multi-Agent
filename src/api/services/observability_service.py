@@ -28,7 +28,7 @@ class ObservabilityService:
         self._conversations = conversations
         self._ai_usage = ai_usage
 
-    def list_conversations(
+    def list_conversations(  # noqa: PLR0913
         self,
         *,
         updated_from: datetime | None = None,
@@ -68,7 +68,7 @@ class ObservabilityService:
             offset=offset,
         )
 
-    def calculate_metrics(
+    def calculate_metrics(  # noqa: PLR0913
         self,
         *,
         started_from: datetime,
@@ -153,7 +153,7 @@ class ObservabilityService:
         )
         return metrics
 
-    def list_traces(
+    def list_traces(  # noqa: PLR0913
         self,
         *,
         started_from: datetime | None = None,
@@ -216,6 +216,9 @@ class ObservabilityService:
                 value.tzinfo is None or value.utcoffset() is None
             ):
                 raise ValueError(f"{name} precisa incluir timezone")
-        if started_from is not None and started_to is not None:
-            if started_from > started_to:
-                raise ValueError("started_from não pode ser posterior a started_to")
+        if (
+            started_from is not None
+            and started_to is not None
+            and started_from > started_to
+        ):
+            raise ValueError("started_from não pode ser posterior a started_to")
