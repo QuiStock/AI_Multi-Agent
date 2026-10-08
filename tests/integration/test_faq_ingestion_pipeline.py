@@ -151,8 +151,7 @@ def test_ingestion_pipeline_indexes_updates_and_deletes_documents(
         ]
     )
     assert (
-        len(vector_store.search([1.0] * 8, limit=10, query_filter=shared_filter))
-        == 3
+        len(vector_store.search([1.0] * 8, limit=10, query_filter=shared_filter)) == 3
     )
 
     second = indexer.run()
