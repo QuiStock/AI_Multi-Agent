@@ -139,7 +139,7 @@ def test_metrics_handle_missing_spans_invalid_values_and_no_samples() -> None:
     assert result["tokens"]["input_tokens"] is None
     assert result["tokens"]["output_tokens"] is None
     assert result["models"]["unknown"]["calls_without_usage"] == 1
-    assert result["fallback"]["signal_coverage"] is None
+    assert result["fallback"]["signal_coverage"] == 0.0
     assert result["fallback"]["rate"] is None
 
     empty = calculate_metrics([])

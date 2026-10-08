@@ -214,7 +214,9 @@ def test_repository_query_bounds_and_filter_validation() -> None:
     with pytest.raises(ValueError, match="conversation_id"):
         repository.count_traces(conversation_id=" ")
     with pytest.raises(ValueError, match="environment"):
-        repository.iter_traces(started_from=START, started_to=END, environment=" ")
+        list(
+            repository.iter_traces(started_from=START, started_to=END, environment=" ")
+        )
     with pytest.raises(ValueError, match="started_from"):
         repository.count_traces(started_from=END, started_to=START)
 
@@ -335,7 +337,7 @@ def test_invalid_log_fields_and_attribute_values_are_rejected() -> None:
         ({**valid_log, "conversation_id": "other"}, "conversation_id"),
         ({**valid_log, "span_id": ""}, "span_id"),
         ({**valid_log, "timestamp": None}, "datetime"),
-        ({**valid_log, "attributes": {"agent_id": []}}, "agent_id"),
+        ({**valid_log, "agent_id": []}, "agent_id"),
     ]
     for log, message in invalid_variants:
         with pytest.raises(ValueError, match=message):
