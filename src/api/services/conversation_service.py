@@ -16,8 +16,8 @@ from src.memory.mongo_repository import (
     ConversationNotEndedError,
     ConversationNotFoundError,
 )
-from src.observability.log_capture import CorrelatedLogCapture
 from src.observability.live_trace_store import live_trace_store
+from src.observability.log_capture import CorrelatedLogCapture
 from src.observability.traces import TraceRecorder
 
 logger = logging.getLogger(__name__)
@@ -46,7 +46,7 @@ class ConversationService:
         self._graph = graph
         self._trace_repository = trace_repository
 
-    def converse(
+    def converse(  # noqa: C901, PLR0912, PLR0915
         self,
         *,
         conversation_id: str,

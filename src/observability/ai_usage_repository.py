@@ -83,7 +83,7 @@ class MongoAIUsageRepository:
             return started_at.replace(tzinfo=timezone.utc)
         return started_at.astimezone(timezone.utc)
 
-    def record_usage(
+    def record_usage(  # noqa: PLR0913
         self,
         *,
         event_id: str,
@@ -189,7 +189,7 @@ def current_usage_conversation_id() -> str | None:
     return _USAGE_CONVERSATION.get()
 
 
-def record_usage_safely(
+def record_usage_safely(  # noqa: PLR0913
     repository: MongoAIUsageRepository | None,
     *,
     event_id: str,

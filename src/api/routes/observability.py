@@ -87,7 +87,7 @@ def get_lab_agent_config(
     "/conversations",
     response_model=ObservabilityConversationListResponse,
 )
-def list_conversations(
+def list_conversations(  # noqa: PLR0913, PLR0917
     service: Annotated[ObservabilityService, Depends(get_observability_service)],
     updated_from: datetime | None = None,
     updated_to: datetime | None = None,
@@ -136,7 +136,7 @@ def get_conversation(
 
 
 @router.get("/metrics", response_model=ObservabilityMetricsResponse)
-def get_metrics(
+def get_metrics(  # noqa: PLR0913, PLR0917
     started_from: datetime,
     started_to: datetime,
     service: Annotated[ObservabilityService, Depends(get_observability_service)],
@@ -166,7 +166,7 @@ def get_metrics(
 
 
 @router.get("/traces", response_model=TraceListResponse)
-def list_traces(
+def list_traces(  # noqa: PLR0913, PLR0917
     service: Annotated[ObservabilityService, Depends(get_observability_service)],
     started_from: datetime | None = None,
     started_to: datetime | None = None,

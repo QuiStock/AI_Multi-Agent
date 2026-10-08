@@ -7,10 +7,19 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 
-from src.api.dependencies import get_authenticated_principal, get_graph
+from src.api.dependencies import (
+    get_authenticated_principal,
+    get_graph,
+    get_trace_repository,
+)
 from src.auth.models import AuthenticatedPrincipal
 from src.main import create_app
 from src.memory.mongo_repository import ConversationClosedError
+
+
+class FakeTraceRepository:
+    def save_trace(self, trace: dict[str, Any]) -> None:
+        pass
 
 
 class FakeGraph:
@@ -48,6 +57,7 @@ def app_client():  # type: ignore[no-untyped-def]
     graph = FakeGraph()
     app = create_app()
     app.dependency_overrides[get_graph] = lambda: graph
+    app.dependency_overrides[get_trace_repository] = FakeTraceRepository
     app.dependency_overrides[get_authenticated_principal] = lambda: (
         AuthenticatedPrincipal(email="user-1", role_id=2)
     )
@@ -127,6 +137,7 @@ def test_conversation_endpoint_returns_controlled_input_rejection() -> None:
     graph = FakeGraph(status="rejected")
     app = create_app()
     app.dependency_overrides[get_graph] = lambda: graph
+    app.dependency_overrides[get_trace_repository] = FakeTraceRepository
     app.dependency_overrides[get_authenticated_principal] = lambda: (
         AuthenticatedPrincipal(email="user-1", role_id=2)
     )
@@ -148,6 +159,7 @@ def test_conversation_endpoint_maps_closed_conversation_to_conflict() -> None:
     app.dependency_overrides[get_authenticated_principal] = lambda: (
         AuthenticatedPrincipal(email="user-1", role_id=2)
     )
+    app.dependency_overrides[get_trace_repository] = FakeTraceRepository
 
     with TestClient(app) as client:
         response = client.post(

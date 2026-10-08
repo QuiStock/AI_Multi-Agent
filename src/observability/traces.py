@@ -336,7 +336,7 @@ class TraceRecorder(BaseCallbackHandler):
             error_type=type(error).__name__,
         )
 
-    def _start_span(
+    def _start_span(  # noqa: PLR0913
         self,
         *,
         run_id: UUID,
@@ -383,7 +383,7 @@ class TraceRecorder(BaseCallbackHandler):
         )
         self._publish_span_event("started", span)
 
-    def _finish_span(
+    def _finish_span(  # noqa: PLR0913
         self,
         *,
         run_id: UUID,
@@ -602,7 +602,7 @@ class TraceRecorder(BaseCallbackHandler):
         if isinstance(output, str):
             try:
                 decoded = json.loads(output)
-            except (json.JSONDecodeError, TypeError, ValueError):
+            except json.JSONDecodeError, TypeError, ValueError:
                 return None
             return decoded if isinstance(decoded, Mapping) else None
 

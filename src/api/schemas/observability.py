@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
 
+MAX_LAB_CONTENT_CHARACTERS = 100_000
+
 
 class ObservabilityConversationMessageResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -65,7 +67,7 @@ class LabRunRequest(BaseModel):
         total_characters = len(self.prompt) + sum(
             len(message.content) for message in self.messages
         )
-        if total_characters > 100_000:
+        if total_characters > MAX_LAB_CONTENT_CHARACTERS:
             raise ValueError("O prompt e as mensagens excedem 100000 caracteres")
         if not any(message.role == "user" for message in self.messages):
             raise ValueError("messages precisa conter ao menos uma mensagem user")

@@ -10,6 +10,7 @@ from typing import Any, Literal
 
 MAX_LIVE_TRACE_EVENTS = 4_000
 MAX_ACTIVE_TRACES = 200
+MAX_LIVE_TRACE_FEED_PAGE_SIZE = 1_000
 
 LiveEventType = Literal["trace", "span", "log"]
 
@@ -124,8 +125,10 @@ class LiveTraceStore:
     def get_feed(self, *, after: int = 0, limit: int = 500) -> dict[str, Any]:
         if after < 0:
             raise ValueError("after precisa ser não negativo")
-        if not 1 <= limit <= 1_000:
-            raise ValueError("limit precisa estar entre 1 e 1000")
+        if not 1 <= limit <= MAX_LIVE_TRACE_FEED_PAGE_SIZE:
+            raise ValueError(
+                f"limit precisa estar entre 1 e {MAX_LIVE_TRACE_FEED_PAGE_SIZE}"
+            )
 
         with self._lock:
             events = list(self._events)
@@ -146,7 +149,7 @@ class LiveTraceStore:
             "reset_required": reset_required,
         }
 
-    def _append_event_locked(
+    def _append_event_locked(  # noqa: PLR0913
         self,
         *,
         event_type: LiveEventType,
