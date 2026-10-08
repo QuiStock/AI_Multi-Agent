@@ -101,11 +101,11 @@ def test_conversation_endpoint_invokes_graph_and_returns_metadata(app_client) ->
         30,
         tzinfo=timezone.utc,
     )
-    assert graph.config == {
-        "configurable": {
-            "thread_id": "conversation-1",
-        }
-    }
+    assert graph.config is not None
+    assert graph.config["configurable"] == {"thread_id": "conversation-1"}
+    assert graph.config["metadata"]["trace_id"] == body["request_id"]
+    assert graph.config["metadata"]["conversation_id"] == "conversation-1"
+    assert len(graph.config["callbacks"]) == 1
 
 
 def test_conversation_endpoint_propagates_resume_flag(app_client) -> None:
