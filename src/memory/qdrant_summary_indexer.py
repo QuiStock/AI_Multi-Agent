@@ -25,9 +25,10 @@ class QdrantSummaryIndexer:
         self._collection_name = collection_name
 
     def _embed_summary(self, snapshot: ConversationSummarySnapshot) -> Sequence[float]:
-        if self._embed_text_with_context is None:
+        embed_text_with_context = self._embed_text_with_context
+        if embed_text_with_context is None:
             return self._embed_text(snapshot.summary)
-        return self._embed_text_with_context(
+        return embed_text_with_context(
             snapshot.summary,
             snapshot.conversation_id,
         )

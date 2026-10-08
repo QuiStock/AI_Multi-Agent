@@ -19,7 +19,7 @@ class GraphExecutionError(RuntimeError):
     """Raised when the graph cannot produce a valid endpoint response."""
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class InputRejectedError(Exception):
     """Carries a controlled input-guardrail response to the HTTP handler."""
 
