@@ -24,14 +24,15 @@ class QdrantSummaryIndexer:
         self._embed_text_with_context = embed_text_with_context
         self._collection_name = collection_name
 
-    def _embed_summary(self, snapshot: ConversationSummarySnapshot) -> Sequence[float]:
+    def _embed_summary(
+        self,
+        summary: str,
+        conversation_id: str,
+    ) -> Sequence[float]:
         embed_text_with_context = self._embed_text_with_context
         if embed_text_with_context is None:
-            return self._embed_text(snapshot.summary)
-        return embed_text_with_context(
-            snapshot.summary,
-            snapshot.conversation_id,
-        )
+            return self._embed_text(summary)
+        return embed_text_with_context(summary, conversation_id)
 
     def upsert(self, snapshot: ConversationSummarySnapshot) -> None:
         if snapshot.status != "ended":
@@ -43,7 +44,9 @@ class QdrantSummaryIndexer:
         }:
             raise ValueError("O watermark precisa existir no array canônico messages")
 
-        vector = list(self._embed_summary(snapshot))
+        vector = list(
+            self._embed_summary(snapshot.summary, snapshot.conversation_id)
+        )
         if not vector:
             raise ValueError("O embedding do resumo não pode estar vazio")
 
