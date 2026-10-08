@@ -44,9 +44,7 @@ class QdrantSummaryIndexer:
         }:
             raise ValueError("O watermark precisa existir no array canônico messages")
 
-        vector = list(
-            self._embed_summary(snapshot.summary, snapshot.conversation_id)
-        )
+        vector = list(self._embed_summary(snapshot.summary, snapshot.conversation_id))
         if not vector:
             raise ValueError("O embedding do resumo não pode estar vazio")
 
