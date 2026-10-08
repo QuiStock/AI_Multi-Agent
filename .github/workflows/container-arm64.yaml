@@ -10,6 +10,7 @@ on:
       - src/**
       - scripts/**
       - .github/workflows/container-arm64.yaml
+      - .github/workflows/publish-image.yaml
   workflow_dispatch:
 
 permissions:
@@ -28,3 +29,15 @@ jobs:
           context: .
           platforms: linux/arm64
           push: false
+          load: true
+          tags: quistock-chatbot:arm64-ci
+
+      - name: Verify ARM64 architecture
+        shell: bash
+        run: test "$(docker image inspect --format '{{.Architecture}}' quistock-chatbot:arm64-ci)" = arm64
+
+      - name: Verify API imports without credentials
+        run: >-
+          docker run --rm --platform linux/arm64 --entrypoint python
+          quistock-chatbot:arm64-ci
+          -c "from src.main import app; assert '/health' in app.openapi()['paths']"
