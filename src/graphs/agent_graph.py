@@ -8,6 +8,7 @@ from langchain_core.messages import AnyMessage, HumanMessage, RemoveMessage
 from langchain_core.runnables import RunnableLambda
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.message import REMOVE_ALL_MESSAGES
 from langgraph.graph.state import CompiledStateGraph
 
 from src.graphs.adapters import (
@@ -117,6 +118,28 @@ def _as_runnable(
     return RunnableLambda(node)
 
 
+def _run_context_enrichment_for_graph(
+    state: GraphState,
+    *,
+    context_enricher: ConversationContextEnricherPort,
+) -> GraphState:
+    """Apply the context adapter with reducer-safe message replacement."""
+    update = run_context_enrichment_node(
+        state,
+        context_enricher=context_enricher,
+    )
+    messages = update.get("messages")
+    if messages and isinstance(messages[0], RemoveMessage):
+        return {
+            **update,
+            "messages": [
+                RemoveMessage(id=REMOVE_ALL_MESSAGES),
+                *messages[1:],
+            ],
+        }
+    return update
+
+
 def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
     *,
     input_guardrail: GraphNode,
@@ -152,7 +175,7 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
         "context_enrichment",
         _as_runnable(
             partial(
-                run_context_enrichment_node,
+                _run_context_enrichment_for_graph,
                 context_enricher=context_enricher,
             )
         ),

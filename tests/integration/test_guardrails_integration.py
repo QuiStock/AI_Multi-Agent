@@ -51,7 +51,9 @@ def test_input_guardrail_node_returns_sanitized_contract() -> None:
     guardrail = result["input_guardrail"]
     assert guardrail["status"] == "passed"
     assert guardrail["reason_code"] == "approved"
-    assert "123.456.789-09" not in guardrail["sanitized_message"]
+    sanitized_message = result["messages"][0].content
+    assert isinstance(sanitized_message, str)
+    assert "123.456.789-09" not in sanitized_message
     assert result["status"] == "in_progress"
 
 

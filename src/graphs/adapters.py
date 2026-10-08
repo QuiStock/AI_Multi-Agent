@@ -244,18 +244,16 @@ def run_context_enrichment_node(
     if not isinstance(current_human.content, str) or not current_human.content.strip():
         raise ValueError("A mensagem sanitizada do usuário é inválida")
 
+    current_message_id = f"{request_id}:user"
     current_message = HumanMessage(
         content=current_human.content,
-        id=f"{request_id}:user",
+        id=current_message_id,
     )
-    current_ids = [message.id for message in current_messages if message.id]
-    if not current_ids and current_human.id is None:
-        current_ids.append(f"{request_id}:user")
     historical_messages = [
-        message for message in restored_messages if message.id != current_message.id
+        message for message in restored_messages if message.id != current_message_id
     ]
     restored_state_messages: list[Any] = [
-        *(RemoveMessage(id=message_id) for message_id in current_ids),
+        RemoveMessage(id=current_message_id),
         *historical_messages,
         current_message,
     ]
@@ -284,6 +282,9 @@ def _request_for_persistence(state: GraphState) -> tuple[str, str, str]:
 
 def run_normalize_user_message_node(state: GraphState) -> GraphUpdate:
     """Ensure the current sanitized user message has this request's stable ID."""
+    if "request" not in state:
+        return {}
+
     _, _, request_id = _request_for_persistence(state)
     message_id = f"{request_id}:user"
     messages = list(state.get("messages", []))
