@@ -6,12 +6,14 @@ WORKDIR /app
 
 ENV UV_PYTHON_DOWNLOADS=never \
     UV_LINK_MODE=copy \
+    UV_HTTP_TIMEOUT=120 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:$PATH"
 
 COPY pyproject.toml uv.lock ./
-RUN uv sync --locked --no-dev --no-install-project
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync --locked --no-dev --no-install-project
 
 COPY src ./src
 COPY scripts ./scripts

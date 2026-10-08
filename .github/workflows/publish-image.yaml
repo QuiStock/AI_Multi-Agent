@@ -3,28 +3,33 @@ name: Publish chatbot image
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      infra_ref:
+        description: "Infra base branch (main or the branch of the infrastructure PR)"
+        required: true
+        default: main
+        type: string
 
 permissions:
   contents: read
   packages: write
 
+concurrency:
+  group: publish-chatbot-${{ github.event.release.tag_name || github.sha }}
+  cancel-in-progress: false
+
 jobs:
   publish:
-    if: ${{ !github.event.release.prerelease }}
+    if: ${{ github.event_name != 'release' || !github.event.release.prerelease }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      INFRA_REPO_TOKEN: ${{ secrets.INFRA_REPO_TOKEN }}
+      INFRA_BASE_REF: ${{ inputs.infra_ref || 'main' }}
+      IMAGE_TAG: ${{ github.event.release.tag_name || format('sha-{0}', github.sha) }}
     steps:
-      - name: Check Infra token
-        env:
-          INFRA_REPO_TOKEN: ${{ secrets.INFRA_REPO_TOKEN }}
-        shell: bash
-        run: |
-          if [ -z "$INFRA_REPO_TOKEN" ]; then
-            echo "Configure INFRA_REPO_TOKEN before publishing a release."
-            exit 1
-          fi
-
-      - name: Check out release commit
+      - name: Check out source commit
         uses: actions/checkout@v7
 
       - name: Set up QEMU
@@ -47,20 +52,32 @@ jobs:
           context: .
           platforms: linux/arm64
           push: true
-          tags: ghcr.io/quistock/ai-multi-agent:${{ github.event.release.tag_name }}
+          tags: ghcr.io/quistock/ai-multi-agent:${{ env.IMAGE_TAG }}
           labels: |
             org.opencontainers.image.source=https://github.com/QuiStock/AI_Multi-Agent
             org.opencontainers.image.revision=${{ github.sha }}
 
+      - name: Record immutable image reference
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        shell: bash
+        run: |
+          printf 'ARM64 image: %s\n' "ghcr.io/quistock/ai-multi-agent@$IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "$INFRA_REPO_TOKEN" ]; then
+            printf 'No INFRA_REPO_TOKEN configured: fill this digest in Infra manually.\n' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Check out Infra repository
+        if: ${{ env.INFRA_REPO_TOKEN != '' }}
         uses: actions/checkout@v7
         with:
           repository: QuiStock/QuiStock-Infra
-          ref: main
+          ref: ${{ env.INFRA_BASE_REF }}
           path: infra
           token: ${{ secrets.INFRA_REPO_TOKEN }}
 
       - name: Update desired image in Infra
+        if: ${{ env.INFRA_REPO_TOKEN != '' }}
         env:
           IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
         shell: bash
@@ -72,35 +89,33 @@ jobs:
 
           digest = os.environ["IMAGE_DIGEST"]
           if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
-              raise SystemExit(f"Unexpected image digest: {digest!r}")
+              raise SystemExit("Expected a SHA-256 image digest")
 
-          app_dir = Path("infra/clusters/expotech/apps/api-chatbot")
+          path = Path("infra/clusters/us-east1/apps/api-chatbot/deployment.yaml")
+          manifest = path.read_text(encoding="utf-8")
           image = f"ghcr.io/quistock/ai-multi-agent@{digest}"
-          pattern = r"(?m)^([ \t]*image:[ \t]*)ghcr\.io/quistock/ai-multi-agent(?:[:@])[^\s]+$"
-          for filename in ("deployment.yaml", "worker.yaml"):
-              path = app_dir / filename
-              manifest = path.read_text(encoding="utf-8")
-              updated, count = re.subn(
-                  pattern, lambda match: match.group(1) + image, manifest
-              )
-              if count != 1:
-                  raise SystemExit(f"Expected one chatbot image in {path}, found {count}")
-              path.write_text(updated, encoding="utf-8")
+          pattern = r"(?m)^([ \t]*image:[ \t]*)(?:ghcr\.io/quistock/ai-multi-agent(?:[:@])[^\s]+|REPLACE_WITH_CHATBOT_ARM64_IMAGE_DIGEST)$"
+          updated, count = re.subn(pattern, lambda match: match.group(1) + image, manifest)
+          if count != 1:
+              raise SystemExit(f"Expected exactly one api-chatbot image in {path}, found {count}")
+          path.write_text(updated, encoding="utf-8")
           PY
 
       - name: Open deployment PR in Infra
+        if: ${{ env.INFRA_REPO_TOKEN != '' }}
         uses: peter-evans/create-pull-request@v8
         with:
           path: infra
           token: ${{ secrets.INFRA_REPO_TOKEN }}
-          add-paths: clusters/expotech/apps/api-chatbot/*.yaml
-          base: main
-          branch: deploy/api-chatbot-${{ github.event.release.tag_name }}
+          add-paths: clusters/us-east1/apps/api-chatbot/deployment.yaml
+          base: ${{ env.INFRA_BASE_REF }}
+          branch: codex/deploy-api-chatbot-${{ env.IMAGE_TAG }}
           delete-branch: true
-          commit-message: "deploy(api-chatbot): ${{ github.event.release.tag_name }}"
-          title: "deploy(api-chatbot): ${{ github.event.release.tag_name }}"
+          commit-message: "deploy(api-chatbot): ${{ env.IMAGE_TAG }}"
+          title: "deploy(api-chatbot): ${{ env.IMAGE_TAG }}"
           body: |
-            Atualiza a API Chatbot para a release [${{ github.event.release.tag_name }}](${{ github.event.release.html_url }}).
-            Imagem publicada: `ghcr.io/quistock/ai-multi-agent@${{ steps.image.outputs.digest }}`.
+            Atualiza api-chatbot com a imagem ARM64 `ghcr.io/quistock/ai-multi-agent@${{ steps.image.outputs.digest }}`.
+            Origem: https://github.com/QuiStock/AI_Multi-Agent/commit/${{ github.sha }}.
 
-            O rolling update começa depois do merge desta PR, quando o Argo CD sincronizar o Infra.
+            O workflow altera somente o digest. Secrets e IDs Bitwarden continuam no bootstrap/Infra.
+            Argo CD acompanha main; aplicar depende do merge das PRs de Infra e do preenchimento dos Secrets.
