@@ -44,7 +44,10 @@ Snapshot atual:
   feed incremental com cursor mantido em memória por processo (buffer limitado;
   não compartilhado entre workers). `src/observability/front-observer/` é o
   frontend Vite independente que consulta esse feed a cada quatro segundos; workers
-  ainda não têm captura de logs.
+  ainda não têm captura de logs. O readiness `/health` registra em stdout um
+  aviso `health_probe_failed` por dependência indisponível, com tipo e resumo
+  sanitizado da exceção; o corpo público continua retornando apenas `ok` ou
+  `unavailable` por dependência.
 - A composição de produção em `src/api/dependencies.py` registra `faq` e
   `product_workflow`. O Product Workflow tem card, tools e repositório
   PostgreSQL direto, com consultas parametrizadas e somente leitura.
