@@ -38,7 +38,7 @@ continuam sujeitas aos contratos das aplicações, independentemente da publica�
 e HTTP 503 quando alguma falha. O JSON inclui `status` geral e `checks` por
 componente (`api`, PostgreSQL, MongoDB, Redis, Qdrant, Gemini e OpenAI), com
 `ok` ou `unavailable` para cada um. Quando um probe falha ou excede o timeout,
-a API escreve `health_probe_failed` em stdout do container, incluindo nome da
+a API registra `health_probe_failed` nos logs do container, incluindo nome da
 dependência, tipo da exceção e uma mensagem sanitizada. Consulte os logs do
 deployment `api-chatbot` no namespace usado pelo Infra. A resposta HTTP não
 inclui mensagens internas nem credenciais.
