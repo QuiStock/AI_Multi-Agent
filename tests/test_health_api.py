@@ -75,8 +75,10 @@ def test_health_reports_failed_dependency_without_leaking_errors(caplog) -> None
     with TestClient(app) as client:
         response = client.get("/health")
 
-    assert response.status_code == 500
+    assert response.status_code == 503
     assert response.json()["status"] == "error"
+    assert response.json()["checks"]["api"] == "ok"
+    assert response.json()["checks"]["postgresql"] == "ok"
     assert response.json()["checks"]["mongodb"] == "unavailable"
     assert "do-not-return" not in response.text
     assert "health_probe_failed" in caplog.text
@@ -162,5 +164,5 @@ def test_health_marks_probe_timeout_unavailable() -> None:
 
     status_code, result = service.check()
 
-    assert status_code == 500
+    assert status_code == 503
     assert result["checks"]["gemini"] == "unavailable"

@@ -102,7 +102,7 @@ class HealthService:
             executor.shutdown(wait=False, cancel_futures=True)
 
         ready = all(value == "ok" for value in checks.values())
-        return (200 if ready else 500), {
+        return (200 if ready else 503), {
             "status": "ok" if ready else "error",
             "checks": checks,
         }
