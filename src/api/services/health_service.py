@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import re
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -14,6 +16,28 @@ from redis import Redis
 from src import config
 
 Probe = Callable[[], None]
+logger = logging.getLogger(__name__)
+
+_EMAIL_PATTERN = re.compile(r"\b[\w.%+-]+@[\w.-]+\.[A-Za-z]{2,}\b")
+_BEARER_PATTERN = re.compile(r"(?i)\bBearer\s+\S+")
+_SECRET_PATTERN = re.compile(
+    r"(?i)\b(api[_ -]?key|access[_ -]?token|password|secret)\s*[:=]\s*\S+"
+)
+_URL_CREDENTIALS_PATTERN = re.compile(r"(?i)(://[^/:@\s]+:)[^/@\s]+@")
+_OPENAI_KEY_PATTERN = re.compile(r"\bsk-[A-Za-z0-9_-]{12,}\b")
+_GOOGLE_KEY_PATTERN = re.compile(r"\bAIza[0-9A-Za-z_-]{20,}\b")
+
+
+def _safe_probe_error(error: Exception) -> str:
+    """Return a bounded probe detail without common credentials or PII."""
+    detail = " ".join(str(error).split())
+    detail = _URL_CREDENTIALS_PATTERN.sub(r"\1[credenciais redigidas]@", detail)
+    detail = _BEARER_PATTERN.sub("Bearer [segredo redigido]", detail)
+    detail = _SECRET_PATTERN.sub(r"\1=[segredo redigido]", detail)
+    detail = _OPENAI_KEY_PATTERN.sub("[chave OpenAI redigida]", detail)
+    detail = _GOOGLE_KEY_PATTERN.sub("[chave Google redigida]", detail)
+    detail = _EMAIL_PATTERN.sub("[email redigido]", detail)
+    return detail[:512] or "sem mensagem de erro"
 
 
 class HealthService:
@@ -54,7 +78,27 @@ class HealthService:
                 try:
                     future.result(timeout=self._settings.health_probe_timeout_seconds)
                     checks[name] = "ok"
-                except Exception:
+                except Exception as exc:
+                    error_type = type(exc).__name__
+                    error_message = (
+                        "timeout após "
+                        f"{self._settings.health_probe_timeout_seconds:g}s"
+                        if isinstance(exc, TimeoutError)
+                        else _safe_probe_error(exc)
+                    )
+                    logger.warning(
+                        "health_probe_failed check=%s error_type=%s "
+                        "error_message=%s",
+                        name,
+                        error_type,
+                        error_message,
+                        extra={
+                            "event": "health_probe_failed",
+                            "health_check": name,
+                            "error_type": error_type,
+                            "error_message": error_message,
+                        },
+                    )
                     checks[name] = "unavailable"
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
