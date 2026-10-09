@@ -81,14 +81,12 @@ class HealthService:
                 except Exception as exc:
                     error_type = type(exc).__name__
                     error_message = (
-                        "timeout após "
-                        f"{self._settings.health_probe_timeout_seconds:g}s"
+                        f"timeout após {self._settings.health_probe_timeout_seconds:g}s"
                         if isinstance(exc, TimeoutError)
                         else _safe_probe_error(exc)
                     )
                     logger.warning(
-                        "health_probe_failed check=%s error_type=%s "
-                        "error_message=%s",
+                        "health_probe_failed check=%s error_type=%s error_message=%s",
                         name,
                         error_type,
                         error_message,
