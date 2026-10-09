@@ -47,7 +47,7 @@ def test_health_endpoint_returns_ok() -> None:
     app.dependency_overrides.clear()
 
 
-def test_health_reports_failed_dependency_without_leaking_errors() -> None:
+def test_health_reports_failed_dependency_without_leaking_errors(caplog) -> None:
     app = create_app()
 
     def fail_with_secret() -> None:
@@ -79,6 +79,11 @@ def test_health_reports_failed_dependency_without_leaking_errors() -> None:
     assert response.json()["status"] == "error"
     assert response.json()["checks"]["mongodb"] == "unavailable"
     assert "do-not-return" not in response.text
+    assert "health_probe_failed" in caplog.text
+    assert "check=mongodb" in caplog.text
+    assert "error_type=RuntimeError" in caplog.text
+    assert "password=[segredo redigido]" in caplog.text
+    assert "do-not-return" not in caplog.text
     app.dependency_overrides.clear()
 
 
