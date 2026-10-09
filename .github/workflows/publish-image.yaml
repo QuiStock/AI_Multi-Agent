@@ -81,25 +81,7 @@ jobs:
         env:
           IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
         shell: bash
-        run: |
-          python3 - <<'PY'
-          import os
-          import re
-          from pathlib import Path
-
-          digest = os.environ["IMAGE_DIGEST"]
-          if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
-              raise SystemExit("Expected a SHA-256 image digest")
-
-          path = Path("infra/clusters/us-east1/apps/api-chatbot/deployment.yaml")
-          manifest = path.read_text(encoding="utf-8")
-          image = f"ghcr.io/quistock/ai-multi-agent@{digest}"
-          pattern = r"(?m)^([ \t]*image:[ \t]*)(?:ghcr\.io/quistock/ai-multi-agent(?:[:@])[^\s]+|REPLACE_WITH_CHATBOT_ARM64_IMAGE_DIGEST)$"
-          updated, count = re.subn(pattern, lambda match: match.group(1) + image, manifest)
-          if count != 1:
-              raise SystemExit(f"Expected exactly one api-chatbot image in {path}, found {count}")
-          path.write_text(updated, encoding="utf-8")
-          PY
+        run: python3 scripts/update_infra_image.py
 
       - name: Open deployment PR in Infra
         if: ${{ env.INFRA_REPO_TOKEN != '' }}
@@ -114,7 +96,7 @@ jobs:
           commit-message: "deploy(api-chatbot): ${{ env.IMAGE_TAG }}"
           title: "deploy(api-chatbot): ${{ env.IMAGE_TAG }}"
           body: |
-            Atualiza api-chatbot com a imagem ARM64 `ghcr.io/quistock/ai-multi-agent@${{ steps.image.outputs.digest }}`.
+            Atualiza API e worker de resumos com a imagem ARM64 `ghcr.io/quistock/ai-multi-agent@${{ steps.image.outputs.digest }}`.
             Origem: https://github.com/QuiStock/AI_Multi-Agent/commit/${{ github.sha }}.
 
             O workflow altera somente o digest. Secrets e IDs Bitwarden continuam no bootstrap/Infra.

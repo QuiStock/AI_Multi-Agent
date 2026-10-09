@@ -41,3 +41,9 @@ jobs:
           docker run --rm --platform linux/arm64 --entrypoint python
           quistock-chatbot:arm64-ci
           -c "from src.main import app; assert '/health' in app.openapi()['paths']"
+
+      - name: Verify summary worker imports without credentials
+        run: >-
+          docker run --rm --platform linux/arm64 --entrypoint python
+          quistock-chatbot:arm64-ci
+          -c "from src.memory.worker.run_summary_worker import main; assert callable(main)"
