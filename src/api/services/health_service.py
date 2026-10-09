@@ -81,12 +81,14 @@ class HealthService:
                 except Exception as exc:
                     error_type = type(exc).__name__
                     error_message = (
-                        f"timeout após {self._settings.health_probe_timeout_seconds:g}s"
+                        "timeout após "
+                        f"{self._settings.health_probe_timeout_seconds:g}s"
                         if isinstance(exc, TimeoutError)
                         else _safe_probe_error(exc)
                     )
                     logger.warning(
-                        "health_probe_failed check=%s error_type=%s error_message=%s",
+                        "health_probe_failed check=%s error_type=%s "
+                        "error_message=%s",
                         name,
                         error_type,
                         error_message,
@@ -102,7 +104,7 @@ class HealthService:
             executor.shutdown(wait=False, cancel_futures=True)
 
         ready = all(value == "ok" for value in checks.values())
-        return (200 if ready else 503), {
+        return (200 if ready else 500), {
             "status": "ok" if ready else "error",
             "checks": checks,
         }
