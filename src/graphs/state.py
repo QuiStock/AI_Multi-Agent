@@ -28,6 +28,7 @@ class RequestContext(TypedDict):
     request_id: str
     email: str
     role_id: NotRequired[int]
+    a2a_store_id: NotRequired[int]
     conversation_id: str
     sent_at: datetime
     is_new_conversation: NotRequired[bool]

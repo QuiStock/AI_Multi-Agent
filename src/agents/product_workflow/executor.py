@@ -10,6 +10,7 @@ from src.graphs.state import Evidence, GraphState
 from src.llm_factory import llm_openai
 
 from .card import PRODUCT_WORKFLOW_CARD
+from .filters import MANAGER_ROLE_ID
 from .models import ProductWorkflowContext
 from .repository import ProductWorkflowRepository
 from .tools.tools import build_product_workflow_tools
@@ -83,12 +84,20 @@ class ProductWorkflowExecutor:
         role_id = request.get("role_id")
         if role_id is not None and not isinstance(role_id, int):
             return None
+        a2a_store_id = request.get("a2a_store_id")
+        if a2a_store_id is not None and (
+            type(a2a_store_id) is not int
+            or a2a_store_id < 1
+            or role_id != MANAGER_ROLE_ID
+        ):
+            return None
         trace_id = request.get("trace_id")
         if not isinstance(trace_id, str) or not trace_id.strip():
             trace_id = request_id
         return ProductWorkflowContext(
             email=email,
             role_id=role_id,
+            a2a_store_id=a2a_store_id,
             request_id=request_id,
             trace_id=trace_id,
         )

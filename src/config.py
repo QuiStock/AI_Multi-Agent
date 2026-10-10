@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     a2a_public_url: str = "http://localhost:8000/a2a"
     a2a_inbound_client_id: str = "trusted_a2a_client"
     a2a_inbound_service_token: str | None = None
+    a2a_inbound_store_id: int | None = Field(default=None, ge=1, le=2_147_483_647)
     a2a_context_secret: str | None = None
     a2a_truck_mode: Literal["mock", "remote"] = "mock"
     a2a_truck_card_url: str | None = None

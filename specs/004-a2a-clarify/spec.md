@@ -24,6 +24,24 @@ verificação factual do serviço definitivo segue aberta. O contrato executáve
 está em `implementation.md`. As seções históricas abaixo registram decisões
 anteriores e não prevalecem sobre esta revisão.
 
+## Revisão de entrada A2A — 2026-10-10
+
+- **RF-A2A-STORE-001 — confirmado:** cada chamada A2A autenticada pertence a
+  uma loja identificada pelo mesmo `store.id` do PostgreSQL. A credencial do
+  cliente fica vinculada a uma loja configurada; o ID recebido deve coincidir,
+  e a loja deve existir e estar ativa. A API de IA usa apenas `SELECT`.
+- **RF-A2A-STORE-002 — confirmado:** o sistema cliente autentica seu usuário.
+  O Quistock exige um ID externo estável, isola a conversa por cliente, loja e
+  usuário, e atribui localmente o papel de gerente (`role_id=2`). Não exige JWT
+  humano Quistock nem cria usuário ou vínculo comercial no PostgreSQL.
+- **RF-A2A-STORE-003 — confirmado:** consultas Product Workflow originadas em
+  A2A são somente leitura, limitadas por `store_id` autorizado em buscas e
+  detalhes, com visibilidade de gerente. Chamadas normais mantêm a autorização
+  atual por `user_account` e `user_store`.
+- **CA-A2A-STORE-001:** loja ausente, inativa ou diferente da vinculada à
+  credencial não executa o grafo. Um ID de sugestão de outra loja não retorna
+  detalhes. Chamadas normais não passam a aceitar `store_id` do cliente.
+
 ## Objetivo
 
 Fechar o escopo técnico mínimo da integração Agent2Agent (A2A) do Quistock,
