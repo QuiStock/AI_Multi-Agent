@@ -53,12 +53,13 @@ class ConversationService:
         request: ConversationRequest,
         email: str,
         role_id: int | None = None,
+        request_id: str | None = None,
     ) -> ConversationResponse:
         normalized_conversation_id = conversation_id.strip()
         if not normalized_conversation_id:
             raise ValueError("conversation_id é obrigatório")
 
-        request_id = str(uuid4())
+        request_id = request_id or str(uuid4())
         trace_id = request_id
         request_context: RequestContext = {
             "request_id": request_id,

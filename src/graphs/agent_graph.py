@@ -113,6 +113,23 @@ def decide_after_product_workflow(state: GraphState) -> str:
     )
 
 
+def external_a2a_unavailable_node(_: GraphState) -> GraphState:
+    return {
+        "final_response": {
+            "content": "Não consegui consultar o sistema externo de caminhões agora.",
+            "status": "error",
+        },
+        "status": "completed",
+    }
+
+
+def decide_after_external_a2a(state: GraphState) -> str:
+    result = state.get("agent_results", {}).get("external_a2a", {})
+    return (
+        "compiler" if result.get("status") == "success" else "external_a2a_unavailable"
+    )
+
+
 def _as_runnable(
     node: GraphNode,
 ) -> RunnableLambda[GraphState, GraphState]:
@@ -254,6 +271,11 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
         _as_runnable(product_workflow_unavailable_node),
         input_schema=GraphState,
     )
+    graph.add_node(
+        "external_a2a_unavailable",
+        _as_runnable(external_a2a_unavailable_node),
+        input_schema=GraphState,
+    )
 
     graph.add_node(
         "persist_turn",
@@ -311,6 +333,15 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
                     "product_workflow_unavailable": "product_workflow_unavailable",
                 },
             )
+        elif route == "external_a2a":
+            graph.add_conditional_edges(
+                route,
+                decide_after_external_a2a,
+                {
+                    "compiler": "compiler",
+                    "external_a2a_unavailable": "external_a2a_unavailable",
+                },
+            )
         else:
             graph.add_edge(route, "compiler")
 
@@ -338,6 +369,7 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
         "out_of_scope",
         "judge_blocked",
         "product_workflow_unavailable",
+        "external_a2a_unavailable",
     ):
         graph.add_edge(terminal_node, "persist_turn")
 

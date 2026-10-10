@@ -52,6 +52,25 @@ class RouterExecutor:
                 "outcome": "dispatch",
                 "reason": decision.reason,
             }
+        if decision.route == "external_a2a":
+            if (
+                decision.peer_id != "truck_info_agent"
+                or decision.skill_id != "truck_specs"
+            ):
+                return {
+                    "route": "clarification_required",
+                    "target_agent": None,
+                    "outcome": "clarification_required",
+                    "reason": "A capacidade externa selecionada não está cadastrada.",
+                }
+            return {
+                "route": "external_a2a",
+                "target_agent": "external_a2a",
+                "outcome": "dispatch",
+                "reason": decision.reason,
+                "peer_id": decision.peer_id,
+                "skill_id": decision.skill_id,
+            }
         if decision.route == "clarification_required":
             return {
                 "route": "clarification_required",

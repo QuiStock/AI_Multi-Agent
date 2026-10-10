@@ -162,6 +162,33 @@ class JudgeExecutor:
                 error_code="JUDGE_INSUFFICIENT_EVIDENCE",
             )
 
+        external_evidences = [
+            evidence
+            for evidence in evidences
+            if evidence.get("source_type") == "a2a_agent"
+            and evidence["evidence_id"] in citation_ids
+        ]
+        if external_evidences:
+            content = current_draft["content"].casefold()
+            if "segundo o sistema externo de caminhões" not in content:
+                return self._result(
+                    status="invalid",
+                    reason="Resposta A2A sem atribuição ao sistema externo.",
+                    error_code="JUDGE_A2A_ATTRIBUTION_MISSING",
+                )
+            if (
+                any(
+                    item.get("metadata", {}).get("mock") == "true"
+                    for item in external_evidences
+                )
+                and "simulad" not in content
+            ):
+                return self._result(
+                    status="invalid",
+                    reason="Resposta A2A simulada sem indicação de simulação.",
+                    error_code="JUDGE_A2A_MOCK_LABEL_MISSING",
+                )
+
         return None
 
     def _invoke_model(
