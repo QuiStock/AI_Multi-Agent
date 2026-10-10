@@ -12,6 +12,7 @@ from langgraph.graph.state import CompiledStateGraph
 from pymongo import MongoClient
 
 from src import config
+from src.a2a_integration.external import ExternalA2AExecutor
 from src.agents.compiler.executor import CompilerExecutor
 from src.agents.faq.executor import FAQExecutor
 from src.agents.faq.ingestion.embedding.google_embedding_provider import (
@@ -50,6 +51,7 @@ from src.auth.service import AuthenticationService
 from src.auth.token import JWTEmailDecoder
 from src.graphs.adapters import (
     GraphNode,
+    run_external_a2a_node,
     run_faq_node,
     run_product_workflow_node,
 )
@@ -273,6 +275,10 @@ def get_graph(request: Request) -> CompiledStateGraph:
         "product_workflow": partial(
             run_product_workflow_node,
             executor=product_workflow_executor,
+        ),
+        "external_a2a": partial(
+            run_external_a2a_node,
+            executor=ExternalA2AExecutor(settings),
         ),
     }
 

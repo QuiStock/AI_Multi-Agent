@@ -23,6 +23,8 @@ ROUTER_CARD = AgentCard(
     tags=["router", "classification"],
     routing_intents=[
         "faq",
+        "product_workflow",
+        "external_a2a",
         "clarification_required",
         "out_of_scope",
     ],

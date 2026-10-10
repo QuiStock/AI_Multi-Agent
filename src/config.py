@@ -71,6 +71,16 @@ class Settings(BaseSettings):
     memory_conversations_collection: str = "conversations"
     memory_summary_jobs_collection: str = "conversation_summary_jobs"
     memory_summary_locks_collection: str = "conversation_summary_locks"
+    a2a_responses_collection: str = "a2a_responses"
+    a2a_public_url: str = "http://localhost:8000/a2a"
+    a2a_inbound_client_id: str = "trusted_a2a_client"
+    a2a_inbound_service_token: str | None = None
+    a2a_context_secret: str | None = None
+    a2a_truck_mode: Literal["mock", "remote"] = "mock"
+    a2a_truck_card_url: str | None = None
+    a2a_truck_endpoint_url: str | None = None
+    a2a_truck_service_token: str | None = None
+    a2a_timeout_seconds: float = Field(default=8.0, gt=0, le=30)
 
     # FAQ RAG directories
     faq_data_dir: Path = PROJECT_ROOT / "src" / "data"

@@ -17,10 +17,12 @@ class ConversationController:
         request: ConversationRequest,
         email: str,
         role_id: int | None = None,
+        request_id: str | None = None,
     ) -> ConversationResponse:
         return self._service.converse(
             conversation_id=conversation_id,
             request=request,
             email=email,
             role_id=role_id,
+            request_id=request_id,
         )

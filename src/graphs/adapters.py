@@ -14,6 +14,7 @@ from langchain_core.messages import (
 
 from src.graphs.state import (
     Evidence,
+    ExternalA2AResult,
     FAQResult,
     GraphState,
     JudgeResult,
@@ -66,6 +67,10 @@ class FAQExecutorPort(Protocol):
 
 
 class ProductWorkflowExecutorPort(Protocol):
+    def invoke(self, state: GraphState) -> dict[str, Any]: ...
+
+
+class ExternalA2AExecutorPort(Protocol):
     def invoke(self, state: GraphState) -> dict[str, Any]: ...
 
 
@@ -198,6 +203,34 @@ def run_product_workflow_node(
         },
         "evidences": evidences,
     }
+
+
+def run_external_a2a_node(
+    state: GraphState,
+    *,
+    executor: ExternalA2AExecutorPort,
+) -> GraphUpdate:
+    result = executor.invoke(sanitized_state(state))
+    answer = str(result.get("answer", "")).strip()
+    evidences = cast(list[Evidence], result.get("evidences", []))
+    error_code = result.get("error_code")
+    external_result: ExternalA2AResult = {
+        "status": "success" if answer and evidences else "unavailable",
+        "answer": answer,
+        "evidence_ids": [item["evidence_id"] for item in evidences],
+    }
+    if isinstance(error_code, str) and error_code:
+        external_result["error_code"] = error_code
+    logger.info(
+        "external_a2a_completed",
+        extra={
+            "event": "agent_completed",
+            "status": external_result["status"],
+            "evidence_count": len(evidences),
+            "reason_code": error_code,
+        },
+    )
+    return {"agent_results": {"external_a2a": external_result}, "evidences": evidences}
 
 
 def run_judge_node(

@@ -11,6 +11,7 @@ from src.memory.contracts import ConversationSummary
 RouteName = Literal[
     "faq",
     "product_workflow",
+    "external_a2a",
     "clarification_required",
     "out_of_scope",
 ]
@@ -62,11 +63,13 @@ class RoutingDecision(TypedDict):
         "out_of_scope",
     ]
     reason: str
+    peer_id: NotRequired[str]
+    skill_id: NotRequired[str]
 
 
 class Evidence(TypedDict):
     evidence_id: str
-    source_type: Literal["metric", "faq_document", "product_workflow"]
+    source_type: Literal["metric", "faq_document", "product_workflow", "a2a_agent"]
     source_id: str
     content: str
     metadata: dict[str, str]
@@ -88,6 +91,12 @@ class ProductWorkFlowResult(AgentResult):
     evidence_ids: list[str]
 
 
+class ExternalA2AResult(AgentResult):
+    status: Literal["success", "unavailable", "error"]
+    answer: str
+    evidence_ids: list[str]
+
+
 class JudgeResult(AgentResult):
     status: Literal[
         "approved",
@@ -101,6 +110,7 @@ class JudgeResult(AgentResult):
 class AgentResults(TypedDict, total=False):
     faq: FAQResult
     product_workflow: ProductWorkFlowResult
+    external_a2a: ExternalA2AResult
     judge: JudgeResult
 
 

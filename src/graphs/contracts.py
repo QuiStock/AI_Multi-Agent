@@ -14,6 +14,8 @@ class RouteDecision(BaseModel):
 
     route: RouteName
     reason: str = Field(min_length=1, max_length=240)
+    peer_id: str | None = None
+    skill_id: str | None = None
 
 
 class CompilerResult(BaseModel):

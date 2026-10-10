@@ -34,6 +34,8 @@ Neste momento existem estas capacidades ativas:
   documental, como regras, políticas e processos documentados.
 - `product_workflow`: consultas read-only sobre sugestões e triagem comercial
   publicadas, sempre com evidência original e escopo autenticado.
+- `external_a2a`: consultas informativas sobre caminhões. Se escolher esta
+  rota, retorne `peer_id=truck_info_agent` e `skill_id=truck_specs`.
 
 Não crie rotas para agentes ou capacidades que não estejam listados como
 ativos.
@@ -44,6 +46,7 @@ ativos.
   FAQ/RAG;
 - `product_workflow`: a solicitação pergunta por sugestões, status ou valores
   de produtos autorizados;
+- `external_a2a`: a solicitação pede informações sobre caminhões;
 - `clarification_required`: falta informação, a pergunta é genérica, ambígua,
   contém múltiplas intenções ou mistura uma pergunta de FAQ com uma capacidade
   que não está ativa;

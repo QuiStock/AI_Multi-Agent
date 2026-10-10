@@ -8,6 +8,22 @@
 
 **Input**: decisão de iniciar a especificação da rota A2A antes de qualquer implementação.
 
+## Decisão posterior — 2026-10-09
+
+O usuário autorizou a implementação da fachada e do cliente A2A do Quistock.
+O serviço separado de caminhões **não será criado**: a resposta externa é
+simulada no processo atual, e a configuração de produção apontará para o peer
+definitivo. A rota do router é `external_a2a` com o par fixo
+`truck_info_agent/truck_specs`; seleção dinâmica entre vários peers é extra.
+
+A regra anterior que exigia fonte original verificável do peer foi revista.
+Neste ciclo, a resposta do peer entra como registro atribuído (`a2a_agent`),
+sem alegar validação independente de fatos. O compiler e o juiz exigem
+atribuição explícita, e o mock deve ser identificado como simulação. A
+verificação factual do serviço definitivo segue aberta. O contrato executável
+está em `implementation.md`. As seções históricas abaixo registram decisões
+anteriores e não prevalecem sobre esta revisão.
+
 ## Objetivo
 
 Fechar o escopo técnico mínimo da integração Agent2Agent (A2A) do Quistock,
@@ -37,6 +53,21 @@ ativa rota, peer, card, dependência ou tarefa de implementação.
 - Foram aceitos os cenários acadêmicos de sucesso grounded e falha segura, e a
   proposta inicial de retry limitado.
 
+## Direção adicional — 2026-10-09
+
+- **Confirmado pelo usuário:** o Quistock atuará como servidor e cliente A2A.
+  O router poderá escolher uma capacidade externa e encaminhar a pergunta ao
+  peer correspondente, sem expor os executores locais individualmente.
+- **Exemplo proposto para a primeira integração:** um sistema próprio de
+  informações sobre caminhões, somente leitura. A identidade e o contrato
+  definitivos desse serviço ainda precisam ser fechados.
+- **Extra opcional, fora do primeiro ciclo:** o router poderá escolher entre
+  vários peers cadastrados. A escolha será dinâmica entre pares
+  autorizados, nunca uma URL livre produzida pelo modelo.
+- **Estado atual corrigido pelo código:** `faq` e `product_workflow` já estão
+  registrados em `src/api/dependencies.py`. O plano de implementação está em
+  `plan.md` neste diretório; o retrato anterior de apenas `faq` estava obsoleto.
+
 ### Explicação simples do AgentCard
 
 Um `AgentCard` é o “cartão de visita técnico” de um sistema A2A. Ele é um JSON
@@ -63,7 +94,7 @@ Há duas identidades diferentes na chamada:
 1. a pessoa que usa o Quistock, autenticada pelo fluxo atual;
 2. o sistema Quistock, autenticado perante o outro sistema A2A.
 
-O JWE da pessoa não deve ser repassado automaticamente ao peer. Para o mock,
+O JWT da pessoa não deve ser repassado automaticamente ao peer. Para o mock,
 a opção mais simples é um bearer token próprio do ambiente, guardado em
 variável de ambiente e enviado no header `Authorization`. Ele serve apenas
 para o peer reconhecer que a chamada veio do Quistock.
@@ -112,17 +143,18 @@ segredo deve evoluir para credencial rotacionável ou token assinado.
   uma nova rota para um sistema externo, mas card, peer, autenticação,
   payload, timeout e fallback ainda estão indefinidos
   (`docs/planejamento-multiagente-fastapi.md`).
-- O runtime atual não possui integração A2A ativa. O grafo expõe somente a
-  capacidade `faq` em `src/api/dependencies.py`; o router também pode terminar
-  em esclarecimento ou fora de escopo.
+- O runtime atual não possui integração A2A ativa. O grafo expõe as
+  capacidades `faq` e `product_workflow` em `src/api/dependencies.py`; o router
+  também pode terminar em esclarecimento ou fora de escopo.
 - `src/agents/schemas/agent_card.py` modela cards locais do serviço, mas ainda
   não modela endpoint A2A, interfaces de transporte, esquemas de segurança,
   skills remotas ou assinatura do card. `src/agents/registry.py` não registra
   peer A2A.
-- A autenticação de entrada da API extrai o email do JWE e consulta o papel no
-  PostgreSQL. O `RequestContext` do grafo propaga `email`, mas não possui ainda
-  cargo e loja autorizada como contexto estruturado.
-- `Evidence` aceita hoje somente `metric` e `faq_document` como
+- A autenticação de entrada da API extrai o email de um JWT HS256 e consulta o
+  papel no PostgreSQL. O `RequestContext` do grafo propaga `email` e `role_id`;
+  o escopo de loja do Product Workflow é aplicado pelas consultas autorizadas
+  no repositório, e não por um `store_id` livre no pedido.
+- `Evidence` aceita hoje `metric`, `faq_document` e `product_workflow` como
   `source_type`. O juiz recebe evidências tipadas e não deve aprovar uma
   resposta sem evidência suficiente.
 - Nenhum requisito atual autoriza o chatbot ou um agente remoto a executar
@@ -186,7 +218,7 @@ Para um cliente A2A, a descoberta deve produzir um peer validado por:
 
 ### Identidade, autenticação e escopo
 
-O usuário entra pelo JWE já validado pela API. O router ou modelo não pode
+O usuário entra pelo JWT HS256 já validado pela API. O router ou modelo não pode
 escolher email, cargo ou loja. O serviço deve derivar o contexto autorizado de
 fontes confiáveis antes da chamada A2A e impedir que campos equivalentes no
 texto, body ou metadata do cliente ampliem acesso.
