@@ -12,10 +12,15 @@ from pymongo.errors import DuplicateKeyError
 
 from src import config
 from src.a2a_integration.external import ExternalA2AExecutor
-from src.a2a_integration.inbound import _bearer, agent_card, router, send_message
+from src.a2a_integration.inbound import (
+    A2APrincipal,
+    _bearer,
+    agent_card,
+    router,
+    send_message,
+)
 from src.agents.judge.executor import JudgeExecutor
 from src.api.schemas.conversation import ConversationResponse
-from src.auth.models import AuthenticatedPrincipal
 
 
 class FakeStore:
@@ -56,6 +61,7 @@ def _setup(monkeypatch: Any) -> tuple[FakeStore, FakeController]:
         _env_file=None,
         a2a_context_secret="test-context-secret",
         a2a_inbound_service_token="test-service-secret",
+        a2a_inbound_store_id=42,
     )
     monkeypatch.setattr(config, "get_settings", lambda: settings)
     return FakeStore(), FakeController()
@@ -80,7 +86,12 @@ def _send(
 ) -> dict[str, Any]:
     response = send_message(
         body,
-        AuthenticatedPrincipal(email=email, role_id=2),
+        A2APrincipal(
+            client_id="trusted_a2a_client",
+            store_id=42,
+            external_user_id=email,
+            email=email,
+        ),
         controller,
         store,
         None,

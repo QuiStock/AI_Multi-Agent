@@ -5,6 +5,7 @@ from typing import Any, Literal, Protocol, cast
 
 from .filters import (
     ALLOWED_SUGGESTION_TYPES_CLAUSE,
+    MANAGER_ROLE_ID,
     MAX_PRODUCT_QUERY_LENGTH,
     MAX_SUGGESTION_RESULTS,
     NOT_EXPIRED_SUGGESTION_CLAUSE,
@@ -53,6 +54,10 @@ class PostgresProductWorkflowRepository:
         *,
         limit: int = 6,
     ) -> list[ProductSuggestionSearchRecord]:
+        if context.a2a_store_id is not None:
+            return self._search_a2a_product_suggestions(
+                context, product_query, limit=limit
+            )
         role_id = self._require_supported_role(context)
         query = product_query.strip()
         if not query or len(query) > MAX_PRODUCT_QUERY_LENGTH:
@@ -138,6 +143,8 @@ class PostgresProductWorkflowRepository:
         context: ProductWorkflowContext,
         suggestion_id: int,
     ) -> ProductSuggestionDetailRecord | None:
+        if context.a2a_store_id is not None:
+            return self._get_a2a_product_suggestion_detail(context, suggestion_id)
         role_id = self._require_supported_role(context)
         visibility = visibility_clause(role_id)
         sql = f"""
@@ -208,6 +215,155 @@ class PostgresProductWorkflowRepository:
         """
         row = self._fetch_one(sql, [suggestion_id, context.email, role_id])
         return None if row is None else _detail_record_from_row(row)
+
+    def _search_a2a_product_suggestions(
+        self,
+        context: ProductWorkflowContext,
+        product_query: str,
+        *,
+        limit: int,
+    ) -> list[ProductSuggestionSearchRecord]:
+        store_id = self._require_a2a_manager_store(context)
+        query = product_query.strip()
+        if not query or len(query) > MAX_PRODUCT_QUERY_LENGTH:
+            raise ValueError("Consulta de produto inválida")
+        if limit < 1 or limit > MAX_SUGGESTION_RESULTS:
+            raise ValueError("Limite de produtos inválido")
+        escaped_query = (
+            query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        )
+        pattern = f"%{escaped_query}%"
+        visibility = visibility_clause(MANAGER_ROLE_ID)
+        sql = f"""
+            WITH ranked_suggestions AS (
+                SELECT
+                    s.id,
+                    s.product_id,
+                    s.store_id,
+                    p.name AS product_name,
+                    c.name AS category_name,
+                    p.sku,
+                    st.name AS store_name,
+                    s.type::text,
+                    s.status::text,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY s.product_id, s.store_id
+                        ORDER BY
+                            COALESCE(s.updated_at, s.created_at) DESC,
+                            s.created_at DESC,
+                            s.id DESC
+                    ) AS suggestion_rank
+                FROM "suggestion" AS s
+                JOIN "product" AS p
+                  ON p.id = s.product_id
+                 AND p.active IS TRUE
+                LEFT JOIN "category" AS c
+                  ON c.id = p.category_id
+                 AND c.active IS TRUE
+                JOIN "store" AS st
+                  ON st.id = s.store_id
+                 AND st.status::text = 'ACTIVE'
+                WHERE s.store_id = %s
+                  AND {visibility}
+                  AND {ALLOWED_SUGGESTION_TYPES_CLAUSE}
+                  AND {NOT_EXPIRED_SUGGESTION_CLAUSE}
+                  AND (
+                      p.name ILIKE %s ESCAPE '\\'
+                      OR p.sku ILIKE %s ESCAPE '\\'
+                      OR c.name ILIKE %s ESCAPE '\\'
+                  )
+            )
+            SELECT
+                id,
+                product_id,
+                store_id,
+                product_name,
+                category_name,
+                sku,
+                store_name,
+                type,
+                status
+            FROM ranked_suggestions
+            WHERE suggestion_rank = 1
+            ORDER BY product_name ASC, sku ASC, store_id ASC, id DESC
+            LIMIT %s
+        """
+        rows = self._fetch_all(sql, [store_id, pattern, pattern, pattern, limit])
+        return [_search_record_from_row(row) for row in rows]
+
+    def _get_a2a_product_suggestion_detail(
+        self,
+        context: ProductWorkflowContext,
+        suggestion_id: int,
+    ) -> ProductSuggestionDetailRecord | None:
+        store_id = self._require_a2a_manager_store(context)
+        visibility = visibility_clause(MANAGER_ROLE_ID)
+        sql = f"""
+            SELECT
+                s.id,
+                s.product_id,
+                s.store_id,
+                p.name,
+                c.name,
+                p.sku,
+                st.name,
+                s.type::text,
+                s.origin::text,
+                s.status::text,
+                s.ml_batch_count,
+                s.current_batch_count,
+                s.ml_discount_percentage,
+                s.current_discount_percentage,
+                s.reference_sale_price,
+                s.promotional_price,
+                s.promotion_valid_from,
+                s.promotion_valid_until,
+                current_batch.expiration_date,
+                s.available_for_triage,
+                s.created_at,
+                s.updated_at,
+                triage.employee_id,
+                employee.name,
+                triage.last_action::text,
+                triage.forwarded_at,
+                triage.updated_at
+            FROM "suggestion" AS s
+            JOIN "product" AS p
+              ON p.id = s.product_id
+             AND p.active IS TRUE
+            LEFT JOIN "category" AS c
+              ON c.id = p.category_id
+             AND c.active IS TRUE
+            JOIN "store" AS st
+              ON st.id = s.store_id
+             AND st.status::text = 'ACTIVE'
+            LEFT JOIN "suggestion_triage" AS triage
+              ON triage.suggestion_id = s.id
+            LEFT JOIN "user_account" AS employee
+              ON employee.id = triage.employee_id
+            LEFT JOIN LATERAL (
+                SELECT MIN(b.expiration_date) AS expiration_date
+                FROM "batch" AS b
+                WHERE b.product_id = s.product_id
+                  AND b.store_id = s.store_id
+                  AND b.active IS TRUE
+                  AND b.current_balance > 0
+            ) AS current_batch ON TRUE
+            WHERE s.id = %s
+              AND s.store_id = %s
+              AND {visibility}
+              AND {ALLOWED_SUGGESTION_TYPES_CLAUSE}
+              AND {NOT_EXPIRED_SUGGESTION_CLAUSE}
+            LIMIT 1
+        """
+        row = self._fetch_one(sql, [suggestion_id, store_id])
+        return None if row is None else _detail_record_from_row(row)
+
+    @staticmethod
+    def _require_a2a_manager_store(context: ProductWorkflowContext) -> int:
+        if context.role_id != MANAGER_ROLE_ID or context.a2a_store_id is None:
+            raise PermissionError("Loja A2A sem acesso ao Product Workflow")
+        return context.a2a_store_id
 
     @staticmethod
     def _require_supported_role(context: ProductWorkflowContext) -> int:

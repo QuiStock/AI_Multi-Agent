@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import re
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Annotated, Any
 
-import jwt
 from a2a.types import a2a_pb2
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -16,6 +17,7 @@ from pymongo.collection import Collection
 from pymongo.errors import DuplicateKeyError
 
 from src import config
+from src.agents.product_workflow.filters import MANAGER_ROLE_ID
 from src.api.controllers.conversation_controller import ConversationController
 from src.api.dependencies import (
     get_conversation_controller,
@@ -24,17 +26,17 @@ from src.api.dependencies import (
 )
 from src.api.errors import InputRejectedError
 from src.api.schemas.conversation import ConversationRequest
-from src.auth.account_repository import PostgresAccountRepository
-from src.auth.errors import (
-    AccountLookupError,
-    AuthenticationConfigurationError,
-    InvalidCredentialError,
-)
-from src.auth.models import AuthenticatedPrincipal
-from src.auth.service import AuthenticationService
-from src.auth.token import JWTEmailDecoder
 
 router = APIRouter(tags=["a2a"])
+
+
+@dataclass(frozen=True, slots=True)
+class A2APrincipal:
+    client_id: str
+    store_id: int
+    external_user_id: str
+    email: str
+    role_id: int = MANAGER_ROLE_ID
 
 
 def _bearer(value: str | None) -> str:
@@ -46,42 +48,58 @@ def _bearer(value: str | None) -> str:
 def get_a2a_principal(
     request: Request,
     authorization: Annotated[str | None, Header()] = None,
-    x_quistock_user_authorization: Annotated[str | None, Header()] = None,
-) -> AuthenticatedPrincipal:
+    x_quistock_store_id: Annotated[str | None, Header()] = None,
+    x_external_user_id: Annotated[str | None, Header()] = None,
+) -> A2APrincipal:
     settings = config.get_settings()
-    if not settings.a2a_inbound_service_token or not settings.a2a_context_secret:
+    if (
+        not settings.a2a_inbound_service_token
+        or not settings.a2a_context_secret
+        or settings.a2a_inbound_store_id is None
+        or not settings.a2a_inbound_client_id
+    ):
         raise HTTPException(status_code=503, detail="A2A não configurado")
     token = _bearer(authorization)
     if not hmac.compare_digest(token, settings.a2a_inbound_service_token):
         raise HTTPException(status_code=401, detail="Credencial A2A inválida")
-    user_token = _bearer(x_quistock_user_authorization)
+
+    if not x_quistock_store_id or not re.fullmatch(r"[0-9]{1,10}", x_quistock_store_id):
+        raise HTTPException(status_code=422, detail="store_id A2A inválido")
+    store_id = int(x_quistock_store_id)
+    if store_id < 1 or store_id > 2_147_483_647:
+        raise HTTPException(status_code=422, detail="store_id A2A inválido")
+    if store_id != settings.a2a_inbound_store_id:
+        raise HTTPException(status_code=403, detail="Loja não autorizada")
+
+    external_user_id = (x_external_user_id or "").strip()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:@-]{0,127}", external_user_id):
+        raise HTTPException(status_code=422, detail="Identificador externo inválido")
+
     try:
-        if not settings.jwt_secret:
-            raise AuthenticationConfigurationError("JWT secret is not configured")
-        jwt.decode(
-            user_token,
-            settings.jwt_secret,
-            algorithms=["HS256"],
-            options={"require": ["email", "exp"], "verify_aud": False},
-        )
-        service = AuthenticationService(
-            JWTEmailDecoder(settings.jwt_secret),
-            PostgresAccountRepository(
-                get_postgres_pool(request),
-                statement_timeout_ms=int(settings.postgres_pool_timeout_seconds * 1000),
-            ),
-        )
-        return service.authenticate(user_token)
-    except (
-        InvalidCredentialError,
-        AuthenticationConfigurationError,
-        jwt.InvalidTokenError,
-    ):
-        raise HTTPException(status_code=401, detail="Delegação inválida") from None
-    except PermissionError:
-        raise HTTPException(status_code=403, detail="Acesso não permitido") from None
-    except AccountLookupError:
-        raise HTTPException(status_code=503, detail="Identidade indisponível") from None
+        pool = get_postgres_pool(request)
+        with pool.connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT set_config('statement_timeout', %s, true)",
+                (f"{int(settings.postgres_pool_timeout_seconds * 1000)}ms",),
+            )
+            cursor.execute(
+                "SELECT 1 FROM store WHERE id = %s AND status::text = 'ACTIVE' LIMIT 1",
+                (store_id,),
+            )
+            store_exists = cursor.fetchone() is not None
+    except Exception:
+        raise HTTPException(status_code=503, detail="Loja indisponível") from None
+    if not store_exists:
+        raise HTTPException(status_code=403, detail="Loja não autorizada")
+
+    client_id = settings.a2a_inbound_client_id
+    identity = _opaque_id("principal", client_id, str(store_id), external_user_id)
+    return A2APrincipal(
+        client_id=client_id,
+        store_id=store_id,
+        external_user_id=external_user_id,
+        email=f"a2a-{identity[:40]}@integration.invalid",
+    )
 
 
 def get_a2a_response_store() -> Collection[dict[str, Any]]:
@@ -107,7 +125,10 @@ def _agent_card() -> a2a_pb2.AgentCard:
     settings = config.get_settings()
     return a2a_pb2.AgentCard(
         name="Quistock",
-        description="Assistente de FAQ e consultas comerciais autorizadas.",
+        description=(
+            "Assistente de FAQ e consultas comerciais autorizadas. "
+            "Envie X-Quistock-Store-Id e X-External-User-Id em cada mensagem."
+        ),
         version="0.1.0",
         supported_interfaces=[
             a2a_pb2.AgentInterface(
@@ -131,7 +152,9 @@ def _agent_card() -> a2a_pb2.AgentCard:
             a2a_pb2.AgentSkill(
                 id="product_flow",
                 name="Product workflow",
-                description="Consultas comerciais no escopo do usuário delegado",
+                description=(
+                    "Consultas comerciais da loja autorizada para o cliente A2A"
+                ),
                 tags=["products"],
             ),
             a2a_pb2.AgentSkill(
@@ -162,7 +185,7 @@ def agent_card() -> JSONResponse:
 @router.post("/a2a/message:send")
 def send_message(
     request_body: dict[str, Any],
-    principal: Annotated[AuthenticatedPrincipal, Depends(get_a2a_principal)],
+    principal: Annotated[A2APrincipal, Depends(get_a2a_principal)],
     controller: Annotated[ConversationController, Depends(get_conversation_controller)],
     store: Annotated[Collection[dict[str, Any]], Depends(get_a2a_response_store)],
     a2a_version: Annotated[str | None, Header()] = None,
@@ -187,16 +210,30 @@ def send_message(
         raise HTTPException(
             status_code=422, detail="Mensagem deve ter até 4000 caracteres"
         )
-    client_id = config.get_settings().a2a_inbound_client_id
-    context_id = message.context_id or _opaque_id(
-        "new-context", client_id, principal.email, message.message_id
-    )[:32]
+    client_id = principal.client_id
+    context_id = (
+        message.context_id
+        or _opaque_id(
+            "new-context",
+            client_id,
+            str(principal.store_id),
+            principal.email,
+            message.message_id,
+        )[:32]
+    )
     if len(context_id) > 128 or len(message.message_id) > 128:
         raise HTTPException(status_code=422, detail="Identificador A2A muito longo")
 
-    conversation_id = _opaque_id("context", client_id, principal.email, context_id)
+    conversation_id = _opaque_id(
+        "context", client_id, str(principal.store_id), principal.email, context_id
+    )
     request_id = _opaque_id(
-        "message", client_id, principal.email, context_id, message.message_id
+        "message",
+        client_id,
+        str(principal.store_id),
+        principal.email,
+        context_id,
+        message.message_id,
     )
     payload_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
     try:
@@ -235,6 +272,7 @@ def send_message(
                 email=principal.email,
                 role_id=principal.role_id,
                 request_id=request_id,
+                a2a_store_id=principal.store_id,
             )
         except InputRejectedError as exc:
             result = exc.response

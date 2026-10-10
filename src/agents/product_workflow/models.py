@@ -13,6 +13,7 @@ class ProductWorkflowContext(BaseModel):
 
     email: str = Field(min_length=1)
     role_id: int | None = Field(default=None, ge=1)
+    a2a_store_id: int | None = Field(default=None, ge=1)
     request_id: str = Field(min_length=1)
     trace_id: str = Field(min_length=1)
 

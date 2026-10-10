@@ -54,6 +54,7 @@ class ConversationService:
         email: str,
         role_id: int | None = None,
         request_id: str | None = None,
+        a2a_store_id: int | None = None,
     ) -> ConversationResponse:
         normalized_conversation_id = conversation_id.strip()
         if not normalized_conversation_id:
@@ -72,6 +73,8 @@ class ConversationService:
         }
         if role_id is not None:
             request_context["role_id"] = role_id
+        if a2a_store_id is not None:
+            request_context["a2a_store_id"] = a2a_store_id
         state: GraphState = {
             "request": request_context,
             "messages": [
