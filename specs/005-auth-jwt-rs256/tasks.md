@@ -9,7 +9,7 @@ Itens dependentes de decisões abertas só entram em execução depois que elas 
 | AUTH-T03 | Decidir divergência entre email assinado/local e regra para usuário inativo; `sub = user_account.id` já confirmado | Equipes Auth/API | aberto |
 | AUTH-T04 | Decidir relógio, limite de duração e falha de JWKS | Equipes Auth/API | aberto |
 | AUTH-T05 | Implementar verificador RS256/JWKS, configuração e respostas HTTP | T01, T02, T04 | planejado |
-| AUTH-T06 | Migrar principal, consulta de conta e consumidores sem ampliar acesso | T01, T03 | planejado |
+| AUTH-T06 | Migrar principal e consulta por `sub`, preservando a claim `email` para os consumidores atuais sem ampliar acesso | T01, T03 | planejado |
 | AUTH-T07 | Atualizar ambiente, deploy, documentação e auditoria | T05, T06 | planejado |
 | AUTH-T08 | Executar testes unitários, HTTP, rotação e regressão; anexar evidências | T05 a T07 | planejado |
 
