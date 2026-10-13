@@ -56,7 +56,7 @@ class FakeAccountRepository:
 def _setup(
     monkeypatch: pytest.MonkeyPatch,
     *,
-    role_id: int = 2,
+    role_code: str = "MANAGER",
     missing_account: bool = False,
     database_error: bool = False,
     account_status: str = "ACTIVE",
@@ -77,7 +77,7 @@ def _setup(
     FakeAccountRepository.result = (
         None
         if missing_account
-        else UserAccount(42, account_email, role_id, account_status, store_ids)
+        else UserAccount(42, account_email, role_code, account_status, store_ids)
     )
     FakeAccountRepository.fail = database_error
     FakeAccountRepository.looked_up_id = None
@@ -119,7 +119,8 @@ def test_missing_or_invalid_bearer_returns_401_without_running_graph(
 @pytest.mark.parametrize(
     ("options", "expected_status"),
     [
-        ({"role_id": 1}, 403),
+        ({"role_code": "REGIONAL_MANAGER"}, 403),
+        ({"role_code": "UNKNOWN"}, 403),
         ({"missing_account": True}, 401),
         ({"database_error": True}, 500),
         ({"account_status": "INACTIVE"}, 401),
@@ -138,15 +139,17 @@ def test_authentication_failures_do_not_enter_graph(
     assert graph.calls == []
 
 
+@pytest.mark.parametrize("role_code", ["MANAGER", "EMPLOYEE"])
 def test_verified_sub_email_role_and_stores_enter_graph(
     monkeypatch: pytest.MonkeyPatch,
+    role_code: str,
 ) -> None:
-    app, graph = _setup(monkeypatch)
+    app, graph = _setup(monkeypatch, role_code=role_code)
     assert _post(app).status_code == 200
     assert FakeAccountRepository.looked_up_id == 42
     assert graph.calls[0]["request"]["user_id"] == 42
     assert graph.calls[0]["request"]["email"] == "person@example.test"
-    assert graph.calls[0]["request"]["role_id"] == 2
+    assert graph.calls[0]["request"]["role_code"] == role_code
     assert graph.calls[0]["request"]["store_ids"] == [4, 9]
 
 

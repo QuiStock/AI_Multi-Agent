@@ -6,7 +6,7 @@
 |---|---|---|---|
 | CardSnapshot | Identificador do produto quando disponível, nome, categoria e atributos comerciais efetivamente exibidos no card (ex.: quantidade, validade e parâmetro sugerido) | Request do app; `source_type=client_card_snapshot` | Recebido por requisição; persistência somente conforme política de mensagens aprovada |
 | ProductCard | Mesmo contrato público do snapshot, com atributos disponíveis e referências internas necessárias para distinguir produto/sugestão | Tool SQL; `source_type=product_card_query` | Resultado transitório da consulta; não criar nova tabela |
-| AuthenticatedProductContext | Email validado, role (`2` gerente, `3` funcionário) e lojas permitidas | Dependência de autenticação/SQL no servidor | Efêmero no request/GraphState; nunca aceitar do payload do cliente |
+| AuthenticatedProductContext | Email validado, `role.code` (`MANAGER` ou `EMPLOYEE`) e lojas permitidas | Dependência de autenticação/SQL no servidor | Efêmero no request/GraphState; nunca aceitar do payload do cliente |
 | ProductCandidate | Dados estritamente necessários para distinguir resultado (ex.: nome, categoria e SKU somente se necessários) e referência interna temporária da consulta | Resultado da consulta dentro do escopo autorizado | Transitório no resultado/contexto normal da conversa; não criar armazenamento dedicado |
 | Evidence | ID estável, source type, source ID, conteúdo factual e metadata | Snapshot ou tool; reducer do grafo | `GraphState.evidences`; distinguir proveniência |
 
@@ -24,7 +24,7 @@
 
 - `suggestion(product_id, store_id)` é a origem do estado/parametrização sugeridos; `suggestion_log(suggestion_id, event)` exclui itens com evento `EXPIRED`.
 - `product(id, name, sku, category_id)` e `category(id, name)` identificam o produto; `store(id, name)` representa o estabelecimento.
-- `user_account(id, email, role_id)` e `user_store(user_id, store_id, active, unassigned_at)` são parte do contexto/escopo. A consulta deve reutilizar a identidade autenticada e validar vínculo de loja ativo.
+- `user_account(id, email, role_id)`, `role(id, code)` e `user_store(user_id, store_id, active, unassigned_at)` são parte do contexto/escopo. A consulta deve reutilizar a identidade autenticada, comparar `role.code` e validar vínculo de loja ativo.
 - Para cards do tipo pedido, a quantidade vem de `current_batch_count` com fallback `ml_batch_count`; para promoção, percentual vem de `current_discount_percentage` com fallback `ml_discount_percentage`, além dos preços/validade da promoção existentes.
 - A validade física exibida no card vem do menor `batch.expiration_date` para o produto e loja, somente entre lotes ativos com saldo positivo. Não confundir com `suggestion.promotion_valid_until`. Essa agregação precisa ser confrontada com o card real do frontend antes de produção.
 - O script não apresenta campo explícito de apresentação/embalagem em `product`; existem `sku` e `erp_id`. Se nome e categoria não bastarem para distinguir homônimos, usar SKU como identificador, sem rotulá-lo como apresentação.

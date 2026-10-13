@@ -32,6 +32,9 @@ def test_product_lookup_obeys_role_store_expired_and_read_only_grants() -> None:
                 "CREATE ROLE product_reader LOGIN PASSWORD 'test-reader-password'"
             )
             connection.execute(
+                "CREATE TABLE role (id INT PRIMARY KEY, code TEXT NOT NULL)"
+            )
+            connection.execute(
                 "CREATE TABLE user_account "
                 "(id INT, email TEXT, role_id INT, status TEXT)"
             )
@@ -61,9 +64,12 @@ def test_product_lookup_obeys_role_store_expired_and_read_only_grants() -> None:
                 "expiration_date DATE, current_balance NUMERIC, active BOOL)"
             )
             connection.execute(
+                "INSERT INTO role VALUES (81, 'EMPLOYEE'), (73, 'MANAGER')"
+            )
+            connection.execute(
                 "INSERT INTO user_account VALUES "
-                "(1, 'employee@example.test', 3, 'ACTIVE'), "
-                "(2, 'manager@example.test', 2, 'ACTIVE')"
+                "(1, 'employee@example.test', 81, 'ACTIVE'), "
+                "(2, 'manager@example.test', 73, 'ACTIVE')"
             )
             connection.execute(
                 "INSERT INTO store VALUES (10, 'ACTIVE'), (11, 'ACTIVE')"
@@ -96,8 +102,8 @@ def test_product_lookup_obeys_role_store_expired_and_read_only_grants() -> None:
             )
             connection.execute("INSERT INTO suggestion_log VALUES (200, 'EXPIRED')")
             connection.execute(
-                "GRANT SELECT ON user_account, user_store, store, product, category, "
-                "suggestion, suggestion_log, batch TO product_reader"
+                "GRANT SELECT ON role, user_account, user_store, store, product, "
+                "category, suggestion, suggestion_log, batch TO product_reader"
             )
 
         reader_params = conninfo_to_dict(admin_dsn)
@@ -108,19 +114,19 @@ def test_product_lookup_obeys_role_store_expired_and_read_only_grants() -> None:
         try:
             employee = ProductCardRepository(pool).search(
                 email="employee@example.test",
-                role_id=3,
+                role_code="EMPLOYEE",
                 store_ids=(10,),
                 product_query="SKU-4",
             )
             employee_denied = ProductCardRepository(pool).search(
                 email="employee@example.test",
-                role_id=3,
+                role_code="EMPLOYEE",
                 store_ids=(10,),
                 product_query="SKU-2",
             )
             manager = ProductCardRepository(pool).search(
                 email="manager@example.test",
-                role_id=2,
+                role_code="MANAGER",
                 store_ids=(10,),
                 product_query="SKU-2",
             )
@@ -130,14 +136,14 @@ def test_product_lookup_obeys_role_store_expired_and_read_only_grants() -> None:
             assert [card.sku for card in manager] == ["SKU-2"]
             outside_store = ProductCardRepository(pool).search(
                 email="manager@example.test",
-                role_id=2,
+                role_code="MANAGER",
                 store_ids=(10,),
                 product_query="SKU-3",
             )
             assert outside_store == []
             expired = ProductCardRepository(pool).search(
                 email="employee@example.test",
-                role_id=3,
+                role_code="EMPLOYEE",
                 store_ids=(10,),
                 product_query="SKU-1",
             )

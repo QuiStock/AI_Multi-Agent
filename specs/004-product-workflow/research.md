@@ -36,6 +36,7 @@ Este documento registra pesquisa técnica e alternativas para decisões necessá
 
 ## R-005 — Capacidades e dependências existentes
 
+- **Atualização na branch `refactor`**: as observações abaixo descrevem o estado anterior. A autenticação atual valida JWT RS256 por JWKS, consulta `user_account` por `sub`, confere `email` e carrega `role.code` e lojas ativas para o principal e o grafo. A autorização usa `MANAGER`/`EMPLOYEE` sem IDs fixos.
 - **Status**: `implementado` para estrutura atual após integrar `002-autenticacao-api-ia` e `guardrail-semantic` em `product_workflow`; a feature ainda não implementada.
 - `AGENTS.md` confirma que a API ativa atualmente apenas FAQ; `product_workflow` tem tipo de rota, mas não card/executor/tool registrados.
 - `AuthenticatedPrincipal` expõe `email` e `role_id`; `/conversations/{conversation_id}/messages` autentica o Bearer JWE e atualmente passa somente email pelo controller/service ao `GraphState`. A feature deve propagar também o role ID autenticado; não aceitar role no body.

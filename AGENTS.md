@@ -29,7 +29,7 @@ Snapshot atual:
 - A composição de produção em `src/api/dependencies.py` ativa as rotas `faq` e
   `product_workflow` quando PostgreSQL está configurado. O Product Workflow
   recebe snapshot de card como evidência de origem cliente e tem lookup fixo,
-  parametrizado e somente leitura, restrito a role 2/3, lojas ativas e itens
+  parametrizado e somente leitura, restrito a `MANAGER`/`EMPLOYEE`, lojas ativas e itens
   sem evento `EXPIRED`. Grants efetivos ainda precisam de validação no ambiente.
 - MCP e A2A são requisitos acadêmicos futuros; não são capacidades ativas
   nesta implementação.
@@ -106,8 +106,8 @@ recalcula regras do ML e deve recusar quando não houver suporte suficiente.
 
 É somente leitura: usa o snapshot recebido para o produto do card ou consulta
 outra sugestão por query fixa parametrizada. O escopo de loja vem dos IDs de
-lojas ativas carregados por `user_account.id`, junto de `email` e `role_id`
-autenticados: role 3 vê `available_for_triage`; role 2 vê
+lojas ativas carregados por `user_account.id`, junto de `email` e `role.code`
+autenticados: `EMPLOYEE` vê `available_for_triage`; `MANAGER` vê
 `SENT_TO_MANAGER`; ambas excluem `suggestion_log.event = 'EXPIRED'`. Snapshot
 tem proveniência cliente, nunca banco. Não recalcula ML, altera sugestões,
 cria pedidos, ativa promoções ou escreve no PostgreSQL.
@@ -211,7 +211,7 @@ Ownership de escrita:
 faz merge por `evidence_id`. Não adicione chaves ad hoc.
 
 O router recebe `messages` sanitizadas e `request` com `request_id`, `user_id`,
-`email`, `role_id`, `store_ids`, `conversation_id`, `sent_at` e
+`email`, `role_code`, `store_ids`, `conversation_id`, `sent_at` e
 `sanitized_message`. O compiler recebe todos os
 resultados/evidências disponíveis. O judge recebe o draft e as evidências. A
 resposta final é produzida pelo guardrail/finalização, não pelo judge.
@@ -234,7 +234,9 @@ Endpoint: `POST /api/v1/conversations/{conversation_id}/messages`, autenticado
 por `Authorization: Bearer <JWT>` assinado com RS256. A API valida o JWT pelo
 JWKS configurado (`JWT_JWKS_URL`), `JWT_ISSUER`, audience `quistock-api` e
 expiração. O `sub` é `user_account.id` decimal; a claim `email` deve coincidir
-com o banco. Role e lojas ativas são carregadas antes do grafo. Token inválido
+com o banco. `role.code` e lojas ativas são carregados antes do grafo. FAQ e
+Product Workflow aceitam `MANAGER` e `EMPLOYEE`; `REGIONAL_MANAGER` recebe 403.
+Token inválido
 ou expirado recebe 401; cargo sem acesso ou sem loja ativa recebe 403.
 `ConversationRequest` rejeita campos extras, mensagem vazia e mensagens acima
 de 4.000 caracteres. A resposta contém `conversation_id`, `request_id`,
@@ -302,7 +304,7 @@ troca o conteúdo por resposta controlada; nunca expõe regra interna.
 
 As rotas de conversa recebem JWT Bearer RS256 e validam assinatura, issuer,
 audience e expiração pelo JWKS confiável. A API consulta `user_account` por
-`sub`, compara o email assinado, carrega cargo e lojas ativas. A identidade não
+`sub`, compara o email assinado, carrega `role.code` e lojas ativas. A identidade não
 vem do body nem da query e é propagada em todo o fluxo de memória. Consultas de
 identidade ao PostgreSQL usam credencial somente de leitura e SQL parametrizado.
 Ao implementar tools comerciais, derive role/store scope no servidor, use

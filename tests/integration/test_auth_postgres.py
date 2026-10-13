@@ -29,6 +29,9 @@ def test_read_only_account_lookup_against_postgres_container() -> None:
                 "CREATE ROLE ai_auth_reader LOGIN PASSWORD 'test-only-password'"
             )
             connection.execute(
+                "CREATE TABLE role (id BIGINT PRIMARY KEY, code TEXT NOT NULL)"
+            )
+            connection.execute(
                 "CREATE TABLE user_account "
                 "(id BIGINT PRIMARY KEY, email TEXT, role_id INTEGER, status TEXT)"
             )
@@ -40,9 +43,10 @@ def test_read_only_account_lookup_against_postgres_container() -> None:
                 "(user_id BIGINT, store_id BIGINT, active BOOLEAN, "
                 "unassigned_at TIMESTAMPTZ)"
             )
+            connection.execute("INSERT INTO role VALUES (91, 'MANAGER')")
             connection.execute(
                 "INSERT INTO user_account VALUES "
-                "(42, 'reader@example.test', 2, 'ACTIVE')"
+                "(42, 'reader@example.test', 91, 'ACTIVE')"
             )
             connection.execute(
                 "INSERT INTO store VALUES (4, 'ACTIVE'), (9, 'INACTIVE')"
@@ -51,7 +55,8 @@ def test_read_only_account_lookup_against_postgres_container() -> None:
                 "INSERT INTO user_store VALUES (42, 4, TRUE, NULL), (42, 9, TRUE, NULL)"
             )
             connection.execute(
-                "GRANT SELECT ON user_account, store, user_store TO ai_auth_reader"
+                "GRANT SELECT ON role, user_account, store, user_store "
+                "TO ai_auth_reader"
             )
 
         connection_params = conninfo_to_dict(admin_dsn)
@@ -69,13 +74,13 @@ def test_read_only_account_lookup_against_postgres_container() -> None:
             assert account is not None
             assert account.user_id == 42
             assert account.email == "reader@example.test"
-            assert account.role_id == 2
+            assert account.role_code == "MANAGER"
             assert account.store_ids == (4,)
 
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 with pool.connection() as connection:
                     connection.execute(
-                        "UPDATE user_account SET role_id = 1 WHERE id = 42"
+                        "UPDATE user_account SET role_id = 0 WHERE id = 42"
                     )
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 with pool.connection() as connection:

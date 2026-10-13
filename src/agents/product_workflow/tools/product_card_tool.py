@@ -42,7 +42,7 @@ def create_product_card_tool(
     *,
     repository: ProductCardRepository,
     email: str,
-    role_id: int,
+    role_code: str,
     store_ids: tuple[int, ...],
     request_id: str,
 ) -> BaseTool:
@@ -52,7 +52,7 @@ def create_product_card_tool(
         return _lookup_product_cards(
             repository=repository,
             email=email,
-            role_id=role_id,
+            role_code=role_code,
             store_ids=store_ids,
             request_id=request_id,
             product_query=product_query,
@@ -73,7 +73,7 @@ def _lookup_product_cards(
     *,
     repository: ProductCardRepository,
     email: str,
-    role_id: int,
+    role_code: str,
     store_ids: tuple[int, ...],
     request_id: str,
     product_query: str,
@@ -87,7 +87,7 @@ def _lookup_product_cards(
     try:
         cards = repository.search(
             email=email,
-            role_id=role_id,
+            role_code=role_code,
             store_ids=store_ids,
             product_query=product_query,
         )

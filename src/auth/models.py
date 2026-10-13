@@ -7,7 +7,7 @@ from dataclasses import dataclass
 class AuthenticatedPrincipal:
     user_id: int
     email: str
-    role_id: int
+    role_code: str
     store_ids: tuple[int, ...]
 
 
@@ -15,7 +15,7 @@ class AuthenticatedPrincipal:
 class UserAccount:
     user_id: int
     email: str
-    role_id: int
+    role_code: str
     status: str
     store_ids: tuple[int, ...]
 

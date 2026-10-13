@@ -14,3 +14,11 @@ Itens dependentes de decisões abertas só entram em execução depois que elas 
 | AUTH-T08 | Executar testes unitários, HTTP, rotação e regressão; anexar evidências | T05 a T07 | suíte local aprovada; integração PostgreSQL pendente de Docker |
 
 Rastreabilidade: T05 cobre RF-AUTH-001/002/003 e RNF-AUTH-001; T06 cobre RF-AUTH-004/005; T07 cobre RNF-AUTH-002; T08 comprova CA-AUTH-001 a 006.
+
+## Refatoração de autorização por código
+
+| ID | Entrega | Estado |
+| --- | --- | --- |
+| AUTH-T09 | Carregar `role.code` no lookup da conta por `sub` e propagá-lo ao principal e grafo | concluído |
+| AUTH-T10 | Aplicar códigos no acesso a FAQ e Product Workflow e na consulta comercial, sem IDs fixos | concluído |
+| AUTH-T11 | Atualizar documentação e verificar IDs variáveis, cargos sem acesso e escopo de loja | suíte local aprovada; integração PostgreSQL pendente de Docker |

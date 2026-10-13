@@ -39,7 +39,7 @@ class ConversationService:
         conversation_id: str,
         request: ConversationRequest,
         email: str,
-        role_id: int,
+        role_code: str,
         user_id: int,
         store_ids: tuple[int, ...],
     ) -> ConversationResponse:
@@ -52,7 +52,7 @@ class ConversationService:
             "request": {
                 "request_id": request_id,
                 "email": email,
-                "role_id": role_id,
+                "role_code": role_code,
                 "user_id": user_id,
                 "store_ids": list(store_ids),
                 "conversation_id": normalized_conversation_id,

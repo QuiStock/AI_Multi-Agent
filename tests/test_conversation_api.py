@@ -49,7 +49,9 @@ def app_client():  # type: ignore[no-untyped-def]
     app = create_app()
     app.dependency_overrides[get_graph] = lambda: graph
     app.dependency_overrides[get_authenticated_principal] = lambda: (
-        AuthenticatedPrincipal(user_id=42, email="user-1", role_id=2, store_ids=(4,))
+        AuthenticatedPrincipal(
+            user_id=42, email="user-1", role_code="MANAGER", store_ids=(4,)
+        )
     )
     with TestClient(app) as client:
         yield client, graph
@@ -85,7 +87,7 @@ def test_conversation_endpoint_invokes_graph_and_returns_metadata(app_client) ->
     assert graph.state["request"]["email"] == "user-1"
     assert graph.state["request"]["user_id"] == 42
     assert graph.state["request"]["store_ids"] == [4]
-    assert graph.state["request"]["role_id"] == 2
+    assert graph.state["request"]["role_code"] == "MANAGER"
     assert graph.state["request"]["sent_at"] == datetime(
         2026,
         9,
@@ -151,7 +153,9 @@ def test_conversation_endpoint_returns_controlled_input_rejection() -> None:
     app = create_app()
     app.dependency_overrides[get_graph] = lambda: graph
     app.dependency_overrides[get_authenticated_principal] = lambda: (
-        AuthenticatedPrincipal(user_id=42, email="user-1", role_id=2, store_ids=(4,))
+        AuthenticatedPrincipal(
+            user_id=42, email="user-1", role_code="MANAGER", store_ids=(4,)
+        )
     )
 
     with TestClient(app) as client:
@@ -169,7 +173,9 @@ def test_conversation_endpoint_maps_closed_conversation_to_conflict() -> None:
     app = create_app()
     app.dependency_overrides[get_graph] = lambda: FailingGraph()
     app.dependency_overrides[get_authenticated_principal] = lambda: (
-        AuthenticatedPrincipal(user_id=42, email="user-1", role_id=2, store_ids=(4,))
+        AuthenticatedPrincipal(
+            user_id=42, email="user-1", role_code="MANAGER", store_ids=(4,)
+        )
     )
 
     with TestClient(app) as client:

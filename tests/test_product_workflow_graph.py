@@ -77,7 +77,7 @@ def test_lookup_error_uses_terminal_fallback_without_compiler_or_judge() -> None
             "request": {
                 "request_id": "req-1",
                 "email": "user@example.test",
-                "role_id": 3,
+                "role_code": "EMPLOYEE",
                 "conversation_id": "conv-1",
                 "sanitized_message": "Consulte Leite",
             },
