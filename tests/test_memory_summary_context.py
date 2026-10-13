@@ -230,7 +230,7 @@ def test_service_uses_qdrant_text_after_mongo_owner_status_validation() -> None:
     assert selection["source"] == "semantic"
 
 
-def test_service_falls_back_to_recent_qdrant_payload() -> None:
+def test_service_returns_no_memory_without_relevant_match() -> None:
     qdrant = FakeQdrant(
         [
             SimpleNamespace(
@@ -249,18 +249,15 @@ def test_service_falls_back_to_recent_qdrant_payload() -> None:
         "O que comprei?",
     )
 
-    assert summaries[0]["conversation_id"] == "low"
-    assert summaries[0]["summary"] == "Summary for low."
+    assert summaries == []
     selection = _service(qdrant, repository).search_context(
         email="user-1",
         conversation_id="current-1",
         query="O que comprei?",
     )
-    assert selection["source"] == "fallback"
-    assert repository.requested_ids == ["low"]
-    assert qdrant.scroll_query is not None
-    assert qdrant.scroll_query["order_by"].key == "updated_at"
-    assert qdrant.scroll_query["limit"] == 3
+    assert selection == {"source": "none", "results": []}
+    assert repository.requested_ids == []
+    assert qdrant.scroll_query is None
 
 
 def test_mongo_owner_status_validation_never_projects_summary_fields() -> None:

@@ -10,6 +10,7 @@ class FakeRetriever:
     def __init__(self, evidences: list[dict[str, object]]) -> None:
         self.evidences = evidences
         self.allowed_audiences: tuple[str, ...] | None = None
+        self.calls = 0
 
     def search(
         self,
@@ -17,6 +18,7 @@ class FakeRetriever:
         *,
         allowed_audiences: tuple[str, ...],
     ) -> list[dict[str, object]]:
+        self.calls += 1
         self.allowed_audiences = allowed_audiences
         return self.evidences
 
@@ -59,6 +61,20 @@ def test_faq_search_serializes_retrieved_evidence() -> None:
 
     assert result["resultados"][0]["arquivo"] == "manual.md"
     assert result["resultados"][0]["relevancia"] == 0.91
+
+
+def test_faq_search_executes_only_one_lookup_per_turn() -> None:
+    retriever = FakeRetriever([])
+    search_tool = create_faq_search_tool(
+        retriever,
+        allowed_audiences=("shared", "employee"),
+    )
+
+    first = search_tool.invoke({"query": "Primeira pergunta"})
+    second = search_tool.invoke({"query": "Outra pergunta"})
+
+    assert second == first
+    assert retriever.calls == 1
 
 
 def test_faq_executor_binds_manager_scope_per_request(monkeypatch) -> None:

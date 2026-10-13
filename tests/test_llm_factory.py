@@ -135,24 +135,28 @@ def test_router_uses_default_structured_model(monkeypatch: Any) -> None:
     assert captured["schema"] is RouteDecision
 
 
-def test_compiler_uses_openai_structured_model(monkeypatch: Any) -> None:
+def test_compiler_uses_openai_create_agent(monkeypatch: Any) -> None:
     sentinel_model = object()
+    sentinel_agent = object()
     captured: dict[str, Any] = {}
 
-    def fake_structured_model(schema: type[Any]) -> object:
-        captured["schema"] = schema
-        return sentinel_model
+    def fake_agent_factory(**kwargs: Any) -> object:
+        captured.update(kwargs)
+        return sentinel_agent
 
-    monkeypatch.setattr(
-        compiler_module,
-        "get_structured_model",
-        fake_structured_model,
-    )
+    monkeypatch.setattr(compiler_module, "llm_openai", sentinel_model)
+    monkeypatch.setattr(compiler_module, "create_agent_from_card", fake_agent_factory)
 
     executor = compiler_module.CompilerExecutor()
 
     assert executor.model is sentinel_model
-    assert captured == {"schema": CompilerResult}
+    assert executor.agent is sentinel_agent
+    assert captured == {
+        "card": executor.card,
+        "model": sentinel_model,
+        "tools": [],
+        "response_format": CompilerResult,
+    }
 
 
 def test_judge_uses_openai_structured_model(monkeypatch: Any) -> None:

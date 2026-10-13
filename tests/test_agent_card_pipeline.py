@@ -59,7 +59,7 @@ def test_factory_resolves_card_tools_and_builds_agent(
     monkeypatch.setattr(factory, "create_agent", fake_create_agent)
 
     result = factory.create_agent_from_card(
-        card=FAQ_CARD,
+        card=FAQ_CARD.model_copy(update={"tools": FAQ_CARD.tools[:1]}),
         model="fake-model",
     )
 

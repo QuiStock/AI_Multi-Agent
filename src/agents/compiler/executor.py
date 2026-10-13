@@ -6,19 +6,33 @@ from typing import Any
 from langchain_core.messages import (
     AnyMessage,
     HumanMessage,
-    SystemMessage,
 )
 
 from src.agents.compiler.card import COMPILER_CARD
+from src.agents.factory import create_agent_from_card
 from src.graphs.contracts import CompilerResult
 from src.graphs.state import GraphState, ResponseDraft
-from src.llm_factory import get_structured_model
+from src.llm_factory import llm_openai
 
 
 class CompilerExecutor:
-    def __init__(self, model: Any | None = None) -> None:
+    def __init__(
+        self,
+        model: Any | None = None,
+        *,
+        agent_factory: Any | None = None,
+    ) -> None:
         self.card = COMPILER_CARD
-        self.model = get_structured_model(CompilerResult) if model is None else model
+        self.model = llm_openai if model is None else model
+        self.agent_factory = (
+            create_agent_from_card if agent_factory is None else agent_factory
+        )
+        self.agent = self.agent_factory(
+            card=self.card,
+            model=self.model,
+            tools=[],
+            response_format=CompilerResult,
+        )
 
     def _compiler_messages(
         self,
@@ -51,11 +65,7 @@ class CompilerExecutor:
                 )
             )
 
-        return [
-            SystemMessage(content=self.card.system_prompt_template),
-            *state.get("messages", []),
-            context,
-        ]
+        return [*state.get("messages", []), context]
 
     def invoke(
         self,
@@ -69,8 +79,10 @@ class CompilerExecutor:
             }
 
         try:
-            result = self.model.invoke(self._compiler_messages(state))
-
+            raw_result = self.agent.invoke({"messages": self._compiler_messages(state)})
+            if not isinstance(raw_result, dict):
+                raise TypeError("A saída do compiler agent deve ser um dicionário")
+            result = raw_result.get("structured_response")
             if not isinstance(result, CompilerResult):
                 result = CompilerResult.model_validate(result)
 

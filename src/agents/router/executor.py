@@ -3,14 +3,14 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from langchain_core.messages import AnyMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AnyMessage, SystemMessage
 
 from src.agents.factory import create_agent_from_card
 from src.agents.router.card import ROUTER_CARD
 from src.agents.router.tools.search_conversation_summaries import (
     SummarySearchService,
-    SummarySearchToolContext,
     build_search_conversation_summaries_tool,
+    resolve_summary_tool_context,
 )
 from src.graphs.contracts import RouteDecision
 from src.graphs.state import RoutingDecision
@@ -92,17 +92,11 @@ class RouterExecutor:
         request_context: Mapping[str, Any] | None = None,
     ) -> RoutingDecision:
         try:
-            tool_context = self._tool_context(messages, request_context)
+            tool_context = resolve_summary_tool_context(messages, request_context)
             if self.summary_search_service is not None and tool_context is not None:
                 tool = build_search_conversation_summaries_tool(
                     service=self.summary_search_service,
-                    context=SummarySearchToolContext(
-                        email=tool_context["email"],
-                        conversation_id=tool_context["conversation_id"],
-                        query=tool_context["query"],
-                        request_id=tool_context["request_id"],
-                        trace_id=tool_context["trace_id"],
-                    ),
+                    context=tool_context,
                 )
                 agent = self.agent_factory(
                     card=self.card,
@@ -129,45 +123,3 @@ class RouterExecutor:
                 reason=("Não foi possível classificar a solicitação com segurança."),
             )
         return self._normalize_decision(decision)
-
-    @staticmethod
-    def _tool_context(
-        messages: Sequence[AnyMessage],
-        request_context: Mapping[str, Any] | None,
-    ) -> dict[str, str] | None:
-        if request_context is None:
-            return None
-        email = request_context.get("email")
-        conversation_id = request_context.get("conversation_id")
-        request_id = request_context.get("request_id")
-        query = next(
-            (
-                message.content
-                for message in reversed(messages)
-                if isinstance(message, HumanMessage)
-                and isinstance(message.content, str)
-                and message.content.strip()
-            ),
-            None,
-        )
-        if not isinstance(email, str) or not email.strip():
-            return None
-        if not isinstance(conversation_id, str) or not conversation_id.strip():
-            return None
-        if not isinstance(request_id, str) or not request_id.strip():
-            return None
-        if not isinstance(query, str) or not query.strip():
-            return None
-        trace_id = request_context.get("trace_id")
-        resolved_trace_id = (
-            trace_id.strip()
-            if isinstance(trace_id, str) and trace_id.strip()
-            else request_id
-        )
-        return {
-            "email": email,
-            "conversation_id": conversation_id,
-            "request_id": request_id,
-            "query": query,
-            "trace_id": resolved_trace_id,
-        }

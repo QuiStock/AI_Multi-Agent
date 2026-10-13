@@ -77,8 +77,8 @@ HTTP -> input_guardrail -> context_enrichment -> normalize_user_message
 
 Rotas de esclarecimento, fora de escopo, entrada bloqueada e juiz bloqueado
 terminam em respostas controladas. A memória de retomada ocorre antes do
-router; a busca semântica de resumos é opcional e só existe quando o serviço é
-injetado no `RouterExecutor`.
+router; a busca semântica opcional está conectada ao router e aos agentes
+especializados. Um resultado buscado pelo router é compartilhado pelo estado.
 
 ## 1. Quem é cada agente
 
@@ -94,7 +94,8 @@ Guardrails não são agentes: são controles obrigatórios do fluxo.
 
 ### Router
 
-Pode classificar em `faq`, `clarification_required` ou `out_of_scope`, usar o
+Pode classificar em `faq`, `product_workflow`, `clarification_required` ou
+`out_of_scope`, usar o
 contexto recente e, quando configurado, chamar
 `search_conversation_summaries`. Não responde ao usuário, não consulta dados
 comerciais e não cria rotas para capacidades ausentes.
@@ -133,6 +134,8 @@ controlada e toda reformulação passa novamente pelo juiz.
 ### Response Compiler
 
 Pode combinar `agent_results` e `evidences` em Markdown claro em português.
+É criado via LangChain `create_agent`, sem tools e com saída estruturada
+`CompilerResult`; cada execução faz uma única chamada ao modelo.
 Não pode criar fatos, números, datas, fontes, decisões ou operações; não pode
 alterar valores das evidências nem produzir cadeia de pensamento.
 
@@ -166,9 +169,9 @@ está registrado e `src/api/dependencies.py` define o que entra no grafo.
 
 | Agente | Tool/capacidade | Limite |
 |---|---|---|
-| Router | `search_conversation_summaries` | Somente memória do próprio usuário; até 3 resumos encerrados, score inicial `>= 0.5`, conversa atual excluída e validação posterior no MongoDB. |
-| FAQ/RAG | `faq_search` | Consulta apenas o Qdrant da coleção FAQ; `top_k=4`, relevância mínima padrão `0.30`; sem busca externa. |
-| Product Workflow | `get_suggestion_for_product`, `get_suggestion_detail` | Consultas parametrizadas e somente leitura; identidade, cargo e lojas vêm da autenticação. Cards recebidos do cliente são explicados sem consultar o banco. |
+| Router | `search_conversation_summaries` | Somente memória do próprio usuário; até 3 resumos encerrados, score inicial `>= 0.5`, conversa atual excluída e validação posterior no MongoDB. Sem resultado relevante, devolve lista vazia. |
+| FAQ/RAG | `faq_search`, `search_conversation_summaries` | `faq_search` consulta apenas o Qdrant da coleção FAQ; executa uma busca por turno, `top_k=4` e relevância mínima padrão `0.30`. Memória só resolve referências, nunca serve como fonte documental. |
+| Product Workflow | `get_suggestion_for_product`, `get_suggestion_detail`, `search_conversation_summaries` | Consultas comerciais parametrizadas e somente leitura; identidade, cargo e lojas vêm da autenticação. A memória só esclarece referência e não substitui a consulta atual ao banco. |
 | Judge | JEV via adapter interno | Validação estrutural local e julgamento semântico tipado; sem MCP, sem tools descobertas e sem fallback silencioso. |
 | Compiler | Nenhuma | Usa somente resultados e evidências já presentes no estado. |
 
@@ -177,9 +180,12 @@ Detalhes de wiring importantes:
 - A composição injeta o retriever base no `FAQExecutor`; a tool `faq_search` é
   construída por requisição com o escopo do `role_code` e não guarda role em
   estado global mutável.
-- O card do router declara a tool de memória, mas o `get_graph()` atual cria
-  `RouterExecutor()` sem `summary_search_service`; portanto essa tool não está
-  ativa no caminho HTTP padrão. Testes podem injetá-la.
+- `get_graph()` injeta o mesmo serviço de busca semântica no router, FAQ e
+  Product Workflow. Cada agente decide se chama sua própria tool; a identidade
+  e a mensagem sanitizada são vinculadas pelo servidor. O resultado fica na
+  resposta da tool e não é repassado pelo estado do grafo. Resumos encontrados
+  geram evidência de contexto anterior no resultado da tool, sem substituir
+  evidência documental ou comercial.
 - `faq_tool.py` ainda retorna `str`/JSON legado. O contrato-alvo é
   `ToolResult[FAQSearchData]`; a migração deve usar
   `src/agents/tooling/result_factory.py`, sem documentar o legado como contrato
@@ -267,7 +273,7 @@ Memória:
 
 ### Estado e contratos internos
 
-O estado usa `request`, `messages`, `memory`, guardrails, `routing_decision`,
+O estado usa `request`, `messages`, guardrails, `routing_decision`,
 `agent_results`, `evidences`, `response_draft`, `final_response`, `status` e
 `errors`. Os contratos Pydantic de fronteira são `RouteDecision`,
 `CompilerResult` e `JudgeDecision` em `src/graphs/contracts.py`.
@@ -346,7 +352,7 @@ foram avaliadas; sem evidência suficiente retorna `insufficient_evidence`.
 | Tool/DB/Qdrant indisponível | Retornar erro/partial seguro, preservar código estável e permitir retry apenas quando `retryable`; não inventar dados. |
 | Judge `missing_evidence`, `insufficient_evidence` ou `invalid` | Bloquear a resposta factual; `missing_evidence` retorna mensagem controlada sem reformulação, e outros motivos corrigíveis permitem no máximo uma reformulação antes de bloquear. |
 | Output guardrail falha | Substituir pela resposta controlada e não revelar detalhes internos. |
-| Memória sem candidatos | Seguir sem memória; se a busca falhar, observar o erro e usar somente o fallback recente permitido. |
+| Memória sem candidatos | Retornar lista vazia e, se a referência anterior for indispensável, pedir esclarecimento. Não usar resumos recentes sem relevância. |
 | Encerramento/Redis indisponível | Não fingir resumo concluído; API informa indisponibilidade e o worker/reconciliação pode tentar novamente. |
 
 Erros técnicos para tools devem usar as categorias `validation`,
@@ -358,9 +364,10 @@ Não faça retries ilimitados.
 
 - `enrich_context` só restaura histórico quando `is_resuming_conversation` está
   ativo; conversa nova não busca Qdrant automaticamente.
-- Resumos no Qdrant são filtrados por `email`, status encerrado, versão
-  validada no MongoDB e exclusão da conversa atual. O fallback permitido é de
-  até três conversas encerradas recentes.
+- Resumos no Qdrant são filtrados por `email`, status encerrado, score e
+  exclusão da conversa atual; o payload deve conter versão válida. O MongoDB
+  confirma a propriedade e o status da conversa. Não há fallback para resumos
+  recentes sem relevância semântica.
 - O encerramento é assíncrono: MongoDB registra o job, Redis Streams entrega,
   o worker faz retry limitado e o resumo incremental usa
   `summarized_through_message_id`. O mesmo `conversation_id` recebe upsert no

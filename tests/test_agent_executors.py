@@ -19,14 +19,22 @@ class FakeRouterModel:
         return self.result
 
 
-class FakeCompilerModel:
+class FakeCompilerAgent:
     def __init__(self, result: Any) -> None:
         self.result = result
-        self.messages: list[Any] | None = None
+        self.input: dict[str, Any] | None = None
 
-    def invoke(self, messages: list[Any]) -> Any:
-        self.messages = messages
-        return self.result
+    def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
+        self.input = state
+        return {"structured_response": self.result}
+
+
+class FakeCompilerAgentFactory:
+    def __init__(self, result: Any) -> None:
+        self.agent = FakeCompilerAgent(result)
+
+    def __call__(self, **_: Any) -> FakeCompilerAgent:
+        return self.agent
 
 
 def test_router_executor_normalizes_faq_route() -> None:
@@ -62,7 +70,7 @@ def test_router_executor_fails_closed_on_model_error() -> None:
 
 
 def test_compiler_executor_returns_structured_response() -> None:
-    model = FakeCompilerModel(
+    factory = FakeCompilerAgentFactory(
         CompilerResult(
             content="Resposta consolidada.",
             citations=["faq-1"],
@@ -70,7 +78,10 @@ def test_compiler_executor_returns_structured_response() -> None:
         )
     )
 
-    result = CompilerExecutor(model=model).invoke(
+    result = CompilerExecutor(
+        model=object(),
+        agent_factory=factory,
+    ).invoke(
         {
             "messages": [HumanMessage(content="Faça um resumo.")],
             "agent_results": {
@@ -97,12 +108,13 @@ def test_compiler_executor_returns_structured_response() -> None:
         "citations": ["faq-1"],
         "status": "draft",
     }
-    assert model.messages is not None
-    assert "Resultado do FAQ." in str(model.messages[-1].content)
+    assert factory.agent.input is not None
+    messages = factory.agent.input["messages"]
+    assert "Resultado do FAQ." in str(messages[-1].content)
 
 
 def test_compiler_executor_blocks_missing_outputs() -> None:
-    model = FakeCompilerModel(
+    factory = FakeCompilerAgentFactory(
         CompilerResult(
             content="não deveria ser chamado",
             citations=[],
@@ -110,21 +122,23 @@ def test_compiler_executor_blocks_missing_outputs() -> None:
         )
     )
 
-    result = CompilerExecutor(model=model).invoke(
-        {"messages": [HumanMessage(content="Faça um resumo.")]}
-    )
+    result = CompilerExecutor(
+        model=object(),
+        agent_factory=factory,
+    ).invoke({"messages": [HumanMessage(content="Faça um resumo.")]})
 
     assert result == {
         "content": "Não foi possível gerar uma resposta.",
         "citations": [],
         "status": "blocked",
     }
-    assert model.messages is None
+    assert factory.agent.input is None
 
 
 def test_compiler_executor_blocks_invalid_output() -> None:
     result = CompilerExecutor(
-        model=FakeCompilerModel({"content": "sem status"})
+        model=object(),
+        agent_factory=FakeCompilerAgentFactory({"content": "sem status"}),
     ).invoke(
         {
             "messages": [HumanMessage(content="Faça um resumo.")],

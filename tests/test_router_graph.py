@@ -37,6 +37,7 @@ def test_router_dispatches_only_to_active_faq_route() -> None:
         "outcome": "dispatch",
         "reason": "Pergunta documental.",
     }
+    assert "memory" not in result
 
 
 def test_router_keeps_clarification_as_controlled_route() -> None:
@@ -107,7 +108,7 @@ def test_router_can_call_summary_search_tool_from_authenticated_request_context(
                 "conversation_id": conversation_id,
                 "query": query,
             }
-            return {"source": "fallback", "results": []}
+            return {"source": "none", "results": []}
 
     service = FakeSummaryService()
     captured: dict[str, Any] = {}
@@ -156,3 +157,4 @@ def test_router_can_call_summary_search_tool_from_authenticated_request_context(
     assert captured["tools"][0].name == "search_conversation_summaries"
     assert captured["response_format"] is RouteDecision
     assert result["routing_decision"]["route"] == "faq"
+    assert "memory" not in result

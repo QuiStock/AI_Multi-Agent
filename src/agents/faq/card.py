@@ -31,7 +31,14 @@ FAQ_CARD = AgentCard(
                     required=True,
                 ),
             ],
-        )
+        ),
+        ToolBinding(
+            id="search_conversation_summaries",
+            name="Buscar contexto de conversas anteriores",
+            description=(
+                "Busca resumos relevantes do próprio usuário quando necessário."
+            ),
+        ),
     ],
     tags=["faq", "rag", "documentos"],
     routing_intents=["faq", "politicas", "processos"],
