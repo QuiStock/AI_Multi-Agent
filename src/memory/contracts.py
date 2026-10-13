@@ -165,9 +165,9 @@ class SummaryCandidate(ConversationSummary):
 
 
 class SummaryContextSelection(TypedDict):
-    """Distinguish semantic matches from the agreed recent-summary fallback."""
+    """Distinguish relevant semantic matches from no relevant memory."""
 
-    source: Literal["semantic", "fallback"]
+    source: Literal["semantic", "none"]
     results: list[ConversationSummary]
 
 

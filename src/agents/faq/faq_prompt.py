@@ -26,6 +26,11 @@ Faça no máximo uma chamada por mensagem. Se a pergunta tiver mais de uma
 parte, faça uma única consulta contendo todo o contexto necessário.
 
 Não responda com conhecimento próprio antes de consultar a ferramenta.
+
+`search_conversation_summaries` é opcional e só serve para resolver uma
+referência explícita a conversa anterior. Não a use como fonte documental nem
+substitua `faq_search` por memória. Se a referência necessária não for
+encontrada, peça esclarecimento sem inventar o assunto.
 </USO_DA_FERRAMENTA>
 
 <REGRAS_DE_EVIDENCIA>

@@ -6,8 +6,6 @@ from typing import Annotated, Any, Literal, NotRequired, TypedDict
 from langchain_core.messages import AnyMessage
 from langgraph.graph import add_messages
 
-from src.memory.contracts import ConversationSummary
-
 RouteName = Literal[
     "faq",
     "product_workflow",
@@ -36,11 +34,6 @@ class RequestContext(TypedDict):
     is_resuming_conversation: NotRequired[bool]
     trace_id: NotRequired[str]
     product_card: NotRequired[dict[str, Any] | None]
-
-
-class MemoryContext(TypedDict):
-    previous_conversation_summaries: list[ConversationSummary]
-    summary_context_loaded: NotRequired[bool]
 
 
 class InputGuardrailResult(TypedDict):
@@ -169,8 +162,6 @@ class GraphState(TypedDict, total=False):
         list[AnyMessage],
         add_messages,
     ]
-
-    memory: NotRequired[MemoryContext | None]
 
     input_guardrail: InputGuardrailResult
     output_guardrail: OutputGuardrailResult

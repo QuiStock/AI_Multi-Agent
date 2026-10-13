@@ -6,7 +6,6 @@ from langgraph.graph import add_messages
 from src.graphs.state import (
     FAQResult,
     GraphState,
-    MemoryContext,
     RoutingDecision,
     merge_agent_results,
     merge_evidence,
@@ -62,27 +61,6 @@ def test_evidence_reducer_replaces_duplicate_ids_instead_of_appending() -> None:
     merged = merge_evidence([first], [retry])
 
     assert merged == [retry]
-
-
-def test_memory_is_optional_in_shared_state() -> None:
-    memory: MemoryContext = {
-        "previous_conversation_summaries": [],
-    }
-    state_without_memory: GraphState = {
-        "request": {
-            "request_id": "request-1",
-            "email": "user-1",
-            "conversation_id": "conversation-1",
-        },
-        "messages": [HumanMessage(content="Olá")],
-    }
-    state_with_memory: GraphState = {
-        **state_without_memory,
-        "memory": memory,
-    }
-
-    assert "memory" not in state_without_memory
-    assert state_with_memory["memory"] == memory
 
 
 def test_routing_decision_is_separate_from_turn_status() -> None:

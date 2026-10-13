@@ -8,6 +8,9 @@ from src.agents.factory import create_agent_from_card
 from src.agents.faq.ingestion.audience import Audience
 from src.agents.faq.retrieval.qdrant_retriever import QdrantRetriever
 from src.agents.faq.tools.faq_tool import create_faq_search_tool
+from src.agents.memory_context import memory_tool_for_state
+from src.agents.router.tools.search_conversation_summaries import SummarySearchService
+from src.graphs.state import GraphState
 from src.llm_factory import llm_openai
 
 from .card import FAQ_CARD
@@ -23,10 +26,12 @@ class FAQExecutor:
         retriever: QdrantRetriever,
         model: Any | None = None,
         agent_factory: Any | None = None,
+        summary_search_service: SummarySearchService | None = None,
     ) -> None:
         self.card = FAQ_CARD
         self.retriever = retriever
         self.model = llm_openai if model is None else model
+        self.summary_search_service = summary_search_service
         self.agent_factory = (
             create_agent_from_card if agent_factory is None else agent_factory
         )
@@ -45,14 +50,24 @@ class FAQExecutor:
             self.retriever,
             allowed_audiences=allowed_audiences,
         )
+        graph_state = cast(GraphState, state)
+        memory_tool = memory_tool_for_state(
+            service=self.summary_search_service, state=graph_state
+        )
+        tools = [search_tool, *([memory_tool] if memory_tool is not None else [])]
+        card = (
+            self.card
+            if memory_tool is not None
+            else self.card.model_copy(update={"tools": self.card.tools[:1]})
+        )
         agent = self.agent_factory(
-            card=self.card,
+            card=card,
             model=self.model,
-            tools=[search_tool],
+            tools=tools,
         )
         raw_result = cast(
             dict[str, Any],
-            agent.invoke({"messages": state.get("messages", [])}),
+            agent.invoke({"messages": graph_state.get("messages", [])}),
         )
 
         messages = cast(

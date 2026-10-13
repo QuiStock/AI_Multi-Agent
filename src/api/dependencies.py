@@ -26,15 +26,11 @@ from src.agents.product_workflow.repository import (
 )
 from src.agents.router.executor import RouterExecutor
 from src.api.controllers.conversation_controller import ConversationController
-from src.api.controllers.conversation_delete_controller import (
-    ConversationDeleteController,
-)
 from src.api.controllers.conversation_end_controller import ConversationEndController
 from src.api.controllers.conversation_history_controller import (
     ConversationHistoryController,
 )
 from src.api.controllers.conversation_list_controller import ConversationListController
-from src.api.services.conversation_delete_service import ConversationDeleteService
 from src.api.services.conversation_end_service import ConversationEndService
 from src.api.services.conversation_history_service import ConversationHistoryService
 from src.api.services.conversation_list_service import ConversationListService
@@ -64,10 +60,10 @@ from src.memory.checkpointer import create_local_checkpointer
 from src.memory.enrich_context import ConversationContextEnricher
 from src.memory.message_service import MemoryMessageService
 from src.memory.mongo_repository import MongoConversationRepository
+from src.memory.service import SummaryContextService, SummarySearchConfig
 from src.memory.summary_job_repository import MongoSummaryJobRepository
 from src.memory.summary_queue import RedisSummaryQueue
 from src.memory.summary_scheduler import (
-    ConversationDeletionScheduler,
     ConversationSummaryScheduler,
 )
 from src.observability.ai_usage_repository import (
@@ -250,6 +246,16 @@ def get_graph(request: Request) -> CompiledStateGraph:
     embedding_provider = GoogleEmbeddingProvider(
         usage_repository=get_ai_usage_repository()
     )
+    summary_search_service = SummaryContextService(
+        repository=repository,
+        qdrant=qdrant_client,
+        embed_query=embedding_provider.embed_query,
+        search_config=SummarySearchConfig(
+            collection_name=settings.memory_summary_collection,
+            top_k=settings.memory_summary_top_k,
+            min_score=settings.memory_summary_min_score,
+        ),
+    )
     faq_store = QdrantStore(
         qdrant_client=qdrant_client,
         collection_name=settings.faq_vectorstore_collection,
@@ -260,12 +266,16 @@ def get_graph(request: Request) -> CompiledStateGraph:
         top_k=settings.faq_retrieval_k,
         min_score=settings.faq_retrieval_min_relevance,
     )
-    faq_executor = FAQExecutor(retriever=faq_retriever)
+    faq_executor = FAQExecutor(
+        retriever=faq_retriever,
+        summary_search_service=summary_search_service,
+    )
     product_workflow_executor = ProductWorkflowExecutor(
         repository=PostgresProductWorkflowRepository(
             postgres_pool,
             statement_timeout_ms=int(settings.postgres_pool_timeout_seconds * 1000),
         ),
+        summary_search_service=summary_search_service,
     )
     jev_client = TypeSafeJevClient(
         api_key=settings.typesafe_api_key,
@@ -289,7 +299,7 @@ def get_graph(request: Request) -> CompiledStateGraph:
             GraphNode,
             partial(input_guardrail_node, guardrail_config=GuardrailConfig()),
         ),
-        router=RouterExecutor(),
+        router=RouterExecutor(summary_search_service=summary_search_service),
         capabilities=capabilities,
         compiler=CompilerExecutor(),
         judge=JudgeExecutor(
@@ -343,19 +353,6 @@ def get_conversation_end_controller() -> ConversationEndController:
     return ConversationEndController(
         ConversationEndService(
             scheduler=get_conversation_summary_scheduler(),
-            checkpoint_cleanup=get_checkpointer(),
-        )
-    )
-
-
-def get_conversation_delete_controller() -> ConversationDeleteController:
-    return ConversationDeleteController(
-        ConversationDeleteService(
-            scheduler=ConversationDeletionScheduler(
-                conversations=get_conversation_repository(),
-                jobs=get_summary_job_repository(),
-                queue=get_summary_queue(),
-            ),
             checkpoint_cleanup=get_checkpointer(),
         )
     )

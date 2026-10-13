@@ -100,7 +100,6 @@ class Settings(BaseSettings):
     memory_summary_collection: str = "conversation_summaries"
     memory_summary_top_k: int = Field(default=3, ge=1, le=3)
     memory_summary_min_score: float = Field(default=0.5, ge=0.0, le=1.0)
-    memory_summary_fallback_limit: int = Field(default=3, ge=1, le=3)
 
     @model_validator(mode="after")
     def configure_faq_paths(self) -> Settings:
@@ -187,7 +186,6 @@ FAQ_RETRIEVAL_MIN_RELEVANCE = settings.faq_retrieval_min_relevance
 MEMORY_SUMMARY_COLLECTION = settings.memory_summary_collection
 MEMORY_SUMMARY_TOP_K = settings.memory_summary_top_k
 MEMORY_SUMMARY_MIN_SCORE = settings.memory_summary_min_score
-MEMORY_SUMMARY_FALLBACK_LIMIT = settings.memory_summary_fallback_limit
 
 OPENAI_API_KEY = settings.openai_api_key
 OPENAI_MODEL = settings.openai_model

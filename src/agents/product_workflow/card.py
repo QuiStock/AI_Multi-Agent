@@ -46,6 +46,13 @@ PRODUCT_WORKFLOW_CARD = AgentCard(
                 )
             ],
         ),
+        ToolBinding(
+            id="search_conversation_summaries",
+            name="Buscar contexto de conversas anteriores",
+            description=(
+                "Busca resumos relevantes do próprio usuário quando necessário."
+            ),
+        ),
     ],
     failure_policy=FailurePolicy(
         on_timeout="fail",

@@ -114,8 +114,20 @@ def run_router_node(
         },
     )
 
+    routing_decision: RoutingDecision = {
+        "route": decision["route"],
+        "target_agent": decision["target_agent"],
+        "outcome": decision["outcome"],
+        "reason": decision["reason"],
+    }
+    memory = decision.get("memory") or {
+        "previous_conversation_summaries": [],
+        "summary_context_loaded": False,
+        "source": "none",
+    }
     return {
-        "routing_decision": decision,
+        "routing_decision": routing_decision,
+        "memory": memory,
         "status": "in_progress",
     }
 
@@ -130,6 +142,7 @@ def run_faq_node(
         {
             "messages": current_state.get("messages", []),
             "request": current_state.get("request"),
+            "memory": current_state.get("memory"),
         }
     )
 

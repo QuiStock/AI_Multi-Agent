@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class EmptySearchArguments(BaseModel):
-    """The router supplies no identity or query; both come from trusted state."""
+    """The agent supplies no identity or query; both come from trusted state."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -23,5 +23,5 @@ class ConversationSummaryItem(BaseModel):
 class SearchConversationSummariesData(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    source: Literal["semantic", "fallback"]
+    source: Literal["semantic", "none"]
     results: list[ConversationSummaryItem] = Field(max_length=3)
