@@ -28,7 +28,9 @@ Status: **planejada**. A mudança para RS256/JWKS foi solicitada em 2026-10-12; 
 
 **RF-AUTH-003 — Rejeição:** bearer ausente, malformado, com algoritmo não permitido, assinatura/chave inválida, claim obrigatória ausente ou inválida, issuer/audience incorretos, ou expirado retorna HTTP 401 com `WWW-Authenticate: Bearer`. O grafo não inicia. A resposta não revela token ou detalhes internos.
 
-**RF-AUTH-004 — Identidade:** `sub` identifica `user_account.id` (`BIGINT`) e é transportado no JWT como string decimal. A API consulta a conta local por esse ID; um `sub` fora do formato/intervalo da chave ou sem conta correspondente é inválido (401). A claim assinada `email` continua obrigatória e disponível ao principal autenticado para os fluxos atuais de conversa e memória. Se esse email divergir do email da conta localizada por `sub`, a API retorna 401 e não inicia o grafo. Cargo e escopo de loja vêm da conta no servidor; claims ou campos livres do cliente não ampliam permissões.
+**RF-AUTH-004 — Identidade:** `sub` identifica `user_account.id` (`BIGINT`) e é transportado no JWT como string decimal. A API consulta a conta local por esse ID; um `sub` fora do formato/intervalo da chave ou sem conta correspondente é inválido (401). A claim assinada `email` continua obrigatória e disponível ao principal autenticado para os fluxos atuais de conversa e memória. Se esse email divergir do email da conta localizada por `sub`, ou se a conta estiver inativa, a API retorna 401 e não inicia o grafo. O cargo vem da conta no servidor; claims ou campos livres do cliente não ampliam permissões.
+
+**RF-AUTH-005 — Lojas:** a API consulta os vínculos ativos de `user_store` do usuário autenticado, limitados às lojas ativas em `store`. Os IDs dessas lojas e o cargo atual seguem no principal e no contexto do grafo junto do email. Um usuário autenticado com cargo permitido, mas sem loja ativa, recebe 403. `role_id = 1` continua sem acesso às rotas de conversa (403). As consultas comerciais conservam seus filtros de autorização no repositório e respeitam os IDs de lojas do contexto; valores enviados pelo cliente não ampliam esse conjunto.
 
 **RNF-AUTH-001 — Chaves:** o JWKS usa origem configurada e confiável, HTTPS fora do ambiente local, timeout, cache limitado e atualização controlada na rotação de `kid`. A chave privada não fica na API de IA. Falha do JWKS sem chave válida em cache é indisponibilidade de dependência (HTTP 503 proposto); `kid` desconhecido após consulta bem-sucedida é credencial inválida (401).
 
@@ -40,16 +42,16 @@ Status: **planejada**. A mudança para RS256/JWKS foi solicitada em 2026-10-12; 
 - **CA-AUTH-002:** JWT expirado, adulterado, com `alg` diferente, `kid` desconhecido, `iss`/`aud` incorretos ou claim obrigatória ausente retorna 401 sem executar o grafo.
 - **CA-AUTH-003:** a rotação aceita chaves antigas e novas enquanto publicadas e deixa de aceitar uma chave após sua retirada efetiva, conforme a política de cache.
 - **CA-AUTH-004:** configuração ausente ou falha de rede do JWKS não aceita o token por suposição; sua resposta operacional é testada separadamente de credencial inválida.
-- **CA-AUTH-005:** dado `sub` válido com email da claim diferente do email da conta correspondente, a API retorna 401 sem executar o grafo; `sub` inexistente também retorna 401. O tratamento de conta inativa ainda depende de decisão.
+- **CA-AUTH-005:** dado email da claim diferente do email da conta, conta inexistente ou inativa, a API retorna 401 sem executar o grafo.
+- **CA-AUTH-006:** dado usuário válido com lojas ativas, email, cargo e IDs de lojas chegam ao grafo; consultas comerciais não retornam dados de outras lojas. Sem loja ativa ou com `role_id = 1`, a rota de conversa retorna 403 antes do grafo.
 
 ## Decisões pendentes
 
 1. Valor literal de `iss`, URL HTTPS do JWKS e vínculo confiável entre ambos.
-2. Tratamento de conta inativa. Divergência entre o email assinado e o email da conta já foi definida como 401.
-3. Tolerância de relógio e verificação de `exp - iat <= 300` no consumidor.
-4. Política de cache/rotação e comportamento com JWKS indisponível.
-5. Se `jti` será apenas validado estruturalmente ou usado para revogação/anti-replay.
-6. Qual branch/PR trará a API e a autenticação existente à base `refactor`; não incorporar toda a branch `a2a` só para obter auth.
+2. Tolerância de relógio; a implementação exigirá `exp - iat = 300` conforme o contrato solicitado.
+3. Política de cache/rotação e comportamento com JWKS indisponível.
+4. Se `jti` será apenas validado estruturalmente ou usado para revogação/anti-replay.
+5. A API/auth existente será integrada à base `refactor` pela branch `fix(auth)`, sem incorporar toda a branch `a2a`.
 
 ## Referências técnicas
 
