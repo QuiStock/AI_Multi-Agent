@@ -1,11 +1,11 @@
 # Autenticação da API de IA por JWT RS256
 
-Status: **planejada**. A mudança para RS256/JWKS foi solicitada em 2026-10-12; parâmetros da integração ainda estão abertos.
+Status: **implementada na branch `refactor`**. O issuer e a URL do JWKS devem ser fornecidos pela Auth no ambiente de implantação.
 
-## Estado atual
+## Origem da mudança
 
-- A branch `main` (`47ee5df`) ainda não contém `src/api/` nem `src/auth/`. A implementação da API e da autenticação está em branches posteriores, incluindo `fix(auth)` e `a2a`.
-- Nessa implementação, `src/auth/token.py` aceita HS256 com segredo compartilhado, extrai `email` e desativa `verify_exp`; `src/auth/service.py` consulta `user_account` por email para obter o cargo.
+- A branch `main` (`47ee5df`) não continha `src/api/` nem `src/auth/`; `fix(auth)` foi integrada à `refactor` como base da API.
+- A implementação anterior aceitava HS256 sem verificar `exp` e consultava `user_account` por email.
 - O JWT humano das rotas da API de IA é distinto das credenciais A2A entre serviços.
 
 ## Contrato
@@ -13,7 +13,7 @@ Status: **planejada**. A mudança para RS256/JWKS foi solicitada em 2026-10-12; 
 | Campo | Regra | Status |
 | --- | --- | --- |
 | Header `alg` | `RS256`, único algoritmo permitido | confirmado |
-| Header `kid` | Identifica chave pública para rotação | proposto; confirmar com a Auth |
+| Header `kid` | Identifica chave pública para rotação | obrigatório na implementação; confirmar com a Auth |
 | `sub` | `user_account.id` (`BIGINT`) representado como string decimal | confirmado |
 | `email` | Email do usuário | confirmado |
 | `iss` | Issuer da Auth | confirmado; valor literal aberto |
@@ -32,7 +32,7 @@ Status: **planejada**. A mudança para RS256/JWKS foi solicitada em 2026-10-12; 
 
 **RF-AUTH-005 — Lojas:** a API consulta os vínculos ativos de `user_store` do usuário autenticado, limitados às lojas ativas em `store`. Os IDs dessas lojas e o cargo atual seguem no principal e no contexto do grafo junto do email. Um usuário autenticado com cargo permitido, mas sem loja ativa, recebe 403. `role_id = 1` continua sem acesso às rotas de conversa (403). As consultas comerciais conservam seus filtros de autorização no repositório e respeitam os IDs de lojas do contexto; valores enviados pelo cliente não ampliam esse conjunto.
 
-**RNF-AUTH-001 — Chaves:** o JWKS usa origem configurada e confiável, HTTPS fora do ambiente local, timeout, cache limitado e atualização controlada na rotação de `kid`. A chave privada não fica na API de IA. Falha do JWKS sem chave válida em cache é indisponibilidade de dependência (HTTP 503 proposto); `kid` desconhecido após consulta bem-sucedida é credencial inválida (401).
+**RNF-AUTH-001 — Chaves:** o JWKS usa origem configurada e confiável, HTTPS fora do ambiente local, timeout de três segundos e cache de chaves de até cinco minutos no `PyJWKClient`, com atualização na rotação de `kid`. A chave privada não fica na API de IA. Falha do JWKS sem chave válida em cache é indisponibilidade de dependência (HTTP 503); `kid` desconhecido após consulta bem-sucedida é credencial inválida (401).
 
 **RNF-AUTH-002 — Observabilidade:** registrar categorias de rejeição e falha do JWKS sem JWT bruto, email, `sub` ou chave. `jti` único não implica, sozinho, proteção contra replay.
 
@@ -48,10 +48,12 @@ Status: **planejada**. A mudança para RS256/JWKS foi solicitada em 2026-10-12; 
 ## Decisões pendentes
 
 1. Valor literal de `iss`, URL HTTPS do JWKS e vínculo confiável entre ambos.
-2. Tolerância de relógio; a implementação exigirá `exp - iat = 300` conforme o contrato solicitado.
-3. Política de cache/rotação e comportamento com JWKS indisponível.
-4. Se `jti` será apenas validado estruturalmente ou usado para revogação/anti-replay.
-5. A API/auth existente será integrada à base `refactor` pela branch `fix(auth)`, sem incorporar toda a branch `a2a`.
+2. Tolerância de relógio entre a Auth e a API; hoje não há tolerância adicional e `exp - iat = 300`.
+3. Se `jti` será usado para revogação/anti-replay; hoje é validado estruturalmente.
+
+## Configuração de implantação
+
+Definir `JWT_ISSUER` exatamente igual à claim `iss` publicada pela Auth e `JWT_JWKS_URL` como URL HTTPS do JWKS dessa mesma Auth. `aud` é fixo em `quistock-api`. Usar em `POSTGRES_DSN` uma conta somente leitura com `SELECT` em `user_account(id,email,role_id,status)`, `user_store(user_id,store_id,active,unassigned_at)` e `store(id,status)`; a consulta comercial também requer as tabelas já documentadas em `AGENTS.md`. Sem issuer/JWKS, a API responde 500 ao receber bearer; sem banco configurado, não autentica a conta.
 
 ## Referências técnicas
 

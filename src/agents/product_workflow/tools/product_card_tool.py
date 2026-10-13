@@ -39,7 +39,12 @@ from src.agents.tooling.result_factory import (
 
 
 def create_product_card_tool(
-    *, repository: ProductCardRepository, email: str, role_id: int, request_id: str
+    *,
+    repository: ProductCardRepository,
+    email: str,
+    role_id: int,
+    store_ids: tuple[int, ...],
+    request_id: str,
 ) -> BaseTool:
     """Bind server-authenticated identity; the model controls only product text."""
 
@@ -48,6 +53,7 @@ def create_product_card_tool(
             repository=repository,
             email=email,
             role_id=role_id,
+            store_ids=store_ids,
             request_id=request_id,
             product_query=product_query,
         )
@@ -68,6 +74,7 @@ def _lookup_product_cards(
     repository: ProductCardRepository,
     email: str,
     role_id: int,
+    store_ids: tuple[int, ...],
     request_id: str,
     product_query: str,
 ) -> str:
@@ -79,7 +86,10 @@ def _lookup_product_cards(
     )
     try:
         cards = repository.search(
-            email=email, role_id=role_id, product_query=product_query
+            email=email,
+            role_id=role_id,
+            store_ids=store_ids,
+            product_query=product_query,
         )
         result = _build_product_result(cards=cards, metadata=metadata)
     except Exception as error:

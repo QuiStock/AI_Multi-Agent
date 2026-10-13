@@ -9,15 +9,14 @@ from psycopg_pool import PoolTimeout
 from src.auth.account_repository import PostgresAccountRepository
 from src.auth.errors import AccountLookupError
 
+Row = tuple[int, str, int, str, int | None]
+
 
 class Cursor:
-    def __init__(
-        self, row: tuple[str, int] | None = None, *, fail: bool = False
-    ) -> None:
-        self.row = row
+    def __init__(self, rows: list[Row] | None = None, *, fail: bool = False) -> None:
+        self.rows = rows or []
         self.fail = fail
-        self.query: str | None = None
-        self.parameters: tuple[str, ...] | None = None
+        self.calls: list[tuple[str, tuple[object, ...]]] = []
 
     def __enter__(self) -> Cursor:
         return self
@@ -25,14 +24,13 @@ class Cursor:
     def __exit__(self, *_: object) -> None:
         return None
 
-    def execute(self, query: str, parameters: tuple[str, ...]) -> None:
+    def execute(self, query: str, parameters: tuple[object, ...]) -> None:
         if self.fail:
             raise RuntimeError("database unavailable")
-        self.query = query
-        self.parameters = parameters
+        self.calls.append((query, parameters))
 
-    def fetchone(self) -> tuple[str, int] | None:
-        return self.row
+    def fetchall(self) -> list[Row]:
+        return self.rows
 
 
 class Connection:
@@ -62,40 +60,45 @@ class TimedOutPool:
     @contextmanager
     def connection(self) -> Any:
         raise PoolTimeout("connection checkout timed out")
-        yield  # pragma: no cover - this remains a contextmanager generator
+        yield  # pragma: no cover
 
 
-def test_account_lookup_is_parameterized_and_reads_only_required_columns() -> None:
-    cursor = Cursor(("person@example.test", 2))
+def test_lookup_uses_sub_id_and_returns_only_active_store_ids() -> None:
+    cursor = Cursor(
+        [
+            (42, "person@example.test", 2, "ACTIVE", 9),
+            (42, "person@example.test", 2, "ACTIVE", 4),
+            (42, "person@example.test", 2, "ACTIVE", 9),
+        ]
+    )
     repository = PostgresAccountRepository(Pool(cursor))  # type: ignore[arg-type]
 
-    account = repository.find_by_email("person@example.test")
+    account = repository.find_by_id(42)
 
     assert account is not None
+    assert account.user_id == 42
     assert account.email == "person@example.test"
     assert account.role_id == 2
-    assert cursor.parameters == ("person@example.test",)
-    assert "SELECT email, role_id" in str(cursor.query)
-    assert "WHERE email = %s" in str(cursor.query)
+    assert account.store_ids == (4, 9)
+    query, params = cursor.calls[1]
+    assert "WHERE ua.id = %s" in query
+    assert "us.active IS TRUE" in query
+    assert "st.status::text = 'ACTIVE'" in query
+    assert params == (42,)
 
 
-def test_account_lookup_returns_none_when_account_is_missing() -> None:
-    repository = PostgresAccountRepository(Pool(Cursor(None)))  # type: ignore[arg-type]
-
-    assert repository.find_by_email("missing@example.test") is None
-
-
-def test_account_lookup_hides_operational_database_errors() -> None:
-    repository = PostgresAccountRepository(Pool(Cursor(fail=True)))  # type: ignore[arg-type]
-
-    with pytest.raises(AccountLookupError) as error:
-        repository.find_by_email("person@example.test")
-
-    assert str(error.value) == ""
+def test_lookup_returns_account_without_store_and_none_for_unknown_id() -> None:
+    repository = PostgresAccountRepository(
+        Pool(Cursor([(42, "person@example.test", 2, "ACTIVE", None)]))
+    )  # type: ignore[arg-type]
+    account = repository.find_by_id(42)
+    assert account is not None and account.store_ids == ()
+    assert PostgresAccountRepository(Pool(Cursor())).find_by_id(99) is None  # type: ignore[arg-type]
 
 
-def test_account_lookup_translates_pool_timeout() -> None:
-    repository = PostgresAccountRepository(TimedOutPool())  # type: ignore[arg-type]
-
-    with pytest.raises(AccountLookupError):
-        repository.find_by_email("person@example.test")
+def test_lookup_hides_database_errors_and_pool_timeout() -> None:
+    for pool in (Pool(Cursor(fail=True)), TimedOutPool()):
+        repository = PostgresAccountRepository(pool)  # type: ignore[arg-type]
+        with pytest.raises(AccountLookupError) as error:
+            repository.find_by_id(42)
+        assert str(error.value) == ""

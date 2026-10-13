@@ -32,8 +32,10 @@ def test_product_lookup_obeys_role_store_expired_and_read_only_grants() -> None:
                 "CREATE ROLE product_reader LOGIN PASSWORD 'test-reader-password'"
             )
             connection.execute(
-                "CREATE TABLE user_account (id INT, email TEXT, role_id INT)"
+                "CREATE TABLE user_account "
+                "(id INT, email TEXT, role_id INT, status TEXT)"
             )
+            connection.execute("CREATE TABLE store (id INT, status TEXT)")
             connection.execute(
                 "CREATE TABLE user_store (user_id INT, store_id INT, "
                 "active BOOL, unassigned_at TIMESTAMPTZ)"
@@ -60,7 +62,11 @@ def test_product_lookup_obeys_role_store_expired_and_read_only_grants() -> None:
             )
             connection.execute(
                 "INSERT INTO user_account VALUES "
-                "(1, 'employee@example.test', 3), (2, 'manager@example.test', 2)"
+                "(1, 'employee@example.test', 3, 'ACTIVE'), "
+                "(2, 'manager@example.test', 2, 'ACTIVE')"
+            )
+            connection.execute(
+                "INSERT INTO store VALUES (10, 'ACTIVE'), (11, 'ACTIVE')"
             )
             connection.execute(
                 "INSERT INTO user_store VALUES (1, 10, TRUE, NULL), (2, 10, TRUE, NULL)"
@@ -90,7 +96,7 @@ def test_product_lookup_obeys_role_store_expired_and_read_only_grants() -> None:
             )
             connection.execute("INSERT INTO suggestion_log VALUES (200, 'EXPIRED')")
             connection.execute(
-                "GRANT SELECT ON user_account, user_store, product, category, "
+                "GRANT SELECT ON user_account, user_store, store, product, category, "
                 "suggestion, suggestion_log, batch TO product_reader"
             )
 
@@ -101,24 +107,39 @@ def test_product_lookup_obeys_role_store_expired_and_read_only_grants() -> None:
         )
         try:
             employee = ProductCardRepository(pool).search(
-                email="employee@example.test", role_id=3, product_query="SKU-4"
+                email="employee@example.test",
+                role_id=3,
+                store_ids=(10,),
+                product_query="SKU-4",
             )
             employee_denied = ProductCardRepository(pool).search(
-                email="employee@example.test", role_id=3, product_query="SKU-2"
+                email="employee@example.test",
+                role_id=3,
+                store_ids=(10,),
+                product_query="SKU-2",
             )
             manager = ProductCardRepository(pool).search(
-                email="manager@example.test", role_id=2, product_query="SKU-2"
+                email="manager@example.test",
+                role_id=2,
+                store_ids=(10,),
+                product_query="SKU-2",
             )
             assert [card.sku for card in employee] == ["SKU-4"]
             assert employee[0].expiration_date.isoformat() == "2026-10-20"
             assert employee_denied == []
             assert [card.sku for card in manager] == ["SKU-2"]
             outside_store = ProductCardRepository(pool).search(
-                email="manager@example.test", role_id=2, product_query="SKU-3"
+                email="manager@example.test",
+                role_id=2,
+                store_ids=(10,),
+                product_query="SKU-3",
             )
             assert outside_store == []
             expired = ProductCardRepository(pool).search(
-                email="employee@example.test", role_id=3, product_query="SKU-1"
+                email="employee@example.test",
+                role_id=3,
+                store_ids=(10,),
+                product_query="SKU-1",
             )
             assert expired == []
             with pytest.raises(psycopg.errors.InsufficientPrivilege):

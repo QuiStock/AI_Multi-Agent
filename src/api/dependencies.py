@@ -36,11 +36,12 @@ from src.auth.account_repository import PostgresAccountRepository
 from src.auth.errors import (
     AccountLookupError,
     AuthenticationConfigurationError,
+    AuthenticationDependencyError,
     InvalidCredentialError,
 )
 from src.auth.models import AuthenticatedPrincipal
 from src.auth.service import AuthenticationService
-from src.auth.token import JWTEmailDecoder
+from src.auth.token import JWTIdentityDecoder
 from src.graphs.adapters import GraphNode, run_faq_node, run_product_workflow_node
 from src.graphs.agent_graph import create_agent_graph
 from src.graphs.state import RouteName
@@ -63,6 +64,11 @@ from src.memory.summary_scheduler import ConversationSummaryScheduler
 from src.observability.audit import record_authentication_denial
 
 _bearer_scheme = HTTPBearer(auto_error=False)
+
+
+@lru_cache
+def get_jwt_decoder(issuer: str | None, jwks_url: str | None) -> JWTIdentityDecoder:
+    return JWTIdentityDecoder(issuer, jwks_url)
 
 
 def get_postgres_pool(request: Request) -> Any:
@@ -88,15 +94,17 @@ def get_authenticated_principal(
         )
     settings = config.get_settings()
     try:
+        identity = get_jwt_decoder(
+            settings.jwt_issuer, settings.jwt_jwks_url
+        ).decode_identity(credentials.credentials)
         pool = get_postgres_pool(request)
         service = AuthenticationService(
-            JWTEmailDecoder(settings.jwt_secret),
             PostgresAccountRepository(
                 pool,
                 statement_timeout_ms=int(settings.postgres_pool_timeout_seconds * 1000),
             ),
         )
-        return service.authenticate(credentials.credentials)
+        return service.authenticate(identity)
     except InvalidCredentialError:
         record_authentication_denial("credential_invalid")
         raise HTTPException(
@@ -108,6 +116,12 @@ def get_authenticated_principal(
         record_authentication_denial("authentication_misconfigured")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Serviço temporariamente indisponível.",
+        ) from None
+    except AuthenticationDependencyError:
+        record_authentication_denial("jwks_unavailable")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Serviço temporariamente indisponível.",
         ) from None
     except PermissionError:

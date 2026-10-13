@@ -1,5 +1,7 @@
 # Modelo de identidade
 
+> Histórico: a identidade vigente usa `sub = user_account.id` e lojas ativas; consulte `specs/005-auth-jwt-rs256/`.
+
 ## JWT recebido
 
 | Dado | Origem | Uso |

@@ -1,5 +1,7 @@
 # ADR-001: Ownership do lookup de identidade no PostgreSQL
 
+> Emenda de 2026-10-12: o contrato de autenticação HS256 por email abaixo é histórico. A decisão de conexão própria somente leitura permanece; a consulta vigente usa `user_account.id` da claim `sub`, compara `email` e lê `role_id`, `status` e vínculos de lojas ativas em `user_store` e `store`. A credencial precisa de `SELECT` nessas três tabelas, além das tabelas comerciais já usadas pelo Product Workflow. Ver `specs/005-auth-jwt-rs256/`.
+
 - **Status**: Aceito
 - **Data**: 2026-10-01
 - **Decisores**: usuário e equipe da API de IA

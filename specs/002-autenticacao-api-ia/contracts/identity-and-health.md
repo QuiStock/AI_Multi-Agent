@@ -1,5 +1,7 @@
 # Contrato: identidade autenticada e readiness
 
+> Histórico: para autenticação vigente, consulte `specs/005-auth-jwt-rs256/`.
+
 ## Rotas protegidas
 
 - `POST /api/v1/conversations/{conversation_id}/messages`

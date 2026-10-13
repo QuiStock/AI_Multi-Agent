@@ -25,6 +25,7 @@ class ProductCardRepository:
                s.promotion_valid_from, s.promotion_valid_until
           FROM suggestion s
           JOIN product p ON p.id = s.product_id
+          JOIN store st ON st.id = s.store_id AND st.status::text = 'ACTIVE'
           LEFT JOIN category c ON c.id = p.category_id
           LEFT JOIN LATERAL (
                SELECT MIN(b.expiration_date) AS expiration_date
@@ -36,9 +37,11 @@ class ProductCardRepository:
                SELECT 1 FROM user_account ua
                JOIN user_store us ON us.user_id = ua.id
                 WHERE ua.email = %s AND ua.role_id = %s
+                  AND ua.status::text = 'ACTIVE'
                   AND us.store_id = s.store_id AND us.active = TRUE
                   AND us.unassigned_at IS NULL
            )
+           AND s.store_id = ANY(%s::bigint[])
            AND (p.name ILIKE %s OR p.sku ILIKE %s OR c.name ILIKE %s)
            AND NOT EXISTS (
                SELECT 1 FROM suggestion_log sl
@@ -55,10 +58,19 @@ class ProductCardRepository:
         self._statement_timeout_ms = statement_timeout_ms
 
     def search(
-        self, *, email: str, role_id: int, product_query: str
+        self,
+        *,
+        email: str,
+        role_id: int,
+        store_ids: tuple[int, ...],
+        product_query: str,
     ) -> list[ProductCard]:
         if role_id not in (2, 3):
             raise PermissionError("Cargo sem acesso a sugestões de produto")
+        if not store_ids or any(
+            type(store_id) is not int or store_id < 1 for store_id in store_ids
+        ):
+            raise PermissionError("Lojas autorizadas não disponíveis")
         query = product_query.strip()
         if not query or len(query) > MAX_PRODUCT_QUERY_LENGTH:
             raise ValueError("Consulta de produto inválida")
@@ -70,7 +82,16 @@ class ProductCardRepository:
             pattern = f"%{query}%"
             cursor.execute(
                 self.SQL,
-                (email, role_id, pattern, pattern, pattern, role_id, role_id),
+                (
+                    email,
+                    role_id,
+                    list(store_ids),
+                    pattern,
+                    pattern,
+                    pattern,
+                    role_id,
+                    role_id,
+                ),
             )
             rows = cursor.fetchall()
         return [

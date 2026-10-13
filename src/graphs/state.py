@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Literal, NotRequired, TypedDict
+from typing import Annotated, Any, Literal, NotRequired, TypedDict
 
 from langchain_core.messages import AnyMessage
 from langgraph.graph import add_messages
@@ -11,7 +11,6 @@ from src.memory.contracts import ConversationSummary
 RouteName = Literal[
     "faq",
     "product_workflow",
-    "external_a2a",
     "clarification_required",
     "out_of_scope",
 ]
@@ -27,13 +26,16 @@ TurnStatus = Literal[
 class RequestContext(TypedDict):
     request_id: str
     email: str
-    role_id: NotRequired[int]
-    a2a_store_id: NotRequired[int]
+    role_id: int
+    user_id: NotRequired[int]
+    store_ids: NotRequired[list[int]]
     conversation_id: str
     sent_at: datetime
+    sanitized_message: NotRequired[str]
     is_new_conversation: NotRequired[bool]
     is_resuming_conversation: NotRequired[bool]
     trace_id: NotRequired[str]
+    product_card: NotRequired[dict[str, Any] | None]
 
 
 class MemoryContext(TypedDict):
@@ -46,6 +48,8 @@ class InputGuardrailResult(TypedDict):
     reason_code: str
     reason: str
     redactions: list[str]
+    sanitized_message: NotRequired[str]
+    pii_map: NotRequired[dict[str, str]]
 
 
 class OutputGuardrailResult(TypedDict):
@@ -64,13 +68,13 @@ class RoutingDecision(TypedDict):
         "out_of_scope",
     ]
     reason: str
-    peer_id: NotRequired[str]
-    skill_id: NotRequired[str]
 
 
 class Evidence(TypedDict):
     evidence_id: str
-    source_type: Literal["metric", "faq_document", "product_workflow", "a2a_agent"]
+    source_type: Literal[
+        "metric", "faq_document", "client_card_snapshot", "product_card_query"
+    ]
     source_id: str
     content: str
     metadata: dict[str, str]
@@ -92,12 +96,6 @@ class ProductWorkFlowResult(AgentResult):
     evidence_ids: list[str]
 
 
-class ExternalA2AResult(AgentResult):
-    status: Literal["success", "unavailable", "error"]
-    answer: str
-    evidence_ids: list[str]
-
-
 class JudgeResult(AgentResult):
     status: Literal[
         "approved",
@@ -111,7 +109,6 @@ class JudgeResult(AgentResult):
 class AgentResults(TypedDict, total=False):
     faq: FAQResult
     product_workflow: ProductWorkFlowResult
-    external_a2a: ExternalA2AResult
     judge: JudgeResult
 
 

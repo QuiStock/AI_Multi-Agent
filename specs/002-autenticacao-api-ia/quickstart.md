@@ -1,5 +1,7 @@
 # Quickstart: autenticação HS256
 
+> Histórico: não use este quickstart para novos ambientes; a configuração vigente está em `specs/005-auth-jwt-rs256/`.
+
 ## Configuração
 
 - Configurar `JWT_SECRET` como segredo aleatório forte no ambiente da API de IA e do emissor confiável. Não incluir segredo real no Git nem no cliente.

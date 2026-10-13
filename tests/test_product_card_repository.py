@@ -7,8 +7,11 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+from langchain_core.messages import AIMessage
 from psycopg import errors as psycopg_errors
 
+import src.agents.product_workflow.executor as executor_module
+from src.agents.product_workflow.executor import ProductWorkflowExecutor
 from src.agents.product_workflow.schemas import ProductCard
 from src.agents.product_workflow.tools.product_card_repository import (
     ProductCardRepository,
@@ -78,7 +81,10 @@ def test_repository_builds_card_with_server_scope_and_fixed_query(role_id: int) 
     cursor = FakeCursor(_row())
     pool = FakePool(cursor)
     cards = ProductCardRepository(pool).search(
-        email="manager@example.test", role_id=role_id, product_query="leite"
+        email="manager@example.test",
+        role_id=role_id,
+        store_ids=(10,),
+        product_query="leite",
     )
 
     assert len(cards) == 1
@@ -87,12 +93,14 @@ def test_repository_builds_card_with_server_scope_and_fixed_query(role_id: int) 
     sql, params = cursor.calls[1]
     assert "suggestion_log" in sql and "EXPIRED" in sql
     assert "user_store" in sql and "us.active = TRUE" in sql
+    assert "ANY(%s::bigint[])" in sql
     assert "available_for_triage = TRUE" in sql
     assert "SENT_TO_MANAGER" in sql
     assert "ILIKE %s" in sql
     assert params == (
         "manager@example.test",
         role_id,
+        [10],
         "%leite%",
         "%leite%",
         "%leite%",
@@ -107,7 +115,7 @@ def test_repository_fails_closed_for_unsupported_role_without_querying() -> None
     pool = FakePool(cursor)
     with pytest.raises(PermissionError):
         ProductCardRepository(pool).search(
-            email="x@example.test", role_id=1, product_query="leite"
+            email="x@example.test", role_id=1, store_ids=(10,), product_query="leite"
         )
     assert pool.calls == 0
 
@@ -116,9 +124,48 @@ def test_repository_rejects_empty_query_before_database_access() -> None:
     pool = FakePool(FakeCursor())
     with pytest.raises(ValueError):
         ProductCardRepository(pool).search(
-            email="x@example.test", role_id=3, product_query=" "
+            email="x@example.test", role_id=3, store_ids=(10,), product_query=" "
         )
     assert pool.calls == 0
+
+
+def test_snapshot_is_evidence_without_database_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Repository:
+        def search(self, **_: Any) -> list[ProductCard]:
+            pytest.fail("snapshot question must not look up PostgreSQL")
+
+    class FakeAgent:
+        def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
+            return {
+                "messages": [
+                    *state["messages"],
+                    AIMessage(content="O card indica leite integral."),
+                ]
+            }
+
+    monkeypatch.setattr(
+        executor_module, "create_agent_from_card", lambda **_: FakeAgent()
+    )
+    executor = ProductWorkflowExecutor(Repository(), model=object())  # type: ignore[arg-type]
+    result = executor.invoke(
+        {
+            "request": {
+                "email": "user@example.test",
+                "role_id": 3,
+                "store_ids": [10],
+                "request_id": "req-1",
+                "product_card": {"product_name": "Leite Integral", "sku": "SKU-1"},
+            },
+            "messages": [],
+        }
+    )
+    assert result["status"] == "success"
+    assert result["evidences"][0]["source_type"] == "client_card_snapshot"
+    assert (
+        result["evidences"][0]["metadata"]["provenance"] == "client_request_unverified"
+    )
 
 
 def test_lookup_tool_binds_identity_and_reports_ambiguous_products() -> None:
@@ -141,12 +188,14 @@ def test_lookup_tool_binds_identity_and_reports_ambiguous_products() -> None:
         repository=repository,
         email="user@example.test",
         role_id=3,
+        store_ids=(10,),
         request_id="req-2",  # type: ignore[arg-type]
     )
     payload = json.loads(tool.invoke({"product_query": "leite"}))
     assert repository.seen == {
         "email": "user@example.test",
         "role_id": 3,
+        "store_ids": (10,),
         "product_query": "leite",
     }
     assert payload["status"] == "partial"
@@ -183,6 +232,7 @@ def test_lookup_tool_distinguishes_dependency_failures(
         repository=Repository(),  # type: ignore[arg-type]
         email="user@example.test",
         role_id=3,
+        store_ids=(10,),
         request_id="req-3",
     )
     payload = json.loads(tool.invoke({"product_query": "leite"}))
@@ -201,6 +251,7 @@ def test_lookup_tool_not_found_is_domain_outcome_not_dependency_error() -> None:
         repository=Repository(),  # type: ignore[arg-type]
         email="user@example.test",
         role_id=3,
+        store_ids=(10,),
         request_id="req-4",
     )
     payload = json.loads(tool.invoke({"product_query": "produto inexistente"}))

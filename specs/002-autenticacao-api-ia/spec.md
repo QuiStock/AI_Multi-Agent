@@ -1,5 +1,7 @@
 # Especificação: autenticação e identidade na API de IA
 
+> Histórico: o contrato HS256 desta feature foi substituído por `specs/005-auth-jwt-rs256/` na branch `refactor`.
+
 **Feature**: `002-autenticacao-api-ia`
 **Status**: Implementação em andamento
 **Atualizada**: 2026-10-05
