@@ -248,6 +248,11 @@ Memória:
 - `POST /api/v1/conversations/{conversation_id}/end` retorna `202` e enfileira
   um job de resumo.
 - `GET /api/v1/conversations/ended` lista conversas encerradas da identidade autenticada.
+- `GET /api/v1/conversations/{conversation_id}/messages` devolve o histórico
+  completo de uma conversa ativa ou encerrada do email autenticado, na ordem
+  persistida no MongoDB. A leitura não altera o status; ausente, de outro usuário
+  ou em exclusão retorna 404. Após novo envio, uma nova leitura inclui as
+  mensagens anteriores e o novo par usuário/assistente.
 - A retomada autorizada restaura mensagens do MongoDB em ordem e não duplica a
   mensagem atual.
 

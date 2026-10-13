@@ -10,6 +10,7 @@ from src.api.errors import register_exception_handlers
 from src.api.routes.conversation import router as conversation_router
 from src.api.routes.conversation_delete import router as conversation_delete_router
 from src.api.routes.conversation_end import router as conversation_end_router
+from src.api.routes.conversation_history import router as conversation_history_router
 from src.api.routes.conversation_list import router as conversation_list_router
 from src.api.routes.health import router as health_router
 from src.api.routes.observability import router as observability_router
@@ -45,6 +46,7 @@ def create_app() -> FastAPI:
     app.include_router(conversation_router, prefix="/api/v1")
     app.include_router(conversation_delete_router, prefix="/api/v1")
     app.include_router(conversation_end_router, prefix="/api/v1")
+    app.include_router(conversation_history_router, prefix="/api/v1")
     app.include_router(conversation_list_router, prefix="/api/v1")
     app.include_router(observability_router, prefix="/api/v1")
     return app
