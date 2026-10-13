@@ -95,15 +95,13 @@ def test_repository_builds_card_with_server_scope_and_fixed_query(
     sql, params = cursor.calls[1]
     assert "suggestion_log" in sql and "EXPIRED" in sql
     assert "user_store" in sql and "us.active = TRUE" in sql
-    assert "JOIN role r ON r.id = ua.role_id" in sql
-    assert "r.code = %s" in sql
+    assert "JOIN role" not in sql
     assert "ANY(%s::bigint[])" in sql
     assert "available_for_triage = TRUE" in sql
     assert "SENT_TO_MANAGER" in sql
     assert "ILIKE %s" in sql
     assert params == (
         "manager@example.test",
-        role_code,
         [10],
         "%leite%",
         "%leite%",

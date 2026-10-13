@@ -13,7 +13,7 @@ from src.agents.product_workflow.tools.product_card_repository import (
     ProductCardRepository,
 )
 from src.agents.product_workflow.tools.product_card_tool import create_product_card_tool
-from src.auth.permissions import PRODUCT_WORKFLOW_ROLE_CODES
+from src.auth.permissions import CONVERSATION_ROLE_CODES
 from src.graphs.state import Evidence
 from src.llm_factory import llm_fast
 
@@ -31,7 +31,7 @@ class ProductWorkflowExecutor:
         request_id = request.get("request_id")
         if (
             not isinstance(email, str)
-            or role_code not in PRODUCT_WORKFLOW_ROLE_CODES
+            or role_code not in CONVERSATION_ROLE_CODES
             or not isinstance(request_id, str)
             or not isinstance(store_ids, list)
             or not store_ids

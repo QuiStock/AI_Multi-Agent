@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.agents.product_workflow.schemas import ProductCard
-from src.auth.permissions import PRODUCT_WORKFLOW_ROLE_CODES
+from src.auth.permissions import CONVERSATION_ROLE_CODES
 
 MAX_PRODUCT_QUERY_LENGTH = 200
 
@@ -36,9 +36,8 @@ class ProductCardRepository:
            ) current_batch ON TRUE
          WHERE EXISTS (
                SELECT 1 FROM user_account ua
-               JOIN role r ON r.id = ua.role_id
                JOIN user_store us ON us.user_id = ua.id
-                WHERE ua.email = %s AND r.code = %s
+                WHERE ua.email = %s
                   AND ua.status::text = 'ACTIVE'
                   AND us.store_id = s.store_id AND us.active = TRUE
                   AND us.unassigned_at IS NULL
@@ -67,7 +66,7 @@ class ProductCardRepository:
         store_ids: tuple[int, ...],
         product_query: str,
     ) -> list[ProductCard]:
-        if role_code not in PRODUCT_WORKFLOW_ROLE_CODES:
+        if role_code not in CONVERSATION_ROLE_CODES:
             raise PermissionError("Cargo sem acesso a sugestões de produto")
         if not store_ids or any(
             type(store_id) is not int or store_id < 1 for store_id in store_ids
@@ -86,7 +85,6 @@ class ProductCardRepository:
                 self.SQL,
                 (
                     email,
-                    role_code,
                     list(store_ids),
                     pattern,
                     pattern,
