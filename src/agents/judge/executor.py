@@ -11,6 +11,7 @@ from src.graphs.state import Evidence, JudgeResult, ResponseDraft
 from src.llm_factory import get_structured_model
 
 from .card import JUDGE_CARD
+from .jev_client import JevJudgeClientPort
 
 JudgeStatus = Literal[
     "approved",
@@ -20,9 +21,25 @@ JudgeStatus = Literal[
 
 
 class JudgeExecutor:
-    def __init__(self, model: Any | None = None) -> None:
+    def __init__(
+        self,
+        model: Any | None = None,
+        *,
+        jev_client: JevJudgeClientPort | None = None,
+        jev_confidence_threshold: float = 0.85,
+    ) -> None:
         self.card = JUDGE_CARD
-        self.model = get_structured_model(JudgeDecision) if model is None else model
+        if not 0 <= jev_confidence_threshold <= 1:
+            raise ValueError("O limiar de confiança do JEV deve estar entre zero e um")
+        self.jev_client = jev_client
+        self.jev_confidence_threshold = jev_confidence_threshold
+        self.model = (
+            None
+            if jev_client is not None and model is None
+            else get_structured_model(JudgeDecision)
+            if model is None
+            else model
+        )
 
     @staticmethod
     def _result(
@@ -31,6 +48,12 @@ class JudgeExecutor:
         reason: str,
         evidence_ids: Sequence[str] = (),
         error_code: str | None = None,
+        reason_code: str | None = None,
+        confidence: float | None = None,
+        probabilities: dict[str, float] | None = None,
+        model: str | None = None,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
     ) -> JudgeResult:
         result: JudgeResult = {
             "status": status,
@@ -40,6 +63,18 @@ class JudgeExecutor:
 
         if error_code is not None:
             result["error_code"] = error_code
+        if reason_code is not None:
+            result["reason_code"] = reason_code
+        if confidence is not None:
+            result["confidence"] = confidence
+        if probabilities is not None:
+            result["probabilities"] = probabilities
+        if model is not None:
+            result["model"] = model
+        if input_tokens is not None:
+            result["input_tokens"] = input_tokens
+        if output_tokens is not None:
+            result["output_tokens"] = output_tokens
 
         return result
 
@@ -191,11 +226,99 @@ class JudgeExecutor:
 
         return None
 
+    def _invoke_jev(
+        self,
+        response_draft: ResponseDraft,
+        evidences: Sequence[Evidence],
+    ) -> JudgeResult:
+        try:
+            if self.jev_client is None:
+                raise RuntimeError("Cliente JEV não configurado")
+            evaluation = self.jev_client.evaluate(
+                response_draft=response_draft,
+                evidences=evidences,
+            )
+        except Exception as exc:
+            client_code = getattr(exc, "code", "JEV_UNAVAILABLE")
+            error_code = (
+                "JUDGE_INVALID_OUTPUT"
+                if client_code == "JEV_INVALID_OUTPUT"
+                else f"JUDGE_{client_code}"
+            )
+            return self._result(
+                status="invalid",
+                reason="O agente juiz não conseguiu validar a resposta.",
+                error_code=error_code,
+            )
+
+        evidence_ids = list(response_draft["citations"])
+        if (
+            evaluation.verdict == "approved"
+            and evaluation.reason_code == "none"
+            and evaluation.confidence >= self.jev_confidence_threshold
+        ):
+            return self._result(
+                status="approved",
+                reason="Resposta aprovada pelo JEV.",
+                evidence_ids=evidence_ids,
+                reason_code=evaluation.reason_code,
+                confidence=evaluation.confidence,
+                probabilities=evaluation.probabilities,
+                model=evaluation.model,
+                input_tokens=evaluation.input_tokens,
+                output_tokens=evaluation.output_tokens,
+            )
+
+        reason_code = evaluation.reason_code
+        if evaluation.verdict == "approved":
+            reason_code = "low_confidence"
+
+        reasons = {
+            "missing_evidence": (
+                "Não foi encontrada evidência suficiente para confirmar a resposta."
+            ),
+            "unsupported_claim": (
+                "A resposta contém alegações não sustentadas pelas evidências."
+            ),
+            "contradiction": "A resposta contradiz as evidências disponíveis.",
+            "invalid_citation": "As citações não sustentam a resposta.",
+            "ambiguous_evidence": (
+                "As evidências não permitem confirmar a resposta com segurança."
+            ),
+            "low_confidence": (
+                "A confiança do julgamento não é suficiente para liberar a resposta."
+            ),
+            "none": "A resposta não foi aprovada pelo JEV.",
+        }
+        return self._result(
+            status="insufficient_evidence",
+            reason=reasons[reason_code],
+            evidence_ids=evidence_ids,
+            error_code=(
+                "JUDGE_MISSING_EVIDENCE"
+                if reason_code == "missing_evidence"
+                else "JUDGE_REJECTED"
+            ),
+            reason_code=reason_code,
+            confidence=evaluation.confidence,
+            probabilities=evaluation.probabilities,
+            model=evaluation.model,
+            input_tokens=evaluation.input_tokens,
+            output_tokens=evaluation.output_tokens,
+        )
+
     def _invoke_model(
         self,
         response_draft: ResponseDraft,
         evidences: Sequence[Evidence],
     ) -> JudgeResult:
+        if self.model is None:
+            return self._result(
+                status="invalid",
+                reason="O agente juiz não conseguiu validar a resposta.",
+                error_code="JUDGE_UNAVAILABLE",
+            )
+
         try:
             raw_decision = self.model.invoke(
                 self._messages(
@@ -295,6 +418,12 @@ class JudgeExecutor:
 
         if input_failure is not None:
             return input_failure
+
+        if self.jev_client is not None:
+            return self._invoke_jev(
+                cast(ResponseDraft, response_draft),
+                evidences,
+            )
 
         return self._invoke_model(
             cast(ResponseDraft, response_draft),

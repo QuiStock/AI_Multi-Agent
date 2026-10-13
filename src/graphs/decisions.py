@@ -40,11 +40,19 @@ def decide_after_router(
 
 def decide_after_judge(
     state: GraphState,
-) -> Literal["output_guardrail", "judge_blocked"]:
+) -> Literal["output_guardrail", "prepare_judge_repair", "judge_blocked"]:
     judge_result = state.get("agent_results", {}).get("judge")
 
     if judge_result and judge_result["status"] == "approved":
         return "output_guardrail"
+
+    if (
+        judge_result
+        and judge_result["status"] == "insufficient_evidence"
+        and judge_result.get("reason_code") not in {None, "missing_evidence"}
+        and state.get("repair_attempts", 0) < 1
+    ):
+        return "prepare_judge_repair"
 
     return "judge_blocked"
 

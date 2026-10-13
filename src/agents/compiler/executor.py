@@ -24,13 +24,15 @@ class CompilerExecutor:
         self,
         state: GraphState,
     ) -> list[AnyMessage]:
-        payload = json.dumps(
-            {
-                "agent_results": state.get("agent_results", {}),
-                "evidences": state.get("evidences", []),
-            },
-            ensure_ascii=False,
-        )
+        payload_data: dict[str, object] = {
+            "agent_results": state.get("agent_results", {}),
+            "evidences": state.get("evidences", []),
+        }
+        judge_feedback = state.get("judge_feedback")
+        if judge_feedback is not None:
+            payload_data["judge_feedback"] = judge_feedback
+
+        payload = json.dumps(payload_data, ensure_ascii=False)
 
         context = HumanMessage(
             content=(
@@ -38,6 +40,16 @@ class CompilerExecutor:
                 f"disponíveis:\n{payload}"
             )
         )
+        if judge_feedback is not None:
+            context = HumanMessage(
+                content=(
+                    f"{context.content}\n\n"
+                    "A resposta candidata anterior foi rejeitada. Faça uma única "
+                    "reformulação usando somente as evidências disponíveis e "
+                    "corrija o problema indicado em judge_feedback. Não invente "
+                    "evidências nem fatos."
+                )
+            )
 
         return [
             SystemMessage(content=self.card.system_prompt_template),

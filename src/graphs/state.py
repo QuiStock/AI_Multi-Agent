@@ -104,6 +104,12 @@ class JudgeResult(AgentResult):
     ]
     reason: str
     evidence_ids: list[str]
+    reason_code: NotRequired[str]
+    confidence: NotRequired[float]
+    probabilities: NotRequired[dict[str, float]]
+    model: NotRequired[str]
+    input_tokens: NotRequired[int | None]
+    output_tokens: NotRequired[int | None]
 
 
 class AgentResults(TypedDict, total=False):
@@ -181,6 +187,8 @@ class GraphState(TypedDict, total=False):
     ]
 
     response_draft: ResponseDraft | None
+    judge_feedback: NotRequired[JudgeResult]
+    repair_attempts: NotRequired[int]
     final_response: FinalResponse | None
 
     status: TurnStatus

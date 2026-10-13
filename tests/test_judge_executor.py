@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.agents.judge.executor import JudgeExecutor
+from src.agents.judge.jev_client import JevEvaluation
 from src.graphs.contracts import JudgeDecision
 from src.graphs.state import Evidence, ResponseDraft
 
@@ -21,6 +22,16 @@ class FakeJudgeModel:
             raise self.result
 
         return self.result
+
+
+class FakeJevClient:
+    def __init__(self, evaluation: JevEvaluation) -> None:
+        self.evaluation = evaluation
+        self.calls = 0
+
+    def evaluate(self, **_: Any) -> JevEvaluation:
+        self.calls += 1
+        return self.evaluation
 
 
 def _draft(
@@ -180,3 +191,71 @@ def test_judge_fails_closed_on_invalid_structured_output() -> None:
 
     assert result["status"] == "invalid"
     assert result["error_code"] == "JUDGE_INVALID_OUTPUT"
+
+
+def test_jev_approves_only_with_supported_verdict_and_threshold() -> None:
+    client = FakeJevClient(
+        JevEvaluation(
+            verdict="approved",
+            reason_code="none",
+            confidence=0.95,
+            probabilities={"approved": 0.95, "rejected": 0.05},
+            model="jev-1.13.0",
+            input_tokens=100,
+            output_tokens=10,
+        )
+    )
+
+    result = JudgeExecutor(jev_client=client).invoke(
+        response_draft=_draft(),
+        evidences=[_evidence()],
+    )
+
+    assert result["status"] == "approved"
+    assert result["confidence"] == 0.95
+    assert result["model"] == "jev-1.13.0"
+    assert client.calls == 1
+
+
+def test_jev_missing_evidence_returns_specific_rejection() -> None:
+    client = FakeJevClient(
+        JevEvaluation(
+            verdict="rejected",
+            reason_code="missing_evidence",
+            confidence=0.92,
+            probabilities={"approved": 0.08, "rejected": 0.92},
+            model="jev-1.13.0",
+        )
+    )
+
+    result = JudgeExecutor(jev_client=client).invoke(
+        response_draft=_draft(),
+        evidences=[_evidence()],
+    )
+
+    assert result["status"] == "insufficient_evidence"
+    assert result["reason_code"] == "missing_evidence"
+    assert result["error_code"] == "JUDGE_MISSING_EVIDENCE"
+
+
+def test_jev_rejects_low_confidence_approval() -> None:
+    client = FakeJevClient(
+        JevEvaluation(
+            verdict="approved",
+            reason_code="none",
+            confidence=0.60,
+            probabilities={"approved": 0.60, "rejected": 0.40},
+            model="jev-1.13.0",
+        )
+    )
+
+    result = JudgeExecutor(
+        jev_client=client,
+        jev_confidence_threshold=0.85,
+    ).invoke(
+        response_draft=_draft(),
+        evidences=[_evidence()],
+    )
+
+    assert result["status"] == "insufficient_evidence"
+    assert result["reason_code"] == "low_confidence"

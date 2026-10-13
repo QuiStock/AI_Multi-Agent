@@ -257,6 +257,11 @@ def run_judge_node(
             "status": judge_result["status"],
             "evidence_count": len(judge_result["evidence_ids"]),
             "reason_code": judge_result.get("error_code"),
+            "judge_reason_code": judge_result.get("reason_code"),
+            "confidence": judge_result.get("confidence"),
+            "model": judge_result.get("model"),
+            "input_tokens": judge_result.get("input_tokens"),
+            "output_tokens": judge_result.get("output_tokens"),
         },
     )
 
