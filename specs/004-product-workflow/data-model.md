@@ -24,7 +24,7 @@
 
 - `suggestion(product_id, store_id)` é a origem do estado/parametrização sugeridos; `suggestion_log(suggestion_id, event)` exclui itens com evento `EXPIRED`.
 - `product(id, name, sku, category_id)` e `category(id, name)` identificam o produto; `store(id, name)` representa o estabelecimento.
-- `user_account(id, email, role_id)`, `role(id, code)` e `user_store(user_id, store_id, active, unassigned_at)` são parte do contexto/escopo. A consulta deve reutilizar a identidade autenticada, comparar `role.code` e validar vínculo de loja ativo.
+- A autenticação busca `user_account(id, email, role_id)` e `role(id, code)` uma vez e propaga `role.code` no contexto autenticado. A consulta comercial reutiliza email, role code e lojas autorizadas, sem reler a tabela `role`, e valida vínculo de loja ativo.
 - Para cards do tipo pedido, a quantidade vem de `current_batch_count` com fallback `ml_batch_count`; para promoção, percentual vem de `current_discount_percentage` com fallback `ml_discount_percentage`, além dos preços/validade da promoção existentes.
 - A validade física exibida no card vem do menor `batch.expiration_date` para o produto e loja, somente entre lotes ativos com saldo positivo. Não confundir com `suggestion.promotion_valid_until`. Essa agregação precisa ser confrontada com o card real do frontend antes de produção.
 - O script não apresenta campo explícito de apresentação/embalagem em `product`; existem `sku` e `erp_id`. Se nome e categoria não bastarem para distinguir homônimos, usar SKU como identificador, sem rotulá-lo como apresentação.
