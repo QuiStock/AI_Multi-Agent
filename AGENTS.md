@@ -251,8 +251,9 @@ Memória:
 - `GET /api/v1/conversations/{conversation_id}/messages` devolve o histórico
   completo de uma conversa ativa ou encerrada do email autenticado, na ordem
   persistida no MongoDB. A leitura não altera o status; ausente, de outro usuário
-  ou em exclusão retorna 404. Após novo envio, uma nova leitura inclui as
-  mensagens anteriores e o novo par usuário/assistente.
+  ou em exclusão retorna 404. O cliente deve chamar esse GET ao abrir a conversa
+  e após cada POST de mensagem bem-sucedido, usando a resposta como lista
+  completa do chat. Até o GET concluir, mantém a lista anterior na tela.
 - A retomada autorizada restaura mensagens do MongoDB em ordem e não duplica a
   mensagem atual.
 
