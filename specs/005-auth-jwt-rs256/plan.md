@@ -1,6 +1,6 @@
 # Plano de migração para RS256/JWKS
 
-Base: branch `refactor` criada da `main` no commit `47ee5df`. Este plano segue a [especificação](spec.md); a implementação depende da integração da API e das decisões sobre Auth e identidade.
+Base: branch `refactor` criada da `main` no commit `47ee5df`, com `fix(auth)` integrada. Este plano segue a [especificação](spec.md). A implementação está no repositório; faltam os valores literais da Auth para ativá-la em ambiente real.
 
 ## Ordem de execução
 

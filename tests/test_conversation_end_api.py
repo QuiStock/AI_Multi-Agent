@@ -70,7 +70,7 @@ def _post_end(app: Any, *, body: dict[str, str] | None = None) -> Any:
 
 def _override_principal(app: Any, email: str = "user-1") -> None:
     app.dependency_overrides[get_authenticated_principal] = lambda: (
-        AuthenticatedPrincipal(email=email, role_id=2)
+        AuthenticatedPrincipal(user_id=42, email=email, role_id=2, store_ids=(4,))
     )
 
 

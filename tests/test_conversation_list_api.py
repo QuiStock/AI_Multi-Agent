@@ -32,7 +32,7 @@ def _client(
     app = create_app()
     app.dependency_overrides[get_conversation_list_controller] = lambda: controller
     app.dependency_overrides[get_authenticated_principal] = lambda: (
-        AuthenticatedPrincipal(email="user-1", role_id=2)
+        AuthenticatedPrincipal(user_id=42, email="user-1", role_id=2, store_ids=(4,))
     )
     return TestClient(app), app, repository
 
@@ -98,7 +98,9 @@ def test_list_ended_conversations_uses_authenticated_email_without_query_identit
     controller = ConversationListController(ConversationListService(repository))
     app.dependency_overrides[get_conversation_list_controller] = lambda: controller
     app.dependency_overrides[get_authenticated_principal] = lambda: (
-        AuthenticatedPrincipal(email="verified@example.test", role_id=2)
+        AuthenticatedPrincipal(
+            user_id=42, email="verified@example.test", role_id=2, store_ids=(4,)
+        )
     )
 
     with TestClient(app) as client:

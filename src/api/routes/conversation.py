@@ -33,4 +33,6 @@ def converse(
         request=request,
         email=principal.email,
         role_id=principal.role_id,
+        user_id=principal.user_id,
+        store_ids=principal.store_ids,
     )

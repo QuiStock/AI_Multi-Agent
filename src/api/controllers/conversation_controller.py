@@ -16,15 +16,15 @@ class ConversationController:
         conversation_id: str,
         request: ConversationRequest,
         email: str,
-        role_id: int | None = None,
-        request_id: str | None = None,
-        a2a_store_id: int | None = None,
+        role_id: int,
+        user_id: int,
+        store_ids: tuple[int, ...],
     ) -> ConversationResponse:
         return self._service.converse(
             conversation_id=conversation_id,
             request=request,
             email=email,
             role_id=role_id,
-            request_id=request_id,
-            a2a_store_id=a2a_store_id,
+            user_id=user_id,
+            store_ids=store_ids,
         )

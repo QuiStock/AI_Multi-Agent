@@ -33,7 +33,7 @@ Snapshot atual:
   sem evento `EXPIRED`. Grants efetivos ainda precisam de validação no ambiente.
 - MCP e A2A são requisitos acadêmicos futuros; não são capacidades ativas
   nesta implementação.
-- O roadmap confirmado para autenticação, rota A2A, `product_workflow`, MCP,
+- O roadmap confirmado para rota A2A, MCP,
   observabilidade, plataforma QA, ambientes QA/prod, logs de produção,
   revisão do grafo/prompts e revisão Redis/async está em
   `docs/planejamento-multiagente-fastapi.md`, na seção
@@ -105,8 +105,9 @@ recalcula regras do ML e deve recusar quando não houver suporte suficiente.
 ### Product Workflow
 
 É somente leitura: usa o snapshot recebido para o produto do card ou consulta
-outra sugestão por query fixa parametrizada. O escopo de loja vem de `email` e
-`role_id` autenticados: role 3 vê `available_for_triage`; role 2 vê
+outra sugestão por query fixa parametrizada. O escopo de loja vem dos IDs de
+lojas ativas carregados por `user_account.id`, junto de `email` e `role_id`
+autenticados: role 3 vê `available_for_triage`; role 2 vê
 `SENT_TO_MANAGER`; ambas excluem `suggestion_log.event = 'EXPIRED'`. Snapshot
 tem proveniência cliente, nunca banco. Não recalcula ML, altera sugestões,
 cria pedidos, ativa promoções ou escreve no PostgreSQL.
@@ -155,7 +156,7 @@ está registrado e `src/api/dependencies.py` define o que entra no grafo.
 |---|---|---|
 | Router | `search_conversation_summaries` | Somente memória do próprio usuário; até 3 resumos encerrados, score inicial `>= 0.5`, conversa atual excluída e validação posterior no MongoDB. |
 | FAQ/RAG | `faq_search` | Consulta apenas o Qdrant da coleção FAQ; `top_k=4`, relevância mínima padrão `0.30`; sem busca externa. |
-| Product Workflow | `product_card_lookup` | Query predefinida e parametrizada; email/cargo são vinculados pelo runtime, não são argumentos do modelo. |
+| Product Workflow | `product_card_lookup` | Query predefinida e parametrizada; email/cargo/lojas são vinculados pelo runtime, não são argumentos do modelo. |
 | Judge | Nenhuma | Validação pura do payload recebido. |
 | Compiler | Nenhuma | Usa somente resultados e evidências já presentes no estado. |
 
@@ -209,8 +210,9 @@ Ownership de escrita:
 `add_messages`; `agent_results` preserva resultados por agente; `evidences`
 faz merge por `evidence_id`. Não adicione chaves ad hoc.
 
-O router recebe `messages` sanitizadas e `request` com `request_id`, `email`,
-`conversation_id`, `sent_at` e `sanitized_message`. O compiler recebe todos os
+O router recebe `messages` sanitizadas e `request` com `request_id`, `user_id`,
+`email`, `role_id`, `store_ids`, `conversation_id`, `sent_at` e
+`sanitized_message`. O compiler recebe todos os
 resultados/evidências disponíveis. O judge recebe o draft e as evidências. A
 resposta final é produzida pelo guardrail/finalização, não pelo judge.
 
@@ -229,8 +231,11 @@ Mensagem:
 ```
 
 Endpoint: `POST /api/v1/conversations/{conversation_id}/messages`, autenticado
-por `Authorization: Bearer <JWT>` assinado com HS256; o email vem da claim
-`email` e é associado a `user_account` antes do grafo.
+por `Authorization: Bearer <JWT>` assinado com RS256. A API valida o JWT pelo
+JWKS configurado (`JWT_JWKS_URL`), `JWT_ISSUER`, audience `quistock-api` e
+expiração. O `sub` é `user_account.id` decimal; a claim `email` deve coincidir
+com o banco. Role e lojas ativas são carregadas antes do grafo. Token inválido
+ou expirado recebe 401; cargo sem acesso ou sem loja ativa recebe 403.
 `ConversationRequest` rejeita campos extras, mensagem vazia e mensagens acima
 de 4.000 caracteres. A resposta contém `conversation_id`, `request_id`,
 `response` e status `success`, `rejected`, `clarification_required`,
@@ -295,9 +300,10 @@ troca o conteúdo por resposta controlada; nunca expõe regra interna.
 
 ### Identidade e dados comerciais
 
-As rotas de conversa recebem um JWT Bearer HS256 e derivam o email autenticado
-da claim `email`, validado pela API antes de executar o grafo. A identidade não vem do
-body nem da query e é propagada em todo o fluxo de memória. Consultas de
+As rotas de conversa recebem JWT Bearer RS256 e validam assinatura, issuer,
+audience e expiração pelo JWKS confiável. A API consulta `user_account` por
+`sub`, compara o email assinado, carrega cargo e lojas ativas. A identidade não
+vem do body nem da query e é propagada em todo o fluxo de memória. Consultas de
 identidade ao PostgreSQL usam credencial somente de leitura e SQL parametrizado.
 Ao implementar tools comerciais, derive role/store scope no servidor, use
 queries parametrizadas, limite de linhas, timeout e logs de auditoria; cubra
