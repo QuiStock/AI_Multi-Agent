@@ -59,9 +59,12 @@ Use `invalid` quando:
 
 - o payload estiver malformado;
 - houver IDs inexistentes;
-- a resposta for internamente contraditória;
 - os campos estruturados forem incompatíveis;
 - não for possível realizar um julgamento válido.
+
+Uma contradição entre a resposta e uma evidência é
+`insufficient_evidence`. Uma contradição interna que torne a resposta
+impossível de interpretar é `invalid`.
 
 ## Saída
 

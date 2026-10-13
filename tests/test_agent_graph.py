@@ -73,9 +73,11 @@ class FakeJudge:
         self,
         status: str = "approved",
         events: list[str] | None = None,
+        reason_code: str | None = None,
     ) -> None:
         self.status = status
         self.events = events
+        self.reason_code = reason_code
 
     def invoke(
         self,
@@ -86,10 +88,78 @@ class FakeJudge:
         if self.events is not None:
             self.events.append("judge")
 
-        return {
+        result = {
             "status": self.status,
             "reason": "Resultado controlado.",
             "evidence_ids": ["faq-1"] if self.status == "approved" else [],
+        }
+        if self.reason_code is not None:
+            result["reason_code"] = self.reason_code
+        return result
+
+
+class RepairJudge:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def invoke(
+        self,
+        *,
+        response_draft: dict[str, Any] | None,
+        evidences: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        self.calls += 1
+        if self.calls == 1:
+            return {
+                "status": "insufficient_evidence",
+                "reason": "Alegação sem suporte.",
+                "evidence_ids": ["faq-1"],
+                "reason_code": "unsupported_claim",
+            }
+        return {
+            "status": "approved",
+            "reason": "Resposta corrigida.",
+            "evidence_ids": ["faq-1"],
+        }
+
+
+class AlwaysRejectJudge:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def invoke(
+        self,
+        *,
+        response_draft: dict[str, Any] | None,
+        evidences: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        self.calls += 1
+        return {
+            "status": "insufficient_evidence",
+            "reason": "Alegação sem suporte.",
+            "evidence_ids": ["faq-1"],
+            "reason_code": "unsupported_claim",
+        }
+
+
+class RepairCompiler:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.saw_feedback = False
+
+    def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
+        self.calls += 1
+        if state.get("judge_feedback") is not None:
+            self.saw_feedback = True
+            return {
+                "content": "Resposta corrigida.",
+                "citations": ["faq-1"],
+                "status": "draft",
+            }
+        return {
+            "content": "Resposta inicial.",
+            "citations": ["faq-1"],
+            "status": "draft",
         }
 
 
@@ -310,6 +380,92 @@ def test_graph_returns_controlled_response_when_judge_is_invalid() -> None:
         "content": "Não foi possível validar a resposta gerada.",
         "status": "error",
     }
+
+
+def test_graph_reforms_once_after_correctable_judge_rejection() -> None:
+    judge = RepairJudge()
+    compiler = RepairCompiler()
+    graph = create_agent_graph(
+        input_guardrail=_passed_input,
+        router=FakeRouter("faq", "dispatch"),
+        capabilities={
+            "faq": partial(
+                run_faq_node,
+                executor=FakeFAQExecutor(),
+            )
+        },
+        judge=judge,
+        compiler=compiler,
+        output_guardrail=_passing_output,
+        context_enricher=EmptyContextEnricher(),
+    )
+
+    result = graph.invoke(_graph_input("pergunta"))
+
+    assert judge.calls == 2
+    assert compiler.calls == 2
+    assert compiler.saw_feedback is True
+    assert result["repair_attempts"] == 1
+    assert result["final_response"] == {
+        "content": "Resposta corrigida.",
+        "status": "success",
+    }
+
+
+def test_graph_returns_controlled_response_without_repair_for_missing_evidence() -> (
+    None
+):
+    compiler = RepairCompiler()
+    graph = create_agent_graph(
+        input_guardrail=_passed_input,
+        router=FakeRouter("faq", "dispatch"),
+        capabilities={
+            "faq": partial(
+                run_faq_node,
+                executor=FakeFAQExecutor(),
+            )
+        },
+        judge=FakeJudge(
+            status="insufficient_evidence",
+            reason_code="missing_evidence",
+        ),
+        compiler=compiler,
+        output_guardrail=_passing_output,
+        context_enricher=EmptyContextEnricher(),
+    )
+
+    result = graph.invoke(_graph_input("pergunta"))
+
+    assert compiler.calls == 1
+    assert result["final_response"] == {
+        "content": "Não encontrei evidências suficientes para confirmar a resposta.",
+        "status": "error",
+    }
+
+
+def test_graph_allows_only_one_repair_attempt() -> None:
+    judge = AlwaysRejectJudge()
+    compiler = RepairCompiler()
+    graph = create_agent_graph(
+        input_guardrail=_passed_input,
+        router=FakeRouter("faq", "dispatch"),
+        capabilities={
+            "faq": partial(
+                run_faq_node,
+                executor=FakeFAQExecutor(),
+            )
+        },
+        judge=judge,
+        compiler=compiler,
+        output_guardrail=_passing_output,
+        context_enricher=EmptyContextEnricher(),
+    )
+
+    result = graph.invoke(_graph_input("pergunta"))
+
+    assert judge.calls == 2
+    assert compiler.calls == 2
+    assert result["final_response"]["status"] == "error"
 
 
 def test_graph_returns_controlled_error_when_compiler_blocks() -> None:

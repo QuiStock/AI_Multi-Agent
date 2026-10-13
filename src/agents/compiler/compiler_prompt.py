@@ -39,6 +39,13 @@ Não invente IDs e não use nomes de arquivos ou descrições como IDs.
 Se não houver evidência suficiente para produzir uma resposta factual,
 retorne um status diferente de `success`.
 
+## Reformulação após rejeição
+
+Quando o payload incluir `judge_feedback`, a resposta anterior foi rejeitada
+pelo juiz. Faça somente uma reformulação corretiva usando as evidências
+disponíveis. Remova alegações sem suporte, corrija citações inválidas e não
+tente preencher evidência ausente. Essa é a única tentativa de reformulação.
+
 ## Formatação
 
 - Produza Markdown válido.

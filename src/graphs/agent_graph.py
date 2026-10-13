@@ -78,7 +78,9 @@ def judge_blocked_node(state: GraphState) -> GraphState:
     judge_result = state.get("agent_results", {}).get("judge")
     content = "Não foi possível validar a resposta gerada."
 
-    if judge_result and judge_result["status"] == "insufficient_evidence":
+    if judge_result and judge_result.get("reason_code") == "missing_evidence":
+        content = "Não encontrei evidências suficientes para confirmar a resposta."
+    elif judge_result and judge_result["status"] == "insufficient_evidence":
         content = "Não foi possível confirmar a resposta com as evidências disponíveis."
 
     return {
@@ -87,6 +89,19 @@ def judge_blocked_node(state: GraphState) -> GraphState:
             "status": "error",
         },
         "status": "completed",
+    }
+
+
+def prepare_judge_repair_node(state: GraphState) -> GraphState:
+    judge_result = state.get("agent_results", {}).get("judge")
+    if judge_result is None:
+        return {
+            "repair_attempts": state.get("repair_attempts", 0) + 1,
+        }
+
+    return {
+        "judge_feedback": judge_result,
+        "repair_attempts": state.get("repair_attempts", 0) + 1,
     }
 
 
@@ -267,6 +282,12 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
     )
 
     graph.add_node(
+        "prepare_judge_repair",
+        _as_runnable(prepare_judge_repair_node),
+        input_schema=GraphState,
+    )
+
+    graph.add_node(
         "product_workflow_unavailable",
         _as_runnable(product_workflow_unavailable_node),
         input_schema=GraphState,
@@ -355,9 +376,12 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
         decide_after_judge,
         {
             "output_guardrail": "output_guardrail",
+            "prepare_judge_repair": "prepare_judge_repair",
             "judge_blocked": "judge_blocked",
         },
     )
+
+    graph.add_edge("prepare_judge_repair", "compiler")
 
     graph.add_edge(
         "output_guardrail",

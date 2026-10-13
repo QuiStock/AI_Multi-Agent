@@ -25,7 +25,9 @@ Snapshot atual:
 - MongoDB mantém mensagens e metadados de jobs; Redis Streams transporta IDs
   de jobs de resumo; Qdrant mantém o conteúdo dos resumos e atende FAQ. O
   checkpointer local é `MemorySaver` para desenvolvimento/testes.
-- `src/observability/{audit,metrics,traces}.py` ainda é placeholder.
+- Traces, métricas, custos e logs correlacionados estão ativos em
+  `src/observability/`; o router `/api/v1/observability` está registrado e
+  ainda não possui controle de acesso próprio.
 - A composição de produção em `src/api/dependencies.py` ativa as rotas `faq` e
   `product_workflow` quando PostgreSQL está configurado. O Product Workflow
   recebe snapshot de card como evidência de origem cliente e tem lookup fixo,
@@ -34,7 +36,7 @@ Snapshot atual:
 - MCP e A2A são requisitos acadêmicos futuros; não são capacidades ativas
   nesta implementação.
 - O roadmap confirmado para rota A2A, MCP,
-  observabilidade, plataforma QA, ambientes QA/prod, logs de produção,
+  plataforma QA, ambientes QA/prod,
   revisão do grafo/prompts e revisão Redis/async está em
   `docs/planejamento-multiagente-fastapi.md`, na seção
   `Atualização de planejamento — 2026-09-23`. Esses itens são planejamento,
@@ -58,6 +60,8 @@ src/agents/schemas/                 # AgentCard, ToolBinding e ToolResult
 src/agents/tooling/                 # factories e projeções de ToolResult
 src/guardrails/                     # segurança de entrada e saída
 src/memory/                         # MongoDB, Qdrant, Redis e retomada
+src/observability/                  # traces, métricas e logs correlacionados
+  front-observer/                   # frontend Vite executado separado da API
 src/llm_factory.py                  # modelos, embeddings e structured output
 tests/                              # contratos, unitários e integração
 ```
@@ -66,7 +70,7 @@ Fluxo executável atual:
 
 ```text
 HTTP -> input_guardrail -> context_enrichment -> normalize_user_message
-     -> router -> faq | product_workflow
+     -> router -> faq ou product_workflow
      -> compiler -> evidence_judge -> output_guardrail
      -> persist_turn -> resposta HTTP
 ```
@@ -84,7 +88,7 @@ Guardrails não são agentes: são controles obrigatórios do fluxo.
 |---|---|---|
 | `router` | Classificar a intenção e escolher uma rota permitida. | Registrado e usado pelo grafo. |
 | `faq_rag` | Responder em português usando apenas documentos recuperados. | Registrado e ativo. |
-| `product_workflow` | Explicar snapshot/card e consultar sugestão vigente para outro produto. | Registrado; read-only; requer PostgreSQL e grants autorizados. |
+| `product_workflow` | Consultar e explicar sugestões e triagem comercial em modo read-only. | Card, executor, duas tools e repositório PostgreSQL direto registrados; sem decisões ou operações de escrita. |
 | `evidence_judge` | Avaliar se o rascunho está sustentado pelas evidências e citações. | Registrado e usado após o compiler. |
 | `response_compiler` (`compiler`) | Sintetizar os resultados especializados em uma resposta candidata. | Registrado e usado antes do judge. |
 
@@ -99,8 +103,11 @@ comerciais e não cria rotas para capacidades ausentes.
 
 Pode buscar trechos `.txt`, `.md` e `.pdf` no Qdrant via `faq_search`, redigir
 uma resposta documental em português e indicar arquivo/página quando
-disponíveis. Não usa conhecimento externo, não inventa evidência, não
-recalcula regras do ML e deve recusar quando não houver suporte suficiente.
+disponíveis. Cada chunk possui `audience=shared`, `audience=employee` ou
+`audience=manager`; o executor usa `role_code=MANAGER` ou
+`role_code=EMPLOYEE` e aplica o filtro server-side antes da busca.
+Não usa conhecimento externo, não inventa evidência, não recalcula regras do ML
+e deve recusar quando não houver suporte suficiente.
 
 ### Product Workflow
 
@@ -114,9 +121,14 @@ cria pedidos, ativa promoções ou escreve no PostgreSQL.
 
 ### Evidence Judge
 
-Recebe apenas `response_draft` e `evidences`. Pode retornar `approved`,
-`insufficient_evidence` ou `invalid`. Não usa tools, não responde ao usuário,
-não corrige o texto e não usa conhecimento externo.
+Recebe apenas `response_draft` e `evidences`. As validações estruturais são
+locais e o julgamento semântico usa o modelo JEV da TypeSafe por um adapter
+interno; JEV não é uma tool MCP. O juiz pode retornar `approved`,
+`insufficient_evidence` ou `invalid`, além de códigos estruturados de motivo e
+confiança para auditoria. Não responde ao usuário nem usa conhecimento
+externo. Quando a rejeição é corrigível, o compiler recebe o motivo para uma
+única reformulação; `missing_evidence` termina diretamente em mensagem
+controlada e toda reformulação passa novamente pelo juiz.
 
 ### Response Compiler
 
@@ -144,8 +156,8 @@ O contrato declarativo fica em `src/agents/schemas/agent_card.py`:
   `evidence_judge`, `response_compiler`;
 - `id` em `snake_case`, versão SemVer, prompt não vazio e tools sem IDs
   duplicados;
-- `MemoryPolicy`, `EvidencePolicy` e `FailurePolicy` descrevem intenção e
-  devem ser acompanhadas por validação runtime e testes.
+- `FailurePolicy` descreve comportamento de timeout, retry e fallback e deve
+  ser acompanhada por validação runtime e testes.
 
 O card não substitui a implementação: `src/agents/registry.py` define o que
 está registrado e `src/api/dependencies.py` define o que entra no grafo.
@@ -156,17 +168,15 @@ está registrado e `src/api/dependencies.py` define o que entra no grafo.
 |---|---|---|
 | Router | `search_conversation_summaries` | Somente memória do próprio usuário; até 3 resumos encerrados, score inicial `>= 0.5`, conversa atual excluída e validação posterior no MongoDB. |
 | FAQ/RAG | `faq_search` | Consulta apenas o Qdrant da coleção FAQ; `top_k=4`, relevância mínima padrão `0.30`; sem busca externa. |
-| Product Workflow | `product_card_lookup` | Query predefinida e parametrizada; email/cargo/lojas são vinculados pelo runtime, não são argumentos do modelo. |
-| Judge | Nenhuma | Validação pura do payload recebido. |
+| Product Workflow | `get_suggestion_for_product`, `get_suggestion_detail` | Consultas parametrizadas e somente leitura; identidade, cargo e lojas vêm da autenticação. Cards recebidos do cliente são explicados sem consultar o banco. |
+| Judge | JEV via adapter interno | Validação estrutural local e julgamento semântico tipado; sem MCP, sem tools descobertas e sem fallback silencioso. |
 | Compiler | Nenhuma | Usa somente resultados e evidências já presentes no estado. |
 
 Detalhes de wiring importantes:
 
-- `TOOL_REGISTRY` começa vazio. A composição registra `faq_search` antes de
-  construir o `FAQExecutor`; IDs ausentes devem falhar explicitamente. O
-  `product_card_lookup` é ligado por requisição ao pool e ao principal
-  autenticado e injetado diretamente no AgentCard; não pode ser guardado em
-  registry global com identidade de usuário.
+- A composição injeta o retriever base no `FAQExecutor`; a tool `faq_search` é
+  construída por requisição com o escopo do `role_code` e não guarda role em
+  estado global mutável.
 - O card do router declara a tool de memória, mas o `get_graph()` atual cria
   `RouterExecutor()` sem `summary_search_service`; portanto essa tool não está
   ativa no caminho HTTP padrão. Testes podem injetá-la.
@@ -174,10 +184,8 @@ Detalhes de wiring importantes:
   `ToolResult[FAQSearchData]`; a migração deve usar
   `src/agents/tooling/result_factory.py`, sem documentar o legado como contrato
   final.
-- `run_faq_node` hoje extrai o texto da resposta do executor, mas ainda inicializa
-  `citation_ids` vazio e não projeta as evidências do retorno legado para
-  `GraphState.evidences`; a trilha FAQ totalmente grounded só deve ser tratada
-  como concluída após essa migração e seus testes.
+- `run_faq_node` encaminha o `request` sanitizado ao FAQ e projeta as evidências
+  retornadas para `GraphState.evidences`.
 - `ToolBinding` descreve argumentos; não concede autorização. Autorização,
   tenant/store scope, limites, timeout e filtros pertencem ao servidor.
 
@@ -296,8 +304,11 @@ Quando regras colidirem, preserve nesta ordem:
 
 `input_guardrail` rejeita vazio/excesso, mascara CPF, CNPJ, e-mail, telefone,
 cartão e credenciais, detecta prompt injection, pedidos de dados internos,
-política governamental e classificação semântica bloqueada. O padrão é
-`fail_closed`; indisponibilidade do classificador bloqueia a entrada.
+política governamental e classificação semântica bloqueada. As decisões dos
+guardrails são determinísticas e implementadas no código:
+limites, PII, prompt injection, pedidos internos, política governamental,
+formatação, fontes FAQ, emojis e alegações comerciais. A análise de suporte
+semântico permanece sob responsabilidade do evidence judge, não dos guardrails.
 
 ### Saída e groundedness
 
@@ -333,7 +344,7 @@ foram avaliadas; sem evidência suficiente retorna `insufficient_evidence`.
 | Rota sem capacidade registrada | `out_of_scope`; não ativar fallback silencioso. |
 | FAQ sem evidência | Responder de forma controlada/indisponível e não usar conhecimento externo. |
 | Tool/DB/Qdrant indisponível | Retornar erro/partial seguro, preservar código estável e permitir retry apenas quando `retryable`; não inventar dados. |
-| Judge `insufficient_evidence` ou `invalid` | Bloquear a resposta factual e retornar mensagem controlada. |
+| Judge `missing_evidence`, `insufficient_evidence` ou `invalid` | Bloquear a resposta factual; `missing_evidence` retorna mensagem controlada sem reformulação, e outros motivos corrigíveis permitem no máximo uma reformulação antes de bloquear. |
 | Output guardrail falha | Substituir pela resposta controlada e não revelar detalhes internos. |
 | Memória sem candidatos | Seguir sem memória; se a busca falhar, observar o erro e usar somente o fallback recente permitido. |
 | Encerramento/Redis indisponível | Não fingir resumo concluído; API informa indisponibilidade e o worker/reconciliação pode tentar novamente. |
