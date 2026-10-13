@@ -28,8 +28,9 @@ class PostgresAccountRepository:
                 )
                 cursor.execute(
                     """
-                    SELECT ua.id, ua.email, ua.role_id, ua.status::text, st.id
+                    SELECT ua.id, ua.email, r.code, ua.status::text, st.id
                     FROM user_account AS ua
+                    JOIN role AS r ON r.id = ua.role_id
                     LEFT JOIN user_store AS us
                       ON us.user_id = ua.id
                      AND us.active IS TRUE
@@ -49,7 +50,7 @@ class PostgresAccountRepository:
             return UserAccount(
                 user_id=int(first[0]),
                 email=str(first[1]),
-                role_id=int(first[2]),
+                role_code=str(first[2]),
                 status=str(first[3]),
                 store_ids=tuple(
                     sorted({int(row[4]) for row in rows if row[4] is not None})

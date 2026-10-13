@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from src.agents.product_workflow.schemas import ProductCard
+from src.auth.permissions import PRODUCT_WORKFLOW_ROLE_CODES
 
 MAX_PRODUCT_QUERY_LENGTH = 200
 
@@ -35,8 +36,9 @@ class ProductCardRepository:
            ) current_batch ON TRUE
          WHERE EXISTS (
                SELECT 1 FROM user_account ua
+               JOIN role r ON r.id = ua.role_id
                JOIN user_store us ON us.user_id = ua.id
-                WHERE ua.email = %s AND ua.role_id = %s
+                WHERE ua.email = %s AND r.code = %s
                   AND ua.status::text = 'ACTIVE'
                   AND us.store_id = s.store_id AND us.active = TRUE
                   AND us.unassigned_at IS NULL
@@ -47,8 +49,8 @@ class ProductCardRepository:
                SELECT 1 FROM suggestion_log sl
                 WHERE sl.suggestion_id = s.id AND sl.event = 'EXPIRED'
            )
-           AND ((%s = 3 AND s.available_for_triage = TRUE)
-             OR (%s = 2 AND s.status = 'SENT_TO_MANAGER'))
+           AND ((%s = 'EMPLOYEE' AND s.available_for_triage = TRUE)
+             OR (%s = 'MANAGER' AND s.status = 'SENT_TO_MANAGER'))
          ORDER BY p.id, s.created_at DESC
          LIMIT 6
     """
@@ -61,11 +63,11 @@ class ProductCardRepository:
         self,
         *,
         email: str,
-        role_id: int,
+        role_code: str,
         store_ids: tuple[int, ...],
         product_query: str,
     ) -> list[ProductCard]:
-        if role_id not in (2, 3):
+        if role_code not in PRODUCT_WORKFLOW_ROLE_CODES:
             raise PermissionError("Cargo sem acesso a sugestões de produto")
         if not store_ids or any(
             type(store_id) is not int or store_id < 1 for store_id in store_ids
@@ -84,13 +86,13 @@ class ProductCardRepository:
                 self.SQL,
                 (
                     email,
-                    role_id,
+                    role_code,
                     list(store_ids),
                     pattern,
                     pattern,
                     pattern,
-                    role_id,
-                    role_id,
+                    role_code,
+                    role_code,
                 ),
             )
             rows = cursor.fetchall()

@@ -76,13 +76,15 @@ def _row() -> tuple[Any, ...]:
     )
 
 
-@pytest.mark.parametrize("role_id", [2, 3])
-def test_repository_builds_card_with_server_scope_and_fixed_query(role_id: int) -> None:
+@pytest.mark.parametrize("role_code", ["MANAGER", "EMPLOYEE"])
+def test_repository_builds_card_with_server_scope_and_fixed_query(
+    role_code: str,
+) -> None:
     cursor = FakeCursor(_row())
     pool = FakePool(cursor)
     cards = ProductCardRepository(pool).search(
         email="manager@example.test",
-        role_id=role_id,
+        role_code=role_code,
         store_ids=(10,),
         product_query="leite",
     )
@@ -93,19 +95,21 @@ def test_repository_builds_card_with_server_scope_and_fixed_query(role_id: int) 
     sql, params = cursor.calls[1]
     assert "suggestion_log" in sql and "EXPIRED" in sql
     assert "user_store" in sql and "us.active = TRUE" in sql
+    assert "JOIN role r ON r.id = ua.role_id" in sql
+    assert "r.code = %s" in sql
     assert "ANY(%s::bigint[])" in sql
     assert "available_for_triage = TRUE" in sql
     assert "SENT_TO_MANAGER" in sql
     assert "ILIKE %s" in sql
     assert params == (
         "manager@example.test",
-        role_id,
+        role_code,
         [10],
         "%leite%",
         "%leite%",
         "%leite%",
-        role_id,
-        role_id,
+        role_code,
+        role_code,
     )
     assert cursor.calls[0][0].startswith("SELECT set_config('statement_timeout'")
 
@@ -115,7 +119,10 @@ def test_repository_fails_closed_for_unsupported_role_without_querying() -> None
     pool = FakePool(cursor)
     with pytest.raises(PermissionError):
         ProductCardRepository(pool).search(
-            email="x@example.test", role_id=1, store_ids=(10,), product_query="leite"
+            email="x@example.test",
+            role_code="REGIONAL_MANAGER",
+            store_ids=(10,),
+            product_query="leite",
         )
     assert pool.calls == 0
 
@@ -124,7 +131,10 @@ def test_repository_rejects_empty_query_before_database_access() -> None:
     pool = FakePool(FakeCursor())
     with pytest.raises(ValueError):
         ProductCardRepository(pool).search(
-            email="x@example.test", role_id=3, store_ids=(10,), product_query=" "
+            email="x@example.test",
+            role_code="EMPLOYEE",
+            store_ids=(10,),
+            product_query=" ",
         )
     assert pool.calls == 0
 
@@ -153,7 +163,7 @@ def test_snapshot_is_evidence_without_database_lookup(
         {
             "request": {
                 "email": "user@example.test",
-                "role_id": 3,
+                "role_code": "EMPLOYEE",
                 "store_ids": [10],
                 "request_id": "req-1",
                 "product_card": {"product_name": "Leite Integral", "sku": "SKU-1"},
@@ -166,6 +176,30 @@ def test_snapshot_is_evidence_without_database_lookup(
     assert (
         result["evidences"][0]["metadata"]["provenance"] == "client_request_unverified"
     )
+
+
+def test_executor_denies_unsupported_role_even_with_client_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unexpected_agent(**_: Any) -> None:
+        pytest.fail("unauthorized role must not start the agent")
+
+    monkeypatch.setattr(executor_module, "create_agent_from_card", unexpected_agent)
+    executor = ProductWorkflowExecutor(object(), model=object())  # type: ignore[arg-type]
+    result = executor.invoke(
+        {
+            "request": {
+                "email": "user@example.test",
+                "role_code": "REGIONAL_MANAGER",
+                "store_ids": [10],
+                "request_id": "req-denied",
+                "product_card": {"product_name": "Leite Integral", "sku": "SKU-1"},
+            },
+            "messages": [],
+        }
+    )
+    assert result["status"] == "error"
+    assert result["evidences"] == []
 
 
 def test_lookup_tool_binds_identity_and_reports_ambiguous_products() -> None:
@@ -187,14 +221,14 @@ def test_lookup_tool_binds_identity_and_reports_ambiguous_products() -> None:
     tool = create_product_card_tool(
         repository=repository,
         email="user@example.test",
-        role_id=3,
+        role_code="EMPLOYEE",
         store_ids=(10,),
         request_id="req-2",  # type: ignore[arg-type]
     )
     payload = json.loads(tool.invoke({"product_query": "leite"}))
     assert repository.seen == {
         "email": "user@example.test",
-        "role_id": 3,
+        "role_code": "EMPLOYEE",
         "store_ids": (10,),
         "product_query": "leite",
     }
@@ -231,7 +265,7 @@ def test_lookup_tool_distinguishes_dependency_failures(
     tool = create_product_card_tool(
         repository=Repository(),  # type: ignore[arg-type]
         email="user@example.test",
-        role_id=3,
+        role_code="EMPLOYEE",
         store_ids=(10,),
         request_id="req-3",
     )
@@ -250,7 +284,7 @@ def test_lookup_tool_not_found_is_domain_outcome_not_dependency_error() -> None:
     tool = create_product_card_tool(
         repository=Repository(),  # type: ignore[arg-type]
         email="user@example.test",
-        role_id=3,
+        role_code="EMPLOYEE",
         store_ids=(10,),
         request_id="req-4",
     )

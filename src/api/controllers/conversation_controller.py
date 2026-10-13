@@ -16,7 +16,7 @@ class ConversationController:
         conversation_id: str,
         request: ConversationRequest,
         email: str,
-        role_id: int,
+        role_code: str,
         user_id: int,
         store_ids: tuple[int, ...],
     ) -> ConversationResponse:
@@ -24,7 +24,7 @@ class ConversationController:
             conversation_id=conversation_id,
             request=request,
             email=email,
-            role_id=role_id,
+            role_code=role_code,
             user_id=user_id,
             store_ids=store_ids,
         )

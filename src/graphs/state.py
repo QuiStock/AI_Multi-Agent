@@ -26,7 +26,7 @@ TurnStatus = Literal[
 class RequestContext(TypedDict):
     request_id: str
     email: str
-    role_id: int
+    role_code: str
     user_id: NotRequired[int]
     store_ids: NotRequired[list[int]]
     conversation_id: str

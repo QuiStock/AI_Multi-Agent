@@ -28,9 +28,11 @@ Status: **implementada na branch `refactor`**. O issuer e a URL do JWKS devem se
 
 **RF-AUTH-003 — Rejeição:** bearer ausente, malformado, com algoritmo não permitido, assinatura/chave inválida, claim obrigatória ausente ou inválida, issuer/audience incorretos, ou expirado retorna HTTP 401 com `WWW-Authenticate: Bearer`. O grafo não inicia. A resposta não revela token ou detalhes internos.
 
-**RF-AUTH-004 — Identidade:** `sub` identifica `user_account.id` (`BIGINT`) e é transportado no JWT como string decimal. A API consulta a conta local por esse ID; um `sub` fora do formato/intervalo da chave ou sem conta correspondente é inválido (401). A claim assinada `email` continua obrigatória e disponível ao principal autenticado para os fluxos atuais de conversa e memória. Se esse email divergir do email da conta localizada por `sub`, ou se a conta estiver inativa, a API retorna 401 e não inicia o grafo. O cargo vem da conta no servidor; claims ou campos livres do cliente não ampliam permissões.
+**RF-AUTH-004 — Identidade:** `sub` identifica `user_account.id` (`BIGINT`) e é transportado no JWT como string decimal. A API consulta a conta local por esse ID; um `sub` fora do formato/intervalo da chave ou sem conta correspondente é inválido (401). A claim assinada `email` continua obrigatória e disponível ao principal autenticado para os fluxos atuais de conversa e memória. Se esse email divergir do email da conta localizada por `sub`, ou se a conta estiver inativa, a API retorna 401 e não inicia o grafo. O cargo vem de `role.code`, obtido pelo vínculo `user_account.role_id = role.id` durante a consulta de autenticação; claims ou campos livres do cliente não ampliam permissões.
 
-**RF-AUTH-005 — Lojas:** a API consulta os vínculos ativos de `user_store` do usuário autenticado, limitados às lojas ativas em `store`. Os IDs dessas lojas e o cargo atual seguem no principal e no contexto do grafo junto do email. Um usuário autenticado com cargo permitido, mas sem loja ativa, recebe 403. `role_id = 1` continua sem acesso às rotas de conversa (403). As consultas comerciais conservam seus filtros de autorização no repositório e respeitam os IDs de lojas do contexto; valores enviados pelo cliente não ampliam esse conjunto.
+**RF-AUTH-005 — Lojas:** a API consulta os vínculos ativos de `user_store` do usuário autenticado, limitados às lojas ativas em `store`. Os IDs dessas lojas e `role.code` seguem no principal e no contexto do grafo junto do email. Um usuário autenticado com cargo permitido, mas sem loja ativa, recebe 403. `REGIONAL_MANAGER` continua sem acesso às rotas de conversa (403). As consultas comerciais conservam seus filtros de autorização no repositório e respeitam os IDs de lojas do contexto; valores enviados pelo cliente não ampliam esse conjunto.
+
+**RF-AUTH-006 — Permissões por código:** FAQ e Product Workflow aceitam `MANAGER` e `EMPLOYEE`; `REGIONAL_MANAGER` e códigos desconhecidos não entram nessas rotas. Product Workflow mostra sugestões `SENT_TO_MANAGER` ao `MANAGER` e sugestões `available_for_triage` ao `EMPLOYEE`. Nenhuma decisão usa valores numéricos de `role.id`, que podem variar entre bancos. A consulta comercial confirma que o código autenticado ainda corresponde ao cargo atual da conta.
 
 **RNF-AUTH-001 — Chaves:** o JWKS usa origem configurada e confiável, HTTPS fora do ambiente local, timeout de três segundos e cache de chaves de até cinco minutos no `PyJWKClient`, com atualização na rotação de `kid`. A chave privada não fica na API de IA. Falha do JWKS sem chave válida em cache é indisponibilidade de dependência (HTTP 503); `kid` desconhecido após consulta bem-sucedida é credencial inválida (401).
 
@@ -43,7 +45,8 @@ Status: **implementada na branch `refactor`**. O issuer e a URL do JWKS devem se
 - **CA-AUTH-003:** a rotação aceita chaves antigas e novas enquanto publicadas e deixa de aceitar uma chave após sua retirada efetiva, conforme a política de cache.
 - **CA-AUTH-004:** configuração ausente ou falha de rede do JWKS não aceita o token por suposição; sua resposta operacional é testada separadamente de credencial inválida.
 - **CA-AUTH-005:** dado email da claim diferente do email da conta, conta inexistente ou inativa, a API retorna 401 sem executar o grafo.
-- **CA-AUTH-006:** dado usuário válido com lojas ativas, email, cargo e IDs de lojas chegam ao grafo; consultas comerciais não retornam dados de outras lojas. Sem loja ativa ou com `role_id = 1`, a rota de conversa retorna 403 antes do grafo.
+- **CA-AUTH-006:** dado usuário válido com lojas ativas, email, `role.code` e IDs de lojas chegam ao grafo; consultas comerciais não retornam dados de outras lojas. Sem loja ativa ou com `REGIONAL_MANAGER`, a rota de conversa retorna 403 antes do grafo.
+- **CA-AUTH-007:** com IDs de role diferentes dos dados de demonstração, `MANAGER` e `EMPLOYEE` mantêm acesso ao FAQ e às respectivas sugestões do Product Workflow; código desconhecido recebe 403 antes do grafo.
 
 ## Decisões pendentes
 
@@ -53,7 +56,7 @@ Status: **implementada na branch `refactor`**. O issuer e a URL do JWKS devem se
 
 ## Configuração de implantação
 
-Definir `JWT_ISSUER` exatamente igual à claim `iss` publicada pela Auth e `JWT_JWKS_URL` como URL HTTPS do JWKS dessa mesma Auth. `aud` é fixo em `quistock-api`. Usar em `POSTGRES_DSN` uma conta somente leitura com `SELECT` em `user_account(id,email,role_id,status)`, `user_store(user_id,store_id,active,unassigned_at)` e `store(id,status)`; a consulta comercial também requer as tabelas já documentadas em `AGENTS.md`. Sem issuer/JWKS, a API responde 500 ao receber bearer; sem banco configurado, não autentica a conta.
+Definir `JWT_ISSUER` exatamente igual à claim `iss` publicada pela Auth e `JWT_JWKS_URL` como URL HTTPS do JWKS dessa mesma Auth. `aud` é fixo em `quistock-api`. Usar em `POSTGRES_DSN` uma conta somente leitura com `SELECT` em `user_account(id,email,role_id,status)`, `role(id,code)`, `user_store(user_id,store_id,active,unassigned_at)` e `store(id,status)`; a consulta comercial também requer as tabelas já documentadas em `AGENTS.md`. Sem issuer/JWKS, a API responde 500 ao receber bearer; sem banco configurado, não autentica a conta.
 
 ## Referências técnicas
 

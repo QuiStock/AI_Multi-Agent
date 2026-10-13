@@ -13,6 +13,7 @@ from src.agents.product_workflow.tools.product_card_repository import (
     ProductCardRepository,
 )
 from src.agents.product_workflow.tools.product_card_tool import create_product_card_tool
+from src.auth.permissions import PRODUCT_WORKFLOW_ROLE_CODES
 from src.graphs.state import Evidence
 from src.llm_factory import llm_fast
 
@@ -25,12 +26,12 @@ class ProductWorkflowExecutor:
 
     def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
         request = state.get("request", {})
-        email, role_id = request.get("email"), request.get("role_id")
+        email, role_code = request.get("email"), request.get("role_code")
         store_ids = request.get("store_ids")
         request_id = request.get("request_id")
         if (
             not isinstance(email, str)
-            or not isinstance(role_id, int)
+            or role_code not in PRODUCT_WORKFLOW_ROLE_CODES
             or not isinstance(request_id, str)
             or not isinstance(store_ids, list)
             or not store_ids
@@ -67,7 +68,7 @@ class ProductWorkflowExecutor:
         tool = create_product_card_tool(
             repository=self.repository,
             email=email,
-            role_id=role_id,
+            role_code=role_code,
             store_ids=tuple(store_ids),
             request_id=request_id,
         )
