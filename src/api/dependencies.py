@@ -27,8 +27,12 @@ from src.agents.router.executor import RouterExecutor
 from src.agents.tool_registry import TOOL_REGISTRY
 from src.api.controllers.conversation_controller import ConversationController
 from src.api.controllers.conversation_end_controller import ConversationEndController
+from src.api.controllers.conversation_history_controller import (
+    ConversationHistoryController,
+)
 from src.api.controllers.conversation_list_controller import ConversationListController
 from src.api.services.conversation_end_service import ConversationEndService
+from src.api.services.conversation_history_service import ConversationHistoryService
 from src.api.services.conversation_list_service import ConversationListService
 from src.api.services.conversation_service import ConversationService
 from src.api.services.health_service import HealthService
@@ -287,6 +291,12 @@ def get_conversation_end_controller() -> ConversationEndController:
 def get_conversation_list_controller() -> ConversationListController:
     return ConversationListController(
         ConversationListService(get_conversation_repository())
+    )
+
+
+def get_conversation_history_controller() -> ConversationHistoryController:
+    return ConversationHistoryController(
+        ConversationHistoryService(get_conversation_repository())
     )
 
 

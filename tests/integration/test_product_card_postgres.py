@@ -32,8 +32,7 @@ def test_product_lookup_obeys_role_store_expired_and_read_only_grants() -> None:
                 "CREATE ROLE product_reader LOGIN PASSWORD 'test-reader-password'"
             )
             connection.execute(
-                "CREATE TABLE user_account "
-                "(id INT, email TEXT, status TEXT)"
+                "CREATE TABLE user_account (id INT, email TEXT, status TEXT)"
             )
             connection.execute("CREATE TABLE store (id INT, status TEXT)")
             connection.execute(

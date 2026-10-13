@@ -7,6 +7,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from src.api.schemas.conversation import ConversationResponse
+from src.api.services.conversation_history_service import (
+    ConversationHistoryUnavailableError,
+)
 from src.api.services.conversation_list_service import ConversationListValidationError
 from src.memory.mongo_repository import (
     ConversationClosedError,
@@ -107,6 +110,18 @@ async def handle_conversation_list_validation(
     )
 
 
+async def handle_conversation_history_unavailable(
+    _: Request,
+    exc: Exception,
+) -> JSONResponse:
+    cast(ConversationHistoryUnavailableError, exc)
+    return _error_response(
+        status_code=503,
+        code="CONVERSATION_HISTORY_UNAVAILABLE",
+        message="Não foi possível carregar o histórico agora.",
+    )
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(
         ConversationNotFoundError,
@@ -125,4 +140,8 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(
         ConversationListValidationError,
         handle_conversation_list_validation,
+    )
+    app.add_exception_handler(
+        ConversationHistoryUnavailableError,
+        handle_conversation_history_unavailable,
     )

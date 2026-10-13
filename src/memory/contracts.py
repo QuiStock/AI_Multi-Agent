@@ -90,6 +90,17 @@ class ConversationSummarySnapshot(BaseModel):
         return value
 
 
+class ConversationHistory(BaseModel):
+    """Ordered transcript of one conversation owned by the authenticated user."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    conversation_id: str = Field(min_length=1)
+    title: str | None = None
+    status: Literal["active", "ended"]
+    messages: list[StoredMessage]
+
+
 class SummaryCommit(BaseModel):
     """Runtime summary revision; it must only be persisted in Qdrant."""
 
