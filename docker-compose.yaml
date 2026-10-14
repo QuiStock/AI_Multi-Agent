@@ -1,0 +1,14 @@
+services:
+  api:
+    container_name: quistock-ai-api
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports: ["8000:8000"]
+    env_file: .env
+  worker:
+    container_name: quistock-ai-worker
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    env_file: .env
