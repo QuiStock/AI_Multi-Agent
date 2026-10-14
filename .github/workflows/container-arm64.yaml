@@ -3,7 +3,8 @@ name: Container image (ARM64)
 on:
   pull_request:
     paths:
-      - Dockerfile
+      - Dockerfile.api
+      - Dockerfile.worker
       - .dockerignore
       - pyproject.toml
       - uv.lock
@@ -27,17 +28,34 @@ jobs:
       - uses: docker/build-push-action@v7
         with:
           context: .
+          file: Dockerfile.api
           platforms: linux/arm64
           push: false
           load: true
-          tags: quistock-chatbot:arm64-ci
+          tags: quistock-chatbot-api:arm64-ci
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: Dockerfile.worker
+          platforms: linux/arm64
+          push: false
+          load: true
+          tags: quistock-chatbot-worker:arm64-ci
 
       - name: Verify ARM64 architecture
         shell: bash
-        run: test "$(docker image inspect --format '{{.Architecture}}' quistock-chatbot:arm64-ci)" = arm64
+        run: |
+          test "$(docker image inspect --format '{{.Architecture}}' quistock-chatbot-api:arm64-ci)" = arm64
+          test "$(docker image inspect --format '{{.Architecture}}' quistock-chatbot-worker:arm64-ci)" = arm64
 
       - name: Verify API imports without credentials
         run: >-
           docker run --rm --platform linux/arm64 --entrypoint python
-          quistock-chatbot:arm64-ci
+          quistock-chatbot-api:arm64-ci
           -c "from src.main import app; assert '/health' in app.openapi()['paths']"
+
+      - name: Verify worker imports without credentials
+        run: >-
+          docker run --rm --platform linux/arm64 --entrypoint python
+          quistock-chatbot-worker:arm64-ci
+          -c "from src.memory.worker.run_summary_worker import main; assert callable(main)"
