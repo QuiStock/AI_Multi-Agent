@@ -28,19 +28,23 @@ Snapshot atual:
 - Traces, métricas, custos e logs correlacionados estão ativos em
   `src/observability/`; o router `/api/v1/observability` está registrado e
   ainda não possui controle de acesso próprio.
-- A composição de produção em `src/api/dependencies.py` ativa as rotas `faq` e
-  `product_workflow` quando PostgreSQL está configurado. O Product Workflow
-  recebe snapshot de card como evidência de origem cliente e tem lookup fixo,
+- A composição em `src/api/dependencies.py` ativa as rotas `faq`,
+  `product_workflow` e `external_a2a`; Product Workflow depende do PostgreSQL.
+  A fachada A2A está registrada em `src/main.py`, publica o Agent Card e só
+  aceita mensagens quando suas credenciais e a loja autorizada estão
+  configuradas. O Product Workflow recebe snapshot de card como evidência de
+  origem cliente e tem lookup fixo,
   parametrizado e somente leitura, restrito a `MANAGER`/`EMPLOYEE`, lojas ativas e itens
   sem evento `EXPIRED`. Grants efetivos ainda precisam de validação no ambiente.
-- MCP e A2A são requisitos acadêmicos futuros; não são capacidades ativas
-  nesta implementação.
-- O roadmap confirmado para rota A2A, MCP,
-  plataforma QA, ambientes QA/prod,
-  revisão do grafo/prompts e revisão Redis/async está em
-  `docs/planejamento-multiagente-fastapi.md`, na seção
-  `Atualização de planejamento — 2026-09-23`. Esses itens são planejamento,
-  não capacidades disponíveis neste snapshot.
+- A integração A2A está ativa: o Quistock publica uma fachada autenticada e o
+  grafo pode consultar o peer `truck_info_agent` pela rota `external_a2a`.
+  Essa consulta usa `truck_specs`; o modo mock é apenas para desenvolvimento e
+  não fornece dados técnicos verificados. MCP continua sendo requisito futuro,
+  não uma capacidade ativa.
+- O roadmap em `docs/planejamento-multiagente-fastapi.md`, na seção
+  `Atualização de planejamento — 2026-09-23`, registra objetivos confirmados;
+  confira o código e os testes para distinguir os itens já implementados dos
+  que continuam planejados.
 
 ## Mapa do projeto
 
@@ -71,10 +75,14 @@ Fluxo executável atual:
 ```text
 HTTP -> input_guardrail -> greeting_guardrail
      -> greeting ou context_enrichment -> normalize_user_message -> router
-     -> faq ou product_workflow
+     -> faq, product_workflow ou external_a2a
      -> compiler -> judge node (JEV adapter) -> output_guardrail
      -> persist_turn -> resposta HTTP
 ```
+
+A fachada A2A publica o card em `GET /.well-known/agent-card.json`. A rota
+`POST /a2a/message:send` exige credencial de serviço e contexto de loja
+autorizado e encaminha a mensagem pelo serviço de conversa.
 
 Rotas de esclarecimento, fora de escopo, entrada bloqueada e juiz bloqueado
 terminam em respostas controladas. A memória de retomada ocorre antes do
@@ -98,11 +106,12 @@ de um adapter interno.
 
 ### Router
 
-Pode classificar em `faq`, `product_workflow`, `clarification_required` ou
-`out_of_scope`, usar o contexto recente e, quando configurado, chamar sua
-única ferramenta, `search_conversation_summaries`, exclusivamente para
-resolver referências a conversas anteriores. Não responde ao usuário, não
-consulta dados comerciais e não cria rotas para capacidades ausentes.
+Pode classificar em `faq`, `product_workflow`, `external_a2a`,
+`clarification_required` ou `out_of_scope`, usar o contexto recente e, quando
+configurado, chamar sua única ferramenta, `search_conversation_summaries`,
+exclusivamente para resolver referências a conversas anteriores. Não responde
+ao usuário, não consulta dados comerciais e não cria rotas para capacidades
+ausentes.
 
 ### Greeting guardrail
 
