@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Hashable, Mapping
 from functools import partial
-from typing import cast
+from typing import Literal, cast
 
 from langchain_core.messages import AnyMessage, HumanMessage, RemoveMessage
 from langchain_core.runnables import RunnableLambda
@@ -16,32 +16,69 @@ from src.graphs.adapters import (
     CompilerExecutorPort,
     ConversationContextEnricherPort,
     GraphNode,
+    GreetingGuardrailPort,
     JudgeExecutorPort,
     MemoryMessagePersistencePort,
     RouterExecutorPort,
     run_compiler_node,
     run_context_enrichment_node,
+    run_greeting_guardrail_node,
     run_judge_node,
     run_normalize_user_message_node,
     run_persist_turn_node,
     run_router_node,
 )
 from src.graphs.decisions import (
+    decide_after_faq,
     decide_after_input_guardrail,
     decide_after_judge,
     decide_after_router,
 )
 from src.graphs.state import GraphState, RouteName
+from src.guardrails.greeting import GREETING_RESPONSE
+
+CONTROLLED_INPUT_RESPONSE = (
+    "Desculpe, não posso tratar desse tipo de assunto no Quistock."
+)
+BLOCKED_INPUT_HISTORY_MARKER = "[ENTRADA_BLOQUEADA]"
+JUDGE_BLOCKED_RESPONSE = (
+    "Desculpe, não foi possível te ajudar neste momento. Tente novamente mais tarde."
+)
+JEV_UNAVAILABLE_RESPONSE = "Desculpe, estamos com instabilidade com o fefo."
+PRODUCT_WORKFLOW_UNAVAILABLE_RESPONSE = (
+    "Desculpe, não foi possível consultar essas informações agora. "
+    "Tente novamente mais tarde."
+)
+PRODUCT_WORKFLOW_AMBIGUOUS_RESPONSE = (
+    "Encontrei mais de uma sugestão para esse produto. "
+    "Qual opção você deseja consultar?"
+)
+PRODUCT_WORKFLOW_NOT_FOUND_RESPONSE = (
+    "Não encontrei uma sugestão autorizada para esse produto. "
+    "Você pode informar o SKU ou verificar o nome do produto?"
+)
+FAQ_CONTROLLED_RESPONSE = (
+    "Não foi possível concluir a consulta da base de conhecimento agora. "
+    "Tente novamente mais tarde."
+)
+OUT_OF_SCOPE_RESPONSE = (
+    "Desculpe, não consigo ajudar com esse assunto. "
+    "Posso ajudar com informações sobre o Quistock, produtos e sugestões."
+)
 
 
-def input_rejected_node(state: GraphState) -> GraphState:
+def input_rejected_node(
+    state: GraphState,
+) -> GraphState:
     update: GraphState = {
         "final_response": {
-            "content": "A entrada não pôde ser processada.",
+            "content": CONTROLLED_INPUT_RESPONSE,
             "status": "rejected",
         },
-        "status": "completed",
+        "status": "in_progress",
     }
+    request = state.get("request")
+    request_id = request.get("request_id") if request else None
     latest_human = next(
         (
             message
@@ -49,15 +86,46 @@ def input_rejected_node(state: GraphState) -> GraphState:
             if isinstance(message, HumanMessage)
         ),
     )
-    if latest_human is not None and latest_human.id:
-        update["messages"] = [cast(AnyMessage, RemoveMessage(id=latest_human.id))]
+    if latest_human is not None:
+        message_id = (
+            f"{request_id}:user"
+            if isinstance(request_id, str) and request_id
+            else latest_human.id
+        )
+        if message_id is not None:
+            replacement: list[AnyMessage] = []
+            if latest_human.id:
+                replacement.append(cast(AnyMessage, RemoveMessage(id=latest_human.id)))
+            replacement.append(
+                HumanMessage(content=BLOCKED_INPUT_HISTORY_MARKER, id=message_id)
+            )
+            update["messages"] = replacement
+    elif isinstance(request_id, str) and request_id:
+        update["messages"] = [
+            HumanMessage(
+                content=BLOCKED_INPUT_HISTORY_MARKER,
+                id=f"{request_id}:user",
+            )
+        ]
     return update
+
+
+def greeting_node(_: GraphState) -> GraphState:
+    return {
+        "final_response": {
+            "content": GREETING_RESPONSE,
+            "status": "success",
+        },
+        "status": "in_progress",
+    }
 
 
 def clarification_node(_: GraphState) -> GraphState:
     return {
         "final_response": {
-            "content": "Preciso de mais detalhes para continuar.",
+            "content": (
+                "Pode me dar mais detalhes sobre o que você precisa no Quistock?"
+            ),
             "status": "clarification_required",
         },
         "status": "completed",
@@ -67,7 +135,7 @@ def clarification_node(_: GraphState) -> GraphState:
 def out_of_scope_node(_: GraphState) -> GraphState:
     return {
         "final_response": {
-            "content": "Essa solicitação está fora do escopo atual.",
+            "content": OUT_OF_SCOPE_RESPONSE,
             "status": "out_of_scope",
         },
         "status": "completed",
@@ -76,18 +144,22 @@ def out_of_scope_node(_: GraphState) -> GraphState:
 
 def judge_blocked_node(state: GraphState) -> GraphState:
     judge_result = state.get("agent_results", {}).get("judge")
+    error_code = judge_result.get("error_code") if judge_result else None
     content = "Não foi possível validar a resposta gerada."
 
-    if judge_result and judge_result.get("reason_code") == "missing_evidence":
-        content = "Não encontrei evidências suficientes para confirmar a resposta."
+    if isinstance(error_code, str) and error_code.startswith("JUDGE_JEV_"):
+        content = JEV_UNAVAILABLE_RESPONSE
+    elif judge_result and judge_result.get("reason_code") == "missing_evidence":
+        content = JUDGE_BLOCKED_RESPONSE
     elif judge_result and judge_result["status"] == "insufficient_evidence":
-        content = "Não foi possível confirmar a resposta com as evidências disponíveis."
+        content = JUDGE_BLOCKED_RESPONSE
 
     return {
         "final_response": {
             "content": content,
             "status": "error",
         },
+        "response_draft": None,
         "status": "completed",
     }
 
@@ -106,14 +178,50 @@ def prepare_judge_repair_node(state: GraphState) -> GraphState:
 
 
 def product_workflow_unavailable_node(state: GraphState) -> GraphState:
+    return {
+        "final_response": {
+            "content": PRODUCT_WORKFLOW_UNAVAILABLE_RESPONSE,
+            "status": "error",
+        },
+        "status": "completed",
+    }
+
+
+def product_workflow_ambiguous_node(state: GraphState) -> GraphState:
+    return {
+        "final_response": {
+            "content": PRODUCT_WORKFLOW_AMBIGUOUS_RESPONSE,
+            "status": "clarification_required",
+        },
+        "status": "completed",
+    }
+
+
+def product_workflow_not_found_node(state: GraphState) -> GraphState:
     result = state.get("agent_results", {}).get("product_workflow", {})
-    content = result.get("answer") or (
-        "Não consegui consultar os dados do produto agora. Tente novamente mais tarde."
+    content = (
+        str(result.get("answer", "")).strip() or PRODUCT_WORKFLOW_NOT_FOUND_RESPONSE
     )
     return {
         "final_response": {
             "content": content,
-            "status": "error",
+            "status": "clarification_required",
+        },
+        "status": "completed",
+    }
+
+
+def faq_controlled_response_node(state: GraphState) -> GraphState:
+    result = state.get("agent_results", {}).get("faq", {})
+    next_step = result.get("next_step", "controlled_error")
+    content = str(result.get("answer", "")).strip() or FAQ_CONTROLLED_RESPONSE
+    status: Literal["error", "clarification_required"] = (
+        "error" if next_step == "controlled_error" else "clarification_required"
+    )
+    return {
+        "final_response": {
+            "content": content,
+            "status": status,
         },
         "status": "completed",
     }
@@ -121,28 +229,14 @@ def product_workflow_unavailable_node(state: GraphState) -> GraphState:
 
 def decide_after_product_workflow(state: GraphState) -> str:
     result = state.get("agent_results", {}).get("product_workflow", {})
-    return (
-        "compiler"
-        if result.get("status") == "success"
-        else "product_workflow_unavailable"
-    )
-
-
-def external_a2a_unavailable_node(_: GraphState) -> GraphState:
-    return {
-        "final_response": {
-            "content": "Não consegui consultar o sistema externo de caminhões agora.",
-            "status": "error",
-        },
-        "status": "completed",
-    }
-
-
-def decide_after_external_a2a(state: GraphState) -> str:
-    result = state.get("agent_results", {}).get("external_a2a", {})
-    return (
-        "compiler" if result.get("status") == "success" else "external_a2a_unavailable"
-    )
+    lookup_status = result.get("lookup_status")
+    if lookup_status == "ambiguous":
+        return "product_workflow_ambiguous"
+    if lookup_status == "not_found":
+        return "product_workflow_not_found"
+    if result.get("status") == "success":
+        return "compiler"
+    return "product_workflow_unavailable"
 
 
 def _as_runnable(
@@ -182,6 +276,7 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
     compiler: CompilerExecutorPort,
     output_guardrail: GraphNode,
     context_enricher: ConversationContextEnricherPort,
+    greeting_guardrail: GreetingGuardrailPort | None = None,
     message_service: MemoryMessagePersistencePort | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
 ) -> CompiledStateGraph:
@@ -195,6 +290,24 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
     graph.add_node(
         "input_guardrail",
         _as_runnable(input_guardrail),
+        input_schema=GraphState,
+    )
+
+    if greeting_guardrail is not None:
+        graph.add_node(
+            "greeting_guardrail",
+            _as_runnable(
+                partial(
+                    run_greeting_guardrail_node,
+                    guardrail=greeting_guardrail,
+                )
+            ),
+            input_schema=GraphState,
+        )
+
+    graph.add_node(
+        "greeting",
+        _as_runnable(greeting_node),
         input_schema=GraphState,
     )
 
@@ -292,9 +405,22 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
         _as_runnable(product_workflow_unavailable_node),
         input_schema=GraphState,
     )
+
     graph.add_node(
-        "external_a2a_unavailable",
-        _as_runnable(external_a2a_unavailable_node),
+        "product_workflow_ambiguous",
+        _as_runnable(product_workflow_ambiguous_node),
+        input_schema=GraphState,
+    )
+
+    graph.add_node(
+        "product_workflow_not_found",
+        _as_runnable(product_workflow_not_found_node),
+        input_schema=GraphState,
+    )
+
+    graph.add_node(
+        "faq_controlled_response",
+        _as_runnable(faq_controlled_response_node),
         input_schema=GraphState,
     )
 
@@ -318,10 +444,26 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
         "input_guardrail",
         decide_after_input_guardrail,
         {
-            "context_enrichment": "context_enrichment",
+            "context_enrichment": (
+                "greeting_guardrail"
+                if greeting_guardrail is not None
+                else "context_enrichment"
+            ),
             "input_rejected": "input_rejected",
         },
     )
+
+    if greeting_guardrail is not None:
+        graph.add_conditional_edges(
+            "greeting_guardrail",
+            lambda state: (
+                "greeting"
+                if state.get("greeting_classification", {}).get("category")
+                == "greeting_only"
+                else "context_enrichment"
+            ),
+            {"greeting": "greeting", "context_enrichment": "context_enrichment"},
+        )
 
     graph.add_edge("context_enrichment", "normalize_user_message")
     graph.add_edge("normalize_user_message", "router")
@@ -332,6 +474,7 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
         {
             "clarification_required": "clarification_required",
             "out_of_scope": "out_of_scope",
+            "persist_turn": "persist_turn",
         }
     )
 
@@ -351,16 +494,18 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
                 decide_after_product_workflow,
                 {
                     "compiler": "compiler",
+                    "product_workflow_ambiguous": "product_workflow_ambiguous",
+                    "product_workflow_not_found": "product_workflow_not_found",
                     "product_workflow_unavailable": "product_workflow_unavailable",
                 },
             )
-        elif route == "external_a2a":
+        elif route == "faq":
             graph.add_conditional_edges(
                 route,
-                decide_after_external_a2a,
+                decide_after_faq,
                 {
                     "compiler": "compiler",
-                    "external_a2a_unavailable": "external_a2a_unavailable",
+                    "faq_controlled_response": "faq_controlled_response",
                 },
             )
         else:
@@ -388,16 +533,20 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
         "persist_turn",
     )
 
+    graph.add_edge("greeting", "output_guardrail")
+
     for terminal_node in (
         "clarification_required",
         "out_of_scope",
         "judge_blocked",
+        "product_workflow_ambiguous",
+        "product_workflow_not_found",
         "product_workflow_unavailable",
-        "external_a2a_unavailable",
+        "faq_controlled_response",
     ):
         graph.add_edge(terminal_node, "persist_turn")
 
     graph.add_edge("persist_turn", END)
-    graph.add_edge("input_rejected", END)
+    graph.add_edge("input_rejected", "persist_turn")
 
     return graph.compile(checkpointer=checkpointer)

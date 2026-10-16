@@ -27,6 +27,9 @@ def decide_after_router(
     if not decision:
         return "out_of_scope"
 
+    if decision["outcome"] == "direct_response":
+        return "persist_turn"
+
     if decision["outcome"] == "clarification_required":
         return "clarification_required"
 
@@ -36,6 +39,13 @@ def decide_after_router(
         return route
 
     return "out_of_scope"
+
+
+def decide_after_faq(state: GraphState) -> str:
+    result = state.get("agent_results", {}).get("faq", {})
+    if result.get("next_step", "continue") == "continue":
+        return "compiler"
+    return "faq_controlled_response"
 
 
 def decide_after_judge(

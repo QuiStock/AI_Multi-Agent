@@ -1,7 +1,7 @@
 """Retrieve summary candidates from the user's Qdrant memory collection."""
 
 from collections.abc import Callable, Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, cast
 
 from qdrant_client import QdrantClient, models
@@ -44,10 +44,6 @@ def _summary_filter(request: SummarySearchRequest) -> models.Filter:
                 match=models.MatchValue(value=request.email),
             ),
             models.FieldCondition(
-                key="memory_type",
-                match=models.MatchValue(value="conversation_summary"),
-            ),
-            models.FieldCondition(
                 key="status",
                 match=models.MatchValue(value="ended"),
             ),
@@ -61,13 +57,45 @@ def _summary_filter(request: SummarySearchRequest) -> models.Filter:
     )
 
 
+def _updated_at_filter(
+    request: SummarySearchRequest,
+    *,
+    start: datetime,
+    end: datetime,
+) -> models.Filter:
+    return models.Filter(
+        must=[
+            models.FieldCondition(
+                key="email",
+                match=models.MatchValue(value=request.email),
+            ),
+            models.FieldCondition(
+                key="status",
+                match=models.MatchValue(value="ended"),
+            ),
+            models.FieldCondition(
+                key="updated_at",
+                range=models.DatetimeRange(
+                    gte=start.astimezone(UTC),
+                    lt=end.astimezone(UTC),
+                ),
+            ),
+        ],
+        must_not=[
+            models.FieldCondition(
+                key="conversation_id",
+                match=models.MatchValue(value=request.conversation_id),
+            )
+        ],
+    )
+
+
 def _has_valid_identity(payload: Mapping[str, Any], email: str) -> bool:
     conversation_id = payload.get("conversation_id")
     return (
         isinstance(conversation_id, str)
         and bool(conversation_id.strip())
         and payload.get("email") == email
-        and payload.get("memory_type") == "conversation_summary"
         and payload.get("status") == "ended"
     )
 
@@ -110,7 +138,7 @@ def _candidate_from_point(
         "summary": cast(str, payload["summary"]),
         "updated_at": updated_at,
         "summary_version": cast(int, payload["summary_version"]),
-        "score": float(point.score),
+        "score": float(getattr(point, "score", 1.0)),
     }
 
 
@@ -137,3 +165,71 @@ def get_summary_context(
         if candidate is not None:
             candidates.append(candidate)
     return candidates
+
+
+def get_temporal_summary_context(
+    *,
+    request: SummarySearchRequest,
+    start: datetime,
+    end: datetime,
+    qdrant: QdrantClient,
+) -> list[SummaryCandidate]:
+    """Return ended summaries updated during a civil-day interval.
+
+    Temporal recovery intentionally does not embed the query.  The interval is
+    computed by the service in the user's configured civil timezone and sent to
+    Qdrant as UTC timestamps.
+    """
+    _validate_request(request)
+    if start.tzinfo is None or end.tzinfo is None:
+        raise ValueError("O intervalo temporal precisa incluir timezone")
+    _ensure_updated_at_index(qdrant, request.collection_name)
+    result, _ = qdrant.scroll(
+        collection_name=request.collection_name,
+        scroll_filter=_updated_at_filter(request, start=start, end=end),
+        limit=request.limit,
+        with_payload=True,
+        with_vectors=False,
+        order_by=models.OrderBy(key="updated_at", direction=models.Direction.DESC),
+    )
+    candidates: list[SummaryCandidate] = []
+    for point in result:
+        candidate = _candidate_from_point(point, email=request.email)
+        if candidate is not None:
+            candidates.append(candidate)
+    return candidates
+
+
+def get_recent_summary_context(
+    *,
+    request: SummarySearchRequest,
+    qdrant: QdrantClient,
+) -> list[SummaryCandidate]:
+    """Return the most recent ended summaries for explicit fallback wording."""
+    _validate_request(request)
+    _ensure_updated_at_index(qdrant, request.collection_name)
+    result, _ = qdrant.scroll(
+        collection_name=request.collection_name,
+        scroll_filter=_summary_filter(request),
+        limit=request.limit,
+        with_payload=True,
+        with_vectors=False,
+        order_by=models.OrderBy(key="updated_at", direction=models.Direction.DESC),
+    )
+    candidates: list[SummaryCandidate] = []
+    for point in result:
+        candidate = _candidate_from_point(point, email=request.email)
+        if candidate is not None:
+            candidates.append(candidate)
+    return candidates
+
+
+def _ensure_updated_at_index(qdrant: QdrantClient, collection_name: str) -> None:
+    creator = getattr(qdrant, "create_payload_index", None)
+    if callable(creator):
+        creator(
+            collection_name=collection_name,
+            field_name="updated_at",
+            field_schema=models.PayloadSchemaType.DATETIME,
+            wait=True,
+        )

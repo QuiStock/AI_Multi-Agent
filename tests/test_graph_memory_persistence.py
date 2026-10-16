@@ -132,7 +132,9 @@ def test_accepted_turn_persists_user_and_assistant_together() -> None:
             "email": "user-1",
             "request_id": "request-1",
             "sanitized_user_content": "mensagem sanitizada",
-            "assistant_content": "Preciso de mais detalhes para continuar.",
+            "assistant_content": (
+                "Pode me dar mais detalhes sobre o que você precisa no Quistock?"
+            ),
             "consulted_agents": [],
             "sent_at": None,
         }
@@ -145,7 +147,7 @@ def test_accepted_turn_persists_user_and_assistant_together() -> None:
     assert result["pii_map"] == {}
 
 
-def test_rejected_input_does_not_persist_any_message() -> None:
+def test_rejected_input_persists_a_safe_marker_as_a_normal_turn() -> None:
     service = RecordingMessageService()
     result = _graph(service, input_guardrail=_blocked_input).invoke(
         {
@@ -155,8 +157,23 @@ def test_rejected_input_does_not_persist_any_message() -> None:
     )
 
     assert result["final_response"]["status"] == "rejected"
-    assert all(message.type != "human" for message in result["messages"])
-    assert service.turns == []
+    assert result["messages"][0].content == "[ENTRADA_BLOQUEADA]"
+    assert result["messages"][1].content == (
+        "Desculpe, não posso tratar desse tipo de assunto no Quistock."
+    )
+    assert service.turns == [
+        {
+            "conversation_id": "conversation-1",
+            "email": "user-1",
+            "request_id": "request-2",
+            "sanitized_user_content": "[ENTRADA_BLOQUEADA]",
+            "assistant_content": (
+                "Desculpe, não posso tratar desse tipo de assunto no Quistock."
+            ),
+            "consulted_agents": [],
+            "sent_at": None,
+        }
+    ]
 
 
 def test_memory_saver_keeps_messages_between_turns() -> None:

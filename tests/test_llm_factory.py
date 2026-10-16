@@ -5,9 +5,8 @@ from typing import Any
 from src import config, llm_factory
 from src.agents.compiler import executor as compiler_module
 from src.agents.faq import executor as faq_module
-from src.agents.judge import executor as judge_module
 from src.agents.router import executor as router_module
-from src.graphs.contracts import CompilerResult, JudgeDecision, RouteDecision
+from src.graphs.contracts import CompilerResult, RouteDecision
 from src.memory.worker.title_generator import ConversationTitle
 
 
@@ -110,7 +109,11 @@ def test_faq_executor_uses_openai_model_by_default(monkeypatch: Any) -> None:
     )
     executor.invoke(
         {
-            "request": {"role_id": 2},
+            "request": {
+                "request_id": "request-1",
+                "trace_id": "trace-1",
+                "role_code": "MANAGER",
+            },
             "messages": [],
         }
     )
@@ -157,23 +160,3 @@ def test_compiler_uses_openai_create_agent(monkeypatch: Any) -> None:
         "tools": [],
         "response_format": CompilerResult,
     }
-
-
-def test_judge_uses_openai_structured_model(monkeypatch: Any) -> None:
-    sentinel_model = object()
-    captured: dict[str, Any] = {}
-
-    def fake_structured_model(schema: type[Any]) -> object:
-        captured["schema"] = schema
-        return sentinel_model
-
-    monkeypatch.setattr(
-        judge_module,
-        "get_structured_model",
-        fake_structured_model,
-    )
-
-    executor = judge_module.JudgeExecutor()
-
-    assert executor.model is sentinel_model
-    assert captured == {"schema": JudgeDecision}

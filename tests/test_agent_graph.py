@@ -6,8 +6,12 @@ from typing import Any
 from langchain_core.messages import AnyMessage, HumanMessage
 
 from src.graphs.adapters import run_faq_node
-from src.graphs.agent_graph import create_agent_graph
-from src.graphs.decisions import decide_after_input_guardrail, decide_after_router
+from src.graphs.agent_graph import create_agent_graph, decide_after_product_workflow
+from src.graphs.decisions import (
+    decide_after_faq,
+    decide_after_input_guardrail,
+    decide_after_router,
+)
 from src.graphs.state import RoutingDecision
 
 
@@ -68,16 +72,28 @@ class FakeFAQExecutor:
         }
 
 
+class ControlledFAQExecutor:
+    def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "answer": "Não encontrei informação documentada sobre esse assunto.",
+            "evidences": [],
+            "tool_status": "success",
+            "next_step": "direct_response",
+        }
+
+
 class FakeJudge:
     def __init__(
         self,
         status: str = "approved",
         events: list[str] | None = None,
         reason_code: str | None = None,
+        error_code: str | None = None,
     ) -> None:
         self.status = status
         self.events = events
         self.reason_code = reason_code
+        self.error_code = error_code
 
     def invoke(
         self,
@@ -95,6 +111,8 @@ class FakeJudge:
         }
         if self.reason_code is not None:
             result["reason_code"] = self.reason_code
+        if self.error_code is not None:
+            result["error_code"] = self.error_code
         return result
 
 
@@ -188,7 +206,7 @@ class FakeBlockedCompiler:
 
 
 def _passing_output(state: dict[str, Any]) -> dict[str, Any]:
-    response_draft = state.get("response_draft")
+    final_response = state.get("final_response")
     result: dict[str, Any] = {
         "output_guardrail": {
             "status": "passed",
@@ -197,11 +215,8 @@ def _passing_output(state: dict[str, Any]) -> dict[str, Any]:
             "violations": [],
         }
     }
-    if response_draft:
-        result["final_response"] = {
-            "content": response_draft["content"],
-            "status": "success",
-        }
+    if final_response:
+        result["final_response"] = final_response
     return result
 
 
@@ -222,7 +237,11 @@ def _graph_input(content: str) -> dict[str, Any]:
     }
 
 
-def _graph(judge_status: str = "approved") -> Any:
+def _graph(
+    judge_status: str = "approved",
+    *,
+    judge_error_code: str | None = None,
+) -> Any:
     return create_agent_graph(
         input_guardrail=_passed_input,
         router=FakeRouter("faq", "dispatch"),
@@ -232,7 +251,7 @@ def _graph(judge_status: str = "approved") -> Any:
                 executor=FakeFAQExecutor(),
             )
         },
-        judge=FakeJudge(judge_status),
+        judge=FakeJudge(judge_status, error_code=judge_error_code),
         compiler=FakeCompiler(),
         output_guardrail=_passing_output,
         context_enricher=EmptyContextEnricher(),
@@ -248,6 +267,63 @@ def test_decision_functions_fail_closed() -> None:
             active_routes={"faq"},
         )
         == "faq"
+    )
+    assert (
+        decide_after_faq(
+            {
+                "agent_results": {
+                    "faq": {
+                        "status": "success",
+                        "answer": "Sem evidência.",
+                        "citation_ids": [],
+                        "next_step": "direct_response",
+                    }
+                }
+            }
+        )
+        == "faq_controlled_response"
+    )
+
+
+def test_product_workflow_domain_outcomes_do_not_use_unavailable_node() -> None:
+    base = {
+        "status": "error",
+        "answer": "",
+        "evidence_ids": [],
+    }
+
+    assert (
+        decide_after_product_workflow(
+            {
+                "agent_results": {
+                    "product_workflow": {**base, "lookup_status": "ambiguous"}
+                }
+            }
+        )
+        == "product_workflow_ambiguous"
+    )
+    assert (
+        decide_after_product_workflow(
+            {
+                "agent_results": {
+                    "product_workflow": {**base, "lookup_status": "not_found"}
+                }
+            }
+        )
+        == "product_workflow_not_found"
+    )
+    assert (
+        decide_after_product_workflow(
+            {
+                "agent_results": {
+                    "product_workflow": {
+                        **base,
+                        "lookup_status": "unavailable",
+                    }
+                }
+            }
+        )
+        == "product_workflow_unavailable"
     )
 
 
@@ -266,7 +342,7 @@ def test_graph_dispatches_to_faq_compiler_and_judge() -> None:
 
     assert result["agent_results"]["faq"]["status"] == "success"
     assert result["agent_results"]["judge"]["status"] == "approved"
-    assert result["response_draft"]["content"] == "Resposta compilada."
+    assert result["response_draft"] is None
     assert result["final_response"] == {
         "content": "Resposta compilada.",
         "status": "success",
@@ -274,6 +350,32 @@ def test_graph_dispatches_to_faq_compiler_and_judge() -> None:
     assert result["output_guardrail"]["status"] == "passed"
     assert result["status"] == "completed"
     assert "memory" not in result
+
+
+def test_graph_persists_faq_direct_response_without_compiler_or_judge() -> None:
+    graph = create_agent_graph(
+        input_guardrail=_passed_input,
+        router=FakeRouter("faq", "dispatch"),
+        capabilities={
+            "faq": partial(
+                run_faq_node,
+                executor=ControlledFAQExecutor(),
+            )
+        },
+        judge=FakeJudge(),
+        compiler=FakeCompiler(),
+        output_guardrail=_passing_output,
+        context_enricher=EmptyContextEnricher(),
+    )
+
+    result = graph.invoke(_graph_input("pergunta sem evidência"))
+
+    assert result["final_response"] == {
+        "content": "Não encontrei informação documentada sobre esse assunto.",
+        "status": "clarification_required",
+    }
+    assert "response_draft" not in result
+    assert "judge" not in result.get("agent_results", {})
 
 
 def test_graph_runs_compiler_before_judge() -> None:
@@ -317,7 +419,7 @@ def test_graph_returns_controlled_response_for_input_rejection() -> None:
     result = graph.invoke(_graph_input("bloqueada"))
 
     assert result["final_response"] == {
-        "content": "A entrada não pôde ser processada.",
+        "content": "Desculpe, não posso tratar desse tipo de assunto no Quistock.",
         "status": "rejected",
     }
 
@@ -327,13 +429,16 @@ def test_graph_handles_clarification_and_out_of_scope_routes() -> None:
         (
             "clarification_required",
             "clarification_required",
-            "Preciso de mais detalhes para continuar.",
+            "Pode me dar mais detalhes sobre o que você precisa no Quistock?",
             "clarification_required",
         ),
         (
             "out_of_scope",
             "out_of_scope",
-            "Essa solicitação está fora do escopo atual.",
+            (
+                "Desculpe, não consigo ajudar com esse assunto. "
+                "Posso ajudar com informações sobre o Quistock, produtos e sugestões."
+            ),
             "out_of_scope",
         ),
     ]:
@@ -367,8 +472,23 @@ def test_graph_returns_controlled_response_when_judge_blocks() -> None:
 
     assert result["final_response"] == {
         "content": (
-            "Não foi possível confirmar a resposta com as evidências disponíveis."
+            "Desculpe, não foi possível te ajudar neste momento. "
+            "Tente novamente mais tarde."
         ),
+        "status": "error",
+    }
+    assert result["agent_results"]["judge"]["status"] == "insufficient_evidence"
+
+
+def test_graph_returns_jev_unavailable_message_and_keeps_diagnostic() -> None:
+    result = _graph(
+        judge_status="invalid",
+        judge_error_code="JUDGE_JEV_UNAVAILABLE",
+    ).invoke(_graph_input("pergunta"))
+
+    assert result["agent_results"]["judge"]["error_code"] == "JUDGE_JEV_UNAVAILABLE"
+    assert result["final_response"] == {
+        "content": "Desculpe, estamos com instabilidade com o fefo.",
         "status": "error",
     }
 
@@ -410,6 +530,7 @@ def test_graph_reforms_once_after_correctable_judge_rejection() -> None:
         "content": "Resposta corrigida.",
         "status": "success",
     }
+    assert result["response_draft"] is None
 
 
 def test_graph_returns_controlled_response_without_repair_for_missing_evidence() -> (
@@ -438,9 +559,14 @@ def test_graph_returns_controlled_response_without_repair_for_missing_evidence()
 
     assert compiler.calls == 1
     assert result["final_response"] == {
-        "content": "Não encontrei evidências suficientes para confirmar a resposta.",
+        "content": (
+            "Desculpe, não foi possível te ajudar neste momento. "
+            "Tente novamente mais tarde."
+        ),
         "status": "error",
     }
+    assert result["agent_results"]["judge"]["reason_code"] == "missing_evidence"
+    assert result["response_draft"] is None
 
 
 def test_graph_allows_only_one_repair_attempt() -> None:
@@ -466,6 +592,7 @@ def test_graph_allows_only_one_repair_attempt() -> None:
     assert judge.calls == 2
     assert compiler.calls == 2
     assert result["final_response"]["status"] == "error"
+    assert result["response_draft"] is None
 
 
 def test_graph_returns_controlled_error_when_compiler_blocks() -> None:

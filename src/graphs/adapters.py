@@ -12,11 +12,14 @@ from langchain_core.messages import (
     RemoveMessage,
 )
 
+from src.agents.product_workflow.models import SuggestionLookupStatus
+from src.graphs.contracts import GreetingDecision
 from src.graphs.state import (
     Evidence,
     ExternalA2AResult,
     FAQResult,
     GraphState,
+    GreetingClassification,
     JudgeResult,
     ProductWorkFlowResult,
     ResponseDraft,
@@ -35,6 +38,15 @@ class RouterExecutorPort(Protocol):
         *,
         request_context: Mapping[str, Any] | None = None,
     ) -> RoutingDecision: ...
+
+
+class GreetingGuardrailPort(Protocol):
+    def invoke(
+        self,
+        messages: Sequence[AnyMessage],
+        *,
+        request_context: Mapping[str, Any] | None = None,
+    ) -> GreetingDecision: ...
 
 
 class ConversationContextEnricherPort(Protocol):
@@ -120,16 +132,74 @@ def run_router_node(
         "outcome": decision["outcome"],
         "reason": decision["reason"],
     }
-    memory = decision.get("memory") or {
-        "previous_conversation_summaries": [],
-        "summary_context_loaded": False,
-        "source": "none",
-    }
-    return {
+    if decision.get("memory_action", "none") != "none":
+        routing_decision["memory_action"] = decision["memory_action"]
+    raw_decision = cast(Mapping[str, Any], decision)
+    update: dict[str, Any] = {
         "routing_decision": routing_decision,
-        "memory": memory,
         "status": "in_progress",
     }
+    memory = raw_decision.get("memory_retrieval")
+    if isinstance(memory, dict):
+        update["memory_retrieval"] = memory
+        evidence = memory.get("evidence")
+        if isinstance(evidence, list):
+            update["evidences"] = evidence
+    router_response = raw_decision.get("router_response")
+    if isinstance(router_response, str) and router_response.strip():
+        restored_response = _restore_pii_placeholders(
+            router_response,
+            state.get("pii_map", {}),
+        )
+        update["final_response"] = {
+            "content": restored_response,
+            "status": (
+                "success"
+                if isinstance(memory, dict)
+                and memory.get("results")
+                and not memory.get("error")
+                else "clarification_required"
+            ),
+        }
+        update["router_answered"] = True
+    return cast(GraphUpdate, update)
+
+
+def _restore_pii_placeholders(content: str, pii_map: Mapping[str, str]) -> str:
+    """Restore only server-created placeholders in locally formatted output."""
+    restored = content
+    for placeholder, original in pii_map.items():
+        if isinstance(placeholder, str) and isinstance(original, str):
+            restored = restored.replace(placeholder, original)
+    return restored
+
+
+def run_greeting_guardrail_node(
+    state: GraphState,
+    *,
+    guardrail: GreetingGuardrailPort,
+) -> GraphUpdate:
+    """Run the greeting guardrail before memory and model routing."""
+    current_state = sanitized_state(state)
+    decision = guardrail.invoke(
+        current_state.get("messages", []),
+        request_context=current_state.get("request"),
+    )
+    classification: GreetingClassification = {
+        "category": decision.category,
+    }
+    update: GraphUpdate = {
+        "greeting_classification": classification,
+        "status": "in_progress",
+    }
+    if decision.category == "greeting_only":
+        update["routing_decision"] = {
+            "route": "greeting",
+            "target_agent": None,
+            "outcome": "dispatch",
+            "reason": "Saudação isolada identificada pelo classificador.",
+        }
+    return update
 
 
 def run_faq_node(
@@ -142,7 +212,7 @@ def run_faq_node(
         {
             "messages": current_state.get("messages", []),
             "request": current_state.get("request"),
-            "memory": current_state.get("memory"),
+            "memory_retrieval": current_state.get("memory_retrieval"),
         }
     )
 
@@ -154,10 +224,25 @@ def run_faq_node(
 
     citation_ids = [evidence["evidence_id"] for evidence in evidences]
 
+    raw_next_step = result.get("next_step", "continue")
+    next_step = (
+        raw_next_step
+        if raw_next_step
+        in {"continue", "direct_response", "clarification", "controlled_error"}
+        else "controlled_error"
+    )
+    tool_status = result.get("tool_status")
     faq_result: FAQResult = {
-        "status": "success" if answer and evidences else "unavailable",
+        "status": (
+            "success"
+            if tool_status == "success" or (answer and evidences)
+            else "unavailable"
+            if result.get("error_code") == "FAQ_DEPENDENCY_UNAVAILABLE"
+            else "error"
+        ),
         "answer": answer,
         "citation_ids": citation_ids,
+        "next_step": cast(Any, next_step),
     }
     error_code = result.get("error_code")
     if isinstance(error_code, str) and error_code:
@@ -190,9 +275,10 @@ def run_product_workflow_node(
     answer = str(result.get("answer", "")).strip()
     evidences = cast(list[Evidence], result.get("evidences", []))
     error_code = result.get("error_code")
+    lookup_status = result.get("lookup_status")
     product_result: ProductWorkFlowResult = {
         "status": "success"
-        if answer and evidences
+        if lookup_status in {"ambiguous", "not_found"} or (answer and evidences)
         else "unavailable"
         if error_code == "PRODUCT_WORKFLOW_UNAVAILABLE"
         else "error",
@@ -201,11 +287,17 @@ def run_product_workflow_node(
     }
     if isinstance(error_code, str) and error_code:
         product_result["error_code"] = error_code
+    if lookup_status in {"unique", "ambiguous", "not_found", "unavailable"}:
+        product_result["lookup_status"] = cast(
+            SuggestionLookupStatus,
+            lookup_status,
+        )
     logger.info(
         "product_workflow_agent_completed",
         extra={
             "event": "agent_completed",
             "status": product_result["status"],
+            "outcome": product_result.get("lookup_status"),
             "evidence_count": len(evidences),
             "reason_code": error_code if isinstance(error_code, str) else None,
         },
@@ -251,9 +343,10 @@ def run_judge_node(
     *,
     judge: JudgeExecutorPort,
 ) -> GraphUpdate:
+    response_draft = state.get("response_draft")
     try:
         judge_result = judge.invoke(
-            response_draft=state.get("response_draft"),
+            response_draft=response_draft,
             evidences=state.get("evidences", []),
         )
     except Exception:
@@ -263,26 +356,50 @@ def run_judge_node(
             "evidence_ids": [],
             "error_code": "JUDGE_ADAPTER_FAILURE",
         }
+
+    draft_content = (
+        response_draft.get("content") if isinstance(response_draft, Mapping) else None
+    )
+    approved_content: str | None = None
+    if judge_result["status"] == "approved":
+        if isinstance(draft_content, str) and draft_content.strip():
+            approved_content = draft_content
+        else:
+            judge_result = {
+                "status": "invalid",
+                "reason": "O judge aprovou uma resposta sem draft válido.",
+                "evidence_ids": [],
+                "error_code": "JUDGE_MISSING_DRAFT",
+            }
+
     logger.info(
-        "judge_agent_completed",
+        "judge_evaluation_completed",
         extra={
-            "event": "agent_completed",
-            "status": judge_result["status"],
+            "event": "judge_evaluation_completed",
+            "judge_status": judge_result["status"],
             "evidence_count": len(judge_result["evidence_ids"]),
-            "reason_code": judge_result.get("error_code"),
+            "judge_error_code": judge_result.get("error_code"),
             "judge_reason_code": judge_result.get("reason_code"),
-            "confidence": judge_result.get("confidence"),
-            "model": judge_result.get("model"),
-            "input_tokens": judge_result.get("input_tokens"),
-            "output_tokens": judge_result.get("output_tokens"),
+            "judge_confidence": judge_result.get("confidence"),
+            "judge_model": judge_result.get("model"),
+            "judge_input_tokens": judge_result.get("input_tokens"),
+            "judge_output_tokens": judge_result.get("output_tokens"),
         },
     )
 
-    return {
+    update: GraphUpdate = {
         "agent_results": {
             "judge": judge_result,
         },
     }
+    if approved_content is not None:
+        update["final_response"] = {
+            "content": approved_content,
+            "status": "success",
+        }
+        update["response_draft"] = None
+
+    return update
 
 
 def run_compiler_node(

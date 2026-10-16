@@ -124,6 +124,7 @@ class SummarySearchRequest:
     collection_name: str
     limit: int = MAX_SUMMARY_RESULTS
     score_threshold: float = 0.5
+    reference_time: datetime | None = None
 
 
 class ConversationSummary(TypedDict):
@@ -136,13 +137,13 @@ class ConversationSummary(TypedDict):
 
 
 class VersionedConversationSummary(ConversationSummary):
-    """Summary point returned by Qdrant after Mongo ownership validation."""
+    """Versioned summary fields read directly from a Qdrant point."""
 
     summary_version: int
 
 
 class ConversationMetadata(TypedDict):
-    """Mongo metadata used only to validate owner and ended status."""
+    """Legacy API metadata for conversation listings, not summary retrieval."""
 
     conversation_id: str
     title: str | None
@@ -165,9 +166,9 @@ class SummaryCandidate(ConversationSummary):
 
 
 class SummaryContextSelection(TypedDict):
-    """Distinguish relevant semantic matches from no relevant memory."""
+    """Structured, Qdrant-only memory retrieval returned to the router."""
 
-    source: Literal["semantic", "none"]
+    source: Literal["temporal", "semantic", "recent_fallback", "none"]
     results: list[ConversationSummary]
 
 

@@ -37,9 +37,16 @@ Input: trusted `conversation_id`, authenticated `email`, and one ordered turn co
 ## Summary retrieval
 
 - Semantic candidates and their summary text come from Qdrant.
-- Validate every candidate against MongoDB for current conversation existence, same authenticated email and ended status; do not fetch summary content/version from Mongo.
-- If semantic retrieval produces no valid candidate, select up to the existing limit of the user's most recently updated ended Qdrant points, excluding the current conversation. Use a payload filter and indexed `updated_at` ordering, then validate owner/status in Mongo.
+- Filter every candidate in Qdrant by the authenticated email, `status=ended`, and exclusion of the current conversation; do not perform a MongoDB validation query during retrieval and do not fetch summary content/version from Mongo.
+- If semantic retrieval produces no candidate above `0.5`, select up to the existing limit of the user's most recently updated ended Qdrant points, excluding the current conversation, and mark the result as `recent_fallback` without claiming a thematic match.
 - Do not make summary retrieval depend on the legacy Mongo `summary` field.
+
+Temporal recovery of `ontem` uses the previous civil day in
+`America/Sao_Paulo`, converted to a UTC `[gte, lt)` range on Qdrant
+`updated_at`; it never generates an embedding. Payload validation requires
+`email`, `conversation_id`, `status`, `summary`, `summary_version`,
+`summarized_through_message_id` and `updated_at`, but does not require legacy
+`memory_type` or `title` fields.
 
 ## Reconciliation
 

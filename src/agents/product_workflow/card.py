@@ -18,14 +18,16 @@ PRODUCT_WORKFLOW_CARD = AgentCard(
             id="get_suggestion_for_product",
             name="get_suggestion_for_product",
             description=(
-                "Busca sugestões autorizadas por nome, SKU ou categoria e "
-                "retorna candidatos numerados."
+                "Busca sugestões autorizadas por nome, SKU ou identificador e "
+                "retorna uma sugestão completa ou candidatos seguros."
             ),
             properties=[
                 ToolProperty(
                     name="product_query",
                     type="string",
-                    description="Nome, SKU ou categoria informada pelo usuário.",
+                    description=(
+                        "Nome, SKU, product_id ou suggestion_id informado pelo usuário."
+                    ),
                     required=True,
                 ),
             ],
@@ -34,24 +36,71 @@ PRODUCT_WORKFLOW_CARD = AgentCard(
             id="get_suggestion_detail",
             name="get_suggestion_detail",
             description=(
-                "Retorna o card da sugestão escolhida e, para gerente, "
-                "os dados da triagem."
+                "Retorna o card da seleção escolhida após revalidar escopo, "
+                "cargo, status e expiração."
             ),
             properties=[
                 ToolProperty(
-                    name="selection_ref",
+                    name="selection_id",
                     type="string",
-                    description="Referência retornada pela busca do produto.",
+                    description="Identificador de seleção retornado pelos candidatos.",
                     required=True,
                 )
             ],
         ),
         ToolBinding(
-            id="search_conversation_summaries",
-            name="Buscar contexto de conversas anteriores",
+            id="list_suggestions",
+            name="list_suggestions",
             description=(
-                "Busca resumos relevantes do próprio usuário quando necessário."
+                "Lista sugestões ORDER ou PROMOTION visíveis ao usuário "
+                "autenticado, com paginação e resumo numerado."
             ),
+            properties=[
+                ToolProperty(
+                    name="suggestion_type",
+                    type="string",
+                    description="Tipo a listar: ORDER ou PROMOTION.",
+                    required=True,
+                    enum=["ORDER", "PROMOTION"],
+                ),
+                ToolProperty(
+                    name="page_size",
+                    type="integer",
+                    description="Quantidade de itens por página (máximo 50).",
+                ),
+                ToolProperty(
+                    name="cursor",
+                    type="string",
+                    description="Cursor devolvido pela página anterior.",
+                ),
+            ],
+        ),
+        ToolBinding(
+            id="get_promotion_by_expiration",
+            name="get_promotion_by_expiration",
+            description=(
+                "Encontra promoções com a validade mais próxima ou mais "
+                "distante e apresenta empates para escolha."
+            ),
+            properties=[
+                ToolProperty(
+                    name="direction",
+                    type="string",
+                    description="nearest para mais próxima ou longest para mais distante.",
+                    required=True,
+                    enum=["nearest", "longest"],
+                ),
+                ToolProperty(
+                    name="page_size",
+                    type="integer",
+                    description="Quantidade de empatados por página (máximo 50).",
+                ),
+                ToolProperty(
+                    name="cursor",
+                    type="string",
+                    description="Cursor devolvido pela página anterior.",
+                ),
+            ],
         ),
     ],
     failure_policy=FailurePolicy(

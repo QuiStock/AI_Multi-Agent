@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 import pytest
 from langchain_core.messages import AnyMessage, HumanMessage
 
 from src.agents.judge.executor import JudgeExecutor
+from src.agents.judge.jev_client import JevEvaluation
 from src.graphs.agent_graph import create_agent_graph
-from src.graphs.contracts import JudgeDecision
 from src.graphs.state import (
+    Evidence,
     GraphState,
     ResponseDraft,
     RoutingDecision,
@@ -52,16 +54,25 @@ class FakeCompiler:
         }
 
 
-class FakeJudgeModel:
+class FakeJevClient:
     def __init__(self) -> None:
-        self.messages: list[Any] | None = None
+        self.calls = 0
+        self.response_draft: ResponseDraft | None = None
 
-    def invoke(self, messages: list[Any]) -> JudgeDecision:
-        self.messages = messages
-        return JudgeDecision(
-            status="approved",
-            reason="Resposta sustentada pela evidência.",
-            evidence_ids=["faq-1"],
+    def evaluate(
+        self,
+        *,
+        response_draft: ResponseDraft,
+        evidences: Sequence[Evidence],
+    ) -> JevEvaluation:
+        self.calls += 1
+        self.response_draft = response_draft
+        return JevEvaluation(
+            verdict="approved",
+            reason_code="none",
+            confidence=0.98,
+            probabilities={"approved": 0.98, "rejected": 0.02},
+            model="jev-test",
         )
 
 
@@ -87,7 +98,7 @@ def _capability(_: GraphState) -> GraphState:
 
 
 def _passing_output(state: GraphState) -> GraphState:
-    response_draft = state.get("response_draft")
+    final_response = state.get("final_response")
     result: GraphState = {
         "output_guardrail": {
             "status": "passed",
@@ -96,11 +107,8 @@ def _passing_output(state: GraphState) -> GraphState:
             "violations": [],
         }
     }
-    if response_draft is not None:
-        result["final_response"] = {
-            "content": response_draft["content"],
-            "status": "success",
-        }
+    if final_response is not None:
+        result["final_response"] = final_response
     return result
 
 
@@ -110,13 +118,13 @@ class EmptyContextEnricher:
 
 
 def test_real_judge_executor_validates_compiler_draft_inside_graph() -> None:
-    model = FakeJudgeModel()
+    jev_client = FakeJevClient()
     graph = create_agent_graph(
         input_guardrail=_passed_input,
         router=FakeRouter(),
         capabilities={"faq": _capability},
         compiler=FakeCompiler(),
-        judge=JudgeExecutor(model=model),
+        judge=JudgeExecutor(jev_client=jev_client),
         output_guardrail=_passing_output,
         context_enricher=EmptyContextEnricher(),
     )
@@ -132,5 +140,6 @@ def test_real_judge_executor_validates_compiler_draft_inside_graph() -> None:
         "content": "A operação é apenas uma sugestão.",
         "status": "success",
     }
-    assert model.messages is not None
-    assert "manual.md" in str(model.messages[-1].content)
+    assert jev_client.calls == 1
+    assert jev_client.response_draft is not None
+    assert jev_client.response_draft["citations"] == ["faq-1"]

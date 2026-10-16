@@ -6,7 +6,6 @@ from langchain_core.tools import StructuredTool
 from src.agents import factory, tool_registry
 from src.agents.faq.card import FAQ_CARD
 from src.agents.faq.executor import FAQExecutor
-from src.agents.judge.card import JUDGE_CARD
 from src.agents.registry import get_agent_card
 from src.agents.router.card import ROUTER_CARD
 from src.graphs.contracts import RouteDecision
@@ -30,10 +29,6 @@ def _fake_search(query: str) -> str:
 
 def test_registry_returns_the_faq_card() -> None:
     assert get_agent_card("faq_rag") is FAQ_CARD
-
-
-def test_registry_returns_the_judge_card() -> None:
-    assert get_agent_card("evidence_judge") is JUDGE_CARD
 
 
 def test_factory_resolves_card_tools_and_builds_agent(
@@ -86,7 +81,11 @@ def test_executor_forwards_agent_input_to_compiled_agent(
 
     agent_input = {
         "messages": [HumanMessage(content="Pergunta de teste")],
-        "request": {"role_id": 3},
+        "request": {
+            "request_id": "request-1",
+            "trace_id": "trace-1",
+            "role_code": "EMPLOYEE",
+        },
     }
     result = FAQExecutor(
         retriever=EmptyRetriever(),
@@ -96,6 +95,8 @@ def test_executor_forwards_agent_input_to_compiled_agent(
     assert result == {
         "answer": "",
         "evidences": [],
+        "tool_status": "success",
+        "next_step": "continue",
     }
     assert captured["agent_input"] == {"messages": agent_input["messages"]}
 

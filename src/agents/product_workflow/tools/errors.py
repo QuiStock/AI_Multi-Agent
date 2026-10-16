@@ -72,7 +72,10 @@ def failure(
     if isinstance(error, ProductWorkflowDependencyError):
         category: ToolErrorCategory = "dependency"
         code = "PRODUCT_WORKFLOW_UNAVAILABLE"
-        message = "A fonte comercial está indisponível no momento."
+        message = (
+            "Desculpe, não foi possível consultar essas informações agora. "
+            "Tente novamente mais tarde."
+        )
         retryable = True
     elif isinstance(error, PermissionError):
         category = "authorization"
@@ -87,7 +90,10 @@ def failure(
     else:
         category = "internal"
         code = "PRODUCT_WORKFLOW_INTERNAL"
-        message = "Não foi possível concluir a consulta do fluxo de produtos."
+        message = (
+            "Desculpe, não foi possível consultar essas informações agora. "
+            "Tente novamente mais tarde."
+        )
         retryable = False
     return serialize_for_agent(
         tool_error(

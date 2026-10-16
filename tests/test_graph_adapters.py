@@ -227,6 +227,7 @@ def test_faq_adapter_calls_executor_and_normalizes_answer() -> None:
         "status": "success",
         "answer": "Resposta baseada na documentação.",
         "citation_ids": ["faq-1"],
+        "next_step": "continue",
     }
 
 
@@ -282,6 +283,40 @@ def test_judge_adapter_forwards_draft_and_full_evidence_content() -> None:
     assert executor.evidences == [evidence]
     assert executor.evidences[0]["content"] == evidence["content"]
     assert result["agent_results"]["judge"]["status"] == "approved"
+    assert result["final_response"] == {
+        "content": "Resposta compilada.",
+        "status": "success",
+    }
+    assert result["response_draft"] is None
+
+
+def test_judge_adapter_preserves_draft_when_approval_is_rejected() -> None:
+    class RejectingJudgeExecutor:
+        def invoke(
+            self,
+            *,
+            response_draft: ResponseDraft | None,
+            evidences: Sequence[Evidence],
+        ) -> JudgeResult:
+            return {
+                "status": "insufficient_evidence",
+                "reason": "Evidência insuficiente.",
+                "evidence_ids": [],
+            }
+
+    draft: ResponseDraft = {
+        "content": "Resposta compilada.",
+        "citations": ["faq-1"],
+        "status": "draft",
+    }
+    result = run_judge_node(
+        {"response_draft": draft, "evidences": []},
+        judge=RejectingJudgeExecutor(),
+    )
+
+    assert result["agent_results"]["judge"]["status"] == "insufficient_evidence"
+    assert "response_draft" not in result
+    assert "final_response" not in result
 
 
 def test_judge_adapter_fails_closed_on_unexpected_executor_error() -> None:

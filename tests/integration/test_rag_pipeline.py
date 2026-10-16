@@ -43,6 +43,8 @@ def test_faq_tool_connects_retriever_to_serialized_evidence() -> None:
     search_tool = create_faq_search_tool(
         retriever,
         allowed_audiences=("shared", "manager"),
+        request_id="integration-request",
+        trace_id="integration-trace",
     )
 
     result = search_tool.invoke({"query": "Qual é a regra?"})

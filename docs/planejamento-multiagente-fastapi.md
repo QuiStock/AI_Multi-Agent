@@ -975,9 +975,10 @@ definidos.
   sem expor PII, credenciais, prompts privados ou cadeia de pensamento. A
   solução (por exemplo, OpenSearch ou alternativa) permanece uma decisão
   aberta; não há escolha de produto registrada nesta atualização.
-- **MCP-001 — Tools via MCP:** algumas tools precisarão ser disponibilizadas
-  por MCP. A capacidade provável é o agente de workflow, mas o inventário e a
-  fronteira MCP ainda não foram definidos.
+- **MCP-001 — Tools via MCP:** a primeira exposição foi delimitada às duas
+  consultas read-only de Product Workflow. Os agentes continuam usando as
+  tools locais; a definição inicial da fachada MCP, dos contratos e das
+  decisões ainda abertas está em `specs/007-product-workflow-mcp/spec.md`.
 - **ARCH-001 — Revisão do grafo:** revisar a topologia completa, rotas,
   capacidades ativas, nós de memória, judge, compilador, guardrails e a nova
   rota A2A antes de consolidar a arquitetura-alvo.

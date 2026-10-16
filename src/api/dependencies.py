@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import timezone
 from functools import lru_cache, partial
+from ipaddress import ip_address
 from typing import Any, cast
 
 from fastapi import Depends, HTTPException, Request, status
@@ -53,6 +54,7 @@ from src.graphs.adapters import GraphNode, run_faq_node, run_product_workflow_no
 from src.graphs.agent_graph import create_agent_graph
 from src.graphs.state import RouteName
 from src.guardrails.config import GuardrailConfig
+from src.guardrails.greeting import GreetingGuardrail
 from src.guardrails.input_guardrail import input_guardrail_node
 from src.guardrails.output_guardrail import create_output_guardrail_node
 from src.llm_factory import get_configured_chat_model
@@ -60,8 +62,10 @@ from src.memory.checkpointer import create_local_checkpointer
 from src.memory.enrich_context import ConversationContextEnricher
 from src.memory.message_service import MemoryMessageService
 from src.memory.mongo_repository import MongoConversationRepository
+from src.memory.qdrant_summary_indexer import QdrantSummaryIndexer
 from src.memory.service import SummaryContextService, SummarySearchConfig
 from src.memory.summary_job_repository import MongoSummaryJobRepository
+from src.memory.summary_lock_repository import MongoConversationSummaryLockRepository
 from src.memory.summary_queue import RedisSummaryQueue
 from src.memory.summary_scheduler import (
     ConversationSummaryScheduler,
@@ -99,7 +103,27 @@ def get_authenticated_principal(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
 ) -> AuthenticatedPrincipal:
     settings = config.get_settings()
-    if credentials is None or credentials.scheme.lower() != "bearer":
+    client = request.client
+    if (
+        settings.app_environment == "development"
+        and settings.auth_bypass_local_tests
+        and client is not None
+    ):
+        try:
+            is_loopback = ip_address(client.host).is_loopback
+        except ValueError:
+            is_loopback = False
+        if is_loopback:
+            return AuthenticatedPrincipal(
+                user_id=settings.auth_bypass_user_id,
+                email=settings.auth_bypass_email,
+                role_code=settings.auth_bypass_role_code,
+                store_ids=(settings.auth_bypass_store_id,),
+            )
+
+    if not isinstance(credentials, HTTPAuthorizationCredentials) or (
+        credentials.scheme.lower() != "bearer"
+    ):
         record_authentication_denial("credential_missing")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -256,6 +280,14 @@ def get_graph(request: Request) -> CompiledStateGraph:
             min_score=settings.memory_summary_min_score,
         ),
     )
+    summary_indexer = QdrantSummaryIndexer(
+        client=qdrant_client,
+        embed_text=embedding_provider.embed_query,
+        collection_name=settings.memory_summary_collection,
+    )
+    summary_locks = MongoConversationSummaryLockRepository(
+        get_mongo_client()[_database_name()][settings.memory_summary_locks_collection]
+    )
     faq_store = QdrantStore(
         qdrant_client=qdrant_client,
         collection_name=settings.faq_vectorstore_collection,
@@ -268,14 +300,12 @@ def get_graph(request: Request) -> CompiledStateGraph:
     )
     faq_executor = FAQExecutor(
         retriever=faq_retriever,
-        summary_search_service=summary_search_service,
     )
     product_workflow_executor = ProductWorkflowExecutor(
         repository=PostgresProductWorkflowRepository(
             postgres_pool,
             statement_timeout_ms=int(settings.postgres_pool_timeout_seconds * 1000),
         ),
-        summary_search_service=summary_search_service,
     )
     jev_client = TypeSafeJevClient(
         api_key=settings.typesafe_api_key,
@@ -294,11 +324,14 @@ def get_graph(request: Request) -> CompiledStateGraph:
         ),
     }
 
+    message_service = MemoryMessageService(repository)
+
     graph = create_agent_graph(
         input_guardrail=cast(
             GraphNode,
             partial(input_guardrail_node, guardrail_config=GuardrailConfig()),
         ),
+        greeting_guardrail=GreetingGuardrail(),
         router=RouterExecutor(summary_search_service=summary_search_service),
         capabilities=capabilities,
         compiler=CompilerExecutor(),
@@ -310,8 +343,12 @@ def get_graph(request: Request) -> CompiledStateGraph:
             GraphNode,
             create_output_guardrail_node(source="compiled"),
         ),
-        context_enricher=ConversationContextEnricher(repository),
-        message_service=MemoryMessageService(repository),
+        context_enricher=ConversationContextEnricher(
+            repository,
+            summary_indexer=summary_indexer,
+            conversation_locks=summary_locks,
+        ),
+        message_service=message_service,
         checkpointer=get_checkpointer(),
     )
     request.app.state.agent_graph = graph

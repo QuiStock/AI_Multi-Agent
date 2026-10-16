@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from fastapi import HTTPException, Request
 from fastapi.testclient import TestClient
 
 from src import api, config
@@ -169,3 +170,70 @@ def test_client_cannot_supply_identity_in_body(monkeypatch: pytest.MonkeyPatch) 
         )
     assert response.status_code == 422
     assert graph.calls == []
+
+
+def _request_from(host: str) -> Request:
+    return Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/conversations/conversation-1/messages",
+            "headers": [],
+            "client": (host, 12345),
+            "server": ("127.0.0.1", 8000),
+        }
+    )
+
+
+def test_local_auth_bypass_uses_configured_principal_without_jwks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        config,
+        "get_settings",
+        lambda: config.Settings(
+            app_environment="development",
+            auth_bypass_local_tests=True,
+            auth_bypass_user_id=77,
+            auth_bypass_email="local-bypass@example.test",
+            auth_bypass_role_code="MANAGER",
+            auth_bypass_store_id=12,
+        ),
+    )
+    monkeypatch.setattr(
+        "src.api.dependencies.get_jwt_decoder",
+        lambda *_: pytest.fail("JWKS não deve ser consultado no bypass local"),
+    )
+
+    principal = api.dependencies.get_authenticated_principal(_request_from("127.0.0.1"))
+
+    assert principal.user_id == 77
+    assert principal.email == "local-bypass@example.test"
+    assert principal.role_code == "MANAGER"
+    assert principal.store_ids == (12,)
+
+
+@pytest.mark.parametrize(
+    ("environment", "host"),
+    [("development", "192.0.2.10"), ("production", "127.0.0.1")],
+)
+def test_local_auth_bypass_does_not_apply_outside_local_development(
+    monkeypatch: pytest.MonkeyPatch,
+    environment: str,
+    host: str,
+) -> None:
+    monkeypatch.setattr(
+        config,
+        "get_settings",
+        lambda: config.Settings(
+            app_environment=environment,
+            auth_bypass_local_tests=True,
+            jwt_issuer="https://auth.example.test",
+            jwt_jwks_url="https://auth.example.test/jwks",
+        ),
+    )
+
+    with pytest.raises(HTTPException) as error:
+        api.dependencies.get_authenticated_principal(_request_from(host))
+
+    assert error.value.status_code == 401

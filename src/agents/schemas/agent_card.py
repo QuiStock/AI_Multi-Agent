@@ -10,7 +10,6 @@ class AgentRole(StrEnum):
     ROUTER = "router"
     FAQ_RAG = "faq_rag"
     PRODUCT_WORKFLOW = "product_workflow"
-    EVIDENCE_JUDGE = "evidence_judge"
     RESPONSE_COMPILER = "response_compiler"
 
 

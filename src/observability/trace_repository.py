@@ -74,6 +74,13 @@ _SAFE_LOG_ATTRIBUTES = {
     "model_name",
     "error_type",
     "status",
+    "judge_status",
+    "judge_error_code",
+    "judge_reason_code",
+    "judge_confidence",
+    "judge_model",
+    "judge_input_tokens",
+    "judge_output_tokens",
 }
 _VALID_LOG_LEVELS = {"INFO", "WARNING", "ERROR", "CRITICAL"}
 

@@ -30,7 +30,7 @@ def _controlled_correction(
     )
 
 
-OutputSource = Literal["faq", "compiled"]
+OutputSource = Literal["faq", "compiled", "greeting"]
 
 
 _EMOJI_PATTERN = re.compile("[\U0001f1e6-\U0001f1ff\U0001f300-\U0001faff\u2600-\u27bf]")
@@ -231,9 +231,7 @@ def output_guardrail_node(
     guardrail_config: GuardrailConfig | None = None,
     source: OutputSource,
 ) -> dict[str, object]:
-    response = state.get("response_draft")
-    if not isinstance(response, Mapping):
-        response = state.get("final_response")
+    response = state.get("final_response")
 
     result: OutputGuardrailResult
     content: str
@@ -247,18 +245,22 @@ def output_guardrail_node(
         content = CONTROLLED_OUTPUT_RESPONSE
         response = {
             "content": content,
-            "citations": [],
-            "status": "draft",
+            "status": "success",
         }
     else:
         raw_agent_results = state.get("agent_results")
+        raw_greeting = state.get("greeting_classification")
+        is_greeting = isinstance(raw_greeting, Mapping) and (
+            raw_greeting.get("category") == "greeting_only"
+        )
+        effective_source: OutputSource = "greeting" if is_greeting else source
         judge = (
             raw_agent_results.get("judge")
             if isinstance(raw_agent_results, Mapping)
             else None
         )
 
-        if source == "compiled" and not isinstance(judge, Mapping):
+        if effective_source == "compiled" and not isinstance(judge, Mapping):
             result = _controlled_correction(
                 "judge_missing",
                 "A resposta não possui validação do agente juiz.",
@@ -266,7 +268,7 @@ def output_guardrail_node(
             )
             content = CONTROLLED_OUTPUT_RESPONSE
         elif (
-            source == "compiled"
+            effective_source == "compiled"
             and isinstance(judge, Mapping)
             and judge.get("status") != "approved"
         ):
@@ -314,7 +316,7 @@ def output_guardrail_node(
                 result = validate_output(
                     raw_content,
                     config=guardrail_config,
-                    source=source,
+                    source=effective_source,
                     references=references,
                 )
                 sanitized_content = result.get("sanitized_content")
@@ -331,18 +333,22 @@ def output_guardrail_node(
         else {}
     )
     restored_content = restore_pii_placeholders(content, pii_map)
-    response_draft = {
-        **response,
-        "content": restored_content,
-        "status": "draft",
-    }
+    response_status = response.get("status")
+    if response_status not in {
+        "success",
+        "rejected",
+        "clarification_required",
+        "out_of_scope",
+        "error",
+    }:
+        response_status = "success"
 
     return {
         "output_guardrail": result,
-        "response_draft": response_draft,
+        "response_draft": None,
         "final_response": {
             "content": restored_content,
-            "status": "success",
+            "status": response_status,
         },
         "status": "in_progress",
     }

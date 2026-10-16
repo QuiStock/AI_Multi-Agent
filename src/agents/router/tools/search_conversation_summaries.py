@@ -1,5 +1,6 @@
 """Build a user-scoped semantic conversation-memory tool for agents."""
 
+import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from hashlib import sha256
@@ -92,6 +93,7 @@ def build_search_conversation_summaries_tool(
     service: SummarySearchService,
     context: SummarySearchToolContext,
     call_id_factory: Callable[[], str] | None = None,
+    on_result: Callable[[dict[str, Any]], None] | None = None,
 ) -> BaseTool:
     """Bind authenticated request context outside the model-visible arguments."""
     if (
@@ -175,6 +177,8 @@ def build_search_conversation_summaries_tool(
                 ),
             )
             cached_output = serialize_for_agent(result)
+            if on_result is not None:
+                on_result(json.loads(cached_output))
             return cached_output
         except Exception:
             error_result = tool_error(
@@ -187,6 +191,8 @@ def build_search_conversation_summaries_tool(
                 meta=metadata,
             )
             cached_output = serialize_for_agent(error_result)
+            if on_result is not None:
+                on_result(json.loads(cached_output))
             return cached_output
 
     return StructuredTool.from_function(

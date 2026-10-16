@@ -47,17 +47,22 @@ def _controlled_response_node(state: GraphState) -> dict[str, Any]:
 
     if guardrail and guardrail["status"] == "blocked":
         response: Response = {
-            "content": "Não foi possível processar essa mensagem.",
+            "content": "Desculpe, não posso tratar desse tipo de assunto no Quistock.",
             "status": "rejected",
         }
     elif decision and decision["outcome"] == "clarification_required":
         response = {
-            "content": "Pode reformular a pergunta com um pouco mais de detalhes?",
+            "content": (
+                "Pode me dar mais detalhes sobre o que você precisa no Quistock?"
+            ),
             "status": "clarification_required",
         }
     else:
         response = {
-            "content": "Essa solicitação está fora do escopo atual.",
+            "content": (
+                "Desculpe, não consigo ajudar com esse assunto. "
+                "Posso ajudar com informações sobre o Quistock, produtos e sugestões."
+            ),
             "status": "out_of_scope",
         }
 

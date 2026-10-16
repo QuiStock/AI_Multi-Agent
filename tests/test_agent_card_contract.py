@@ -2,7 +2,6 @@ import pytest
 from pydantic import ValidationError
 
 from src.agents.faq.card import FAQ_CARD
-from src.agents.judge.card import JUDGE_CARD
 from src.agents.router.card import ROUTER_CARD
 from src.agents.schemas.agent_card import AgentCard, AgentRole
 from src.agents.schemas.tool_binding import ToolBinding, ToolProperty
@@ -42,16 +41,7 @@ def test_faq_card_has_the_expected_contract() -> None:
     assert FAQ_CARD.routing_intents == ["faq", "politicas", "processos"]
 
 
-def test_judge_card_has_no_tools_and_uses_failure_policy() -> None:
-    assert JUDGE_CARD.id == "evidence_judge"
-    assert JUDGE_CARD.role is AgentRole.EVIDENCE_JUDGE
-    assert JUDGE_CARD.tools == []
-    assert JUDGE_CARD.failure_policy is not None
-    assert JUDGE_CARD.failure_policy.max_retries == 0
-    assert JUDGE_CARD.routing_intents == []
-
-
-def test_router_card_declares_optional_memory_tool() -> None:
+def test_router_card_declares_only_the_memory_reference_tool() -> None:
     assert [tool.id for tool in ROUTER_CARD.tools] == ["search_conversation_summaries"]
 
 

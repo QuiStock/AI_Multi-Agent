@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ProductCard(BaseModel):
-    """Fields available on a suggestion card; client snapshots remain unverified."""
+    """Fields available on a suggestion card."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

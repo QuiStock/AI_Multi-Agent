@@ -182,15 +182,11 @@ def test_qdrant_search_filters_ended_user_summaries_and_reads_payload() -> None:
     assert qdrant.query["limit"] == 3
     assert qdrant.query["score_threshold"] == 0.5
     filters = qdrant.query["query_filter"]
-    assert {condition.key for condition in filters.must} == {
-        "email",
-        "memory_type",
-        "status",
-    }
+    assert {condition.key for condition in filters.must} == {"email", "status"}
     assert filters.must_not[0].key == "conversation_id"
 
 
-def test_service_uses_qdrant_text_after_mongo_owner_status_validation() -> None:
+def test_service_uses_qdrant_text_without_mongo_validation() -> None:
     qdrant = FakeQdrant(
         [
             SimpleNamespace(
@@ -218,9 +214,12 @@ def test_service_uses_qdrant_text_after_mongo_owner_status_validation() -> None:
         "O que comprei?",
     )
 
-    assert [summary["conversation_id"] for summary in summaries] == ["valid"]
+    assert [summary["conversation_id"] for summary in summaries] == [
+        "valid",
+        "stale",
+    ]
     assert summaries[0]["summary"] == "Summary for valid."
-    assert repository.requested_ids == ["valid", "stale"]
+    assert repository.requested_ids is None
     assert repository.fallback_arguments is None
     selection = _service(qdrant, repository).search_context(
         email="user-1",
@@ -230,7 +229,7 @@ def test_service_uses_qdrant_text_after_mongo_owner_status_validation() -> None:
     assert selection["source"] == "semantic"
 
 
-def test_service_returns_no_memory_without_relevant_match() -> None:
+def test_service_returns_recent_fallback_without_relevant_match() -> None:
     qdrant = FakeQdrant(
         [
             SimpleNamespace(
@@ -249,15 +248,46 @@ def test_service_returns_no_memory_without_relevant_match() -> None:
         "O que comprei?",
     )
 
-    assert summaries == []
+    assert [summary["conversation_id"] for summary in summaries] == ["low"]
     selection = _service(qdrant, repository).search_context(
         email="user-1",
         conversation_id="current-1",
         query="O que comprei?",
     )
-    assert selection == {"source": "none", "results": []}
-    assert repository.requested_ids == []
-    assert qdrant.scroll_query is None
+    assert selection["source"] == "recent_fallback"
+    assert selection["results"][0]["conversation_id"] == "low"
+    assert repository.requested_ids is None
+    assert qdrant.scroll_query is not None
+
+
+def test_temporal_recovery_uses_previous_civil_day_without_embedding() -> None:
+    qdrant = FakeQdrant(
+        [
+            SimpleNamespace(
+                payload=_qdrant_payload(_candidate("yesterday", score=1.0)),
+                score=1.0,
+            )
+        ]
+    )
+    embedded: list[str] = []
+    service = SummaryContextService(
+        None,
+        qdrant,  # type: ignore[arg-type]
+        lambda query: embedded.append(query) or [0.1, 0.2],
+        SummarySearchConfig(collection_name="conversation_summaries"),
+        clock=lambda: datetime(2026, 10, 14, 12, tzinfo=timezone.utc),
+    )
+
+    selection = service.search_context(
+        email="user-1",
+        conversation_id="current-1",
+        query="O que falamos ontem?",
+    )
+
+    assert selection["source"] == "temporal"
+    assert selection["results"][0]["conversation_id"] == "yesterday"
+    assert embedded == []
+    assert qdrant.scroll_query is not None
 
 
 def test_mongo_owner_status_validation_never_projects_summary_fields() -> None:

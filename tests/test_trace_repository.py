@@ -141,6 +141,13 @@ def _trace() -> dict[str, Any]:
                 "attributes": {
                     "event": "tool_call",
                     "results_count": 2,
+                    "judge_status": "invalid",
+                    "judge_error_code": "JUDGE_JEV_UNAVAILABLE",
+                    "judge_reason_code": "dependency_unavailable",
+                    "judge_confidence": 0.12,
+                    "judge_model": "jev-1.13.0",
+                    "judge_input_tokens": 120,
+                    "judge_output_tokens": 12,
                     "private_prompt": "not stored",
                     "bad": [],
                 },
@@ -171,6 +178,13 @@ def test_save_get_list_count_and_iter_traces_use_sanitized_documents() -> None:
     assert stored["logs"][0]["attributes"] == {
         "event": "tool_call",
         "results_count": 2,
+        "judge_status": "invalid",
+        "judge_error_code": "JUDGE_JEV_UNAVAILABLE",
+        "judge_reason_code": "dependency_unavailable",
+        "judge_confidence": 0.12,
+        "judge_model": "jev-1.13.0",
+        "judge_input_tokens": 120,
+        "judge_output_tokens": 12,
     }
     assert stored["logs"][0]["level"] == "INFO"
 

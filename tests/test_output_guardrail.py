@@ -78,7 +78,8 @@ def test_output_node_replaces_missing_response() -> None:
 
     assert result["output_guardrail"]["reason_code"] == "empty_response"
     assert result["status"] == "in_progress"
-    assert result["response_draft"]["content"] == CONTROLLED_OUTPUT_RESPONSE
+    assert result["response_draft"] is None
+    assert result["final_response"]["content"] == CONTROLLED_OUTPUT_RESPONSE
     assert CONTROLLED_OUTPUT_RESPONSE.startswith("Não foi possível")
 
 
@@ -93,12 +94,14 @@ def test_output_node_returns_sanitized_final_response() -> None:
     assert result["final_response"]["content"] == "Resposta final "
 
 
-def test_output_node_supports_response_draft_from_graph_state() -> None:
+def test_output_node_ignores_stale_response_draft() -> None:
     result = output_guardrail_node(
         {
             "status": "in_progress",
+            "final_response": {"content": "Olá!", "status": "success"},
+            "greeting_classification": {"category": "greeting_only"},
             "response_draft": {
-                "content": "Resposta final " + chr(0x1F642),
+                "content": "Resposta antiga do FAQ.",
                 "citations": [],
                 "status": "draft",
             },
@@ -108,22 +111,40 @@ def test_output_node_supports_response_draft_from_graph_state() -> None:
                 }
             ],
         },
-        source="faq",
+        source="compiled",
     )
 
     assert result["output_guardrail"]["status"] == "passed"
-    assert result["response_draft"]["content"] == "Resposta final "
+    assert result["final_response"] == {"content": "Olá!", "status": "success"}
+    assert result["response_draft"] is None
+
+
+def test_output_node_does_not_fallback_to_response_draft() -> None:
+    result = output_guardrail_node(
+        {
+            "response_draft": {
+                "content": "Resposta antiga do FAQ.",
+                "citations": [],
+                "status": "draft",
+            }
+        },
+        source="faq",
+    )
+
+    assert result["output_guardrail"]["reason_code"] == "empty_response"
+    assert result["final_response"]["content"] == CONTROLLED_OUTPUT_RESPONSE
+    assert result["response_draft"] is None
 
 
 def test_approved_judge_allows_deterministic_validation() -> None:
     result = output_guardrail_node(
         {
             "status": "in_progress",
-            "response_draft": {
+            "final_response": {
                 "content": "Resposta validada pelo judge.",
-                "citations": [],
-                "status": "draft",
+                "status": "success",
             },
+            "response_draft": {"content": "Rascunho obsoleto."},
             "agent_results": {
                 "judge": {
                     "status": "approved",
@@ -136,16 +157,17 @@ def test_approved_judge_allows_deterministic_validation() -> None:
     )
 
     assert result["output_guardrail"]["status"] == "passed"
+    assert result["final_response"]["content"] == "Resposta validada pelo judge."
+    assert result["response_draft"] is None
 
 
 def test_output_node_replaces_when_judge_is_not_approved() -> None:
     result = output_guardrail_node(
         {
             "status": "in_progress",
-            "response_draft": {
+            "final_response": {
                 "content": "Resposta sem confirmação.",
-                "citations": [],
-                "status": "draft",
+                "status": "success",
             },
             "agent_results": {
                 "judge": {
@@ -160,17 +182,17 @@ def test_output_node_replaces_when_judge_is_not_approved() -> None:
 
     assert result["output_guardrail"]["status"] == "passed"
     assert result["output_guardrail"]["reason_code"] == "judge_not_approved"
-    assert result["response_draft"]["content"] == CONTROLLED_OUTPUT_RESPONSE
+    assert result["final_response"]["content"] == CONTROLLED_OUTPUT_RESPONSE
+    assert result["response_draft"] is None
 
 
 def test_compiled_output_node_replaces_when_judge_is_missing() -> None:
     result = output_guardrail_node(
         {
             "status": "in_progress",
-            "response_draft": {
+            "final_response": {
                 "content": "Resposta sem julgamento.",
-                "citations": ["faq-1"],
-                "status": "draft",
+                "status": "success",
             },
         },
         source="compiled",
@@ -178,7 +200,8 @@ def test_compiled_output_node_replaces_when_judge_is_missing() -> None:
 
     assert result["output_guardrail"]["status"] == "passed"
     assert result["output_guardrail"]["reason_code"] == "judge_missing"
-    assert result["response_draft"]["content"] == CONTROLLED_OUTPUT_RESPONSE
+    assert result["final_response"]["content"] == CONTROLLED_OUTPUT_RESPONSE
+    assert result["response_draft"] is None
 
 
 def test_created_compiled_node_uses_deterministic_validation() -> None:
