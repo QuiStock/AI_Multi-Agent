@@ -50,6 +50,7 @@ def _metadata() -> ToolMetadata:
 def _faq_data() -> FAQSearchData:
     return FAQSearchData(
         query="Qual é a regra de validade?",
+        outcome="found",
         result_count=1,
         results=[
             FAQSearchItem(
@@ -94,6 +95,7 @@ def test_compose_result_accepts_existing_json_pointers() -> None:
     result = _compose_result()
 
     assert result.status is ToolStatus.SUCCESS
+    assert result.next_step == "continue"
     assert result.response.mode == "compose"
     assert result.data is not None
     assert result.data.result_count == 1
@@ -158,6 +160,34 @@ def test_success_result_rejects_error_and_empty_response() -> None:
             status=ToolStatus.SUCCESS,
             response=NoResponse(),
             data=None,
+            error=error,
+            meta=_metadata(),
+        )
+
+
+def test_direct_response_requires_direct_next_step() -> None:
+    with pytest.raises(ValidationError):
+        ToolResult[dict[str, bool]](
+            status=ToolStatus.SUCCESS,
+            next_step="direct_response",
+            response=ComposeResponse(intent="answer_documented_question"),
+            data={"available": True},
+            meta=_metadata(),
+        )
+
+
+def test_error_requires_controlled_next_step() -> None:
+    error = create_tool_error(
+        code="DEPENDENCY_UNAVAILABLE",
+        category="dependency",
+        message="Dependência indisponível.",
+    )
+
+    with pytest.raises(ValidationError):
+        ToolResult[None](
+            status=ToolStatus.ERROR,
+            next_step="continue",
+            response=NoResponse(),
             error=error,
             meta=_metadata(),
         )
@@ -268,6 +298,7 @@ def test_factory_builds_direct_and_partial_results() -> None:
     )
 
     assert direct.status is ToolStatus.SUCCESS
+    assert direct.next_step == "direct_response"
     assert partial.status is ToolStatus.PARTIAL
 
 
@@ -347,6 +378,7 @@ def test_faq_data_rejects_inconsistent_result_count() -> None:
     ):
         FAQSearchData(
             query="Pergunta",
+            outcome="not_found",
             result_count=1,
             results=[],
         )

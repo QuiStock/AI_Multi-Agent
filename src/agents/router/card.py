@@ -15,8 +15,8 @@ ROUTER_CARD = AgentCard(
             id="search_conversation_summaries",
             name="Buscar resumos de conversas anteriores",
             description=(
-                "Busca resumos semanticamente próximos da mensagem atual, "
-                "usando identidade autenticada fornecida pelo runtime."
+                "Recupera resumos Qdrant do usuário autenticado para referências "
+                "temporais, semânticas ou de recordação."
             ),
         )
     ],
@@ -24,7 +24,6 @@ ROUTER_CARD = AgentCard(
     routing_intents=[
         "faq",
         "product_workflow",
-        "external_a2a",
         "clarification_required",
         "out_of_scope",
     ],

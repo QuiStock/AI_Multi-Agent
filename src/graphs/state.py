@@ -1,16 +1,26 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Any, Literal, NotRequired, TypedDict
+from typing import Annotated, Literal, NotRequired, TypedDict
 
 from langchain_core.messages import AnyMessage
 from langgraph.graph import add_messages
 
+from src.agents.product_workflow.models import SuggestionLookupStatus
+from src.agents.schemas.tool_result import JsonScalar, ToolNextStep
+
 RouteName = Literal[
+    "greeting",
     "faq",
     "product_workflow",
     "clarification_required",
     "out_of_scope",
+]
+MemoryAction = Literal[
+    "none",
+    "pure_recall",
+    "faq_context",
+    "product_context",
 ]
 
 TurnStatus = Literal[
@@ -29,11 +39,16 @@ class RequestContext(TypedDict):
     store_ids: NotRequired[list[int]]
     conversation_id: str
     sent_at: datetime
-    sanitized_message: NotRequired[str]
     is_new_conversation: NotRequired[bool]
     is_resuming_conversation: NotRequired[bool]
     trace_id: NotRequired[str]
-    product_card: NotRequired[dict[str, Any] | None]
+    product_card: NotRequired[dict[str, object] | None]
+
+
+class GreetingClassification(TypedDict):
+    """Classification produced by the greeting gate before the router."""
+
+    category: Literal["greeting_only", "normal_request"]
 
 
 class InputGuardrailResult(TypedDict):
@@ -41,8 +56,6 @@ class InputGuardrailResult(TypedDict):
     reason_code: str
     reason: str
     redactions: list[str]
-    sanitized_message: NotRequired[str]
-    pii_map: NotRequired[dict[str, str]]
 
 
 class OutputGuardrailResult(TypedDict):
@@ -59,18 +72,43 @@ class RoutingDecision(TypedDict):
         "dispatch",
         "clarification_required",
         "out_of_scope",
+        "direct_response",
     ]
     reason: str
+    memory_action: NotRequired[MemoryAction]
+    memory_retrieval: NotRequired[MemoryRetrieval]
+    router_response: NotRequired[str]
 
 
 class Evidence(TypedDict):
     evidence_id: str
     source_type: Literal[
-        "metric", "faq_document", "client_card_snapshot", "product_card_query"
+        "metric",
+        "faq_document",
+        "product_workflow",
+        "client_card_snapshot",
+        "conversation_summary",
     ]
     source_id: str
     content: str
-    metadata: dict[str, str]
+    metadata: dict[str, JsonScalar]
+
+
+class MemorySummary(TypedDict):
+    conversation_id: str
+    title: str | None
+    summary: str
+    updated_at: str
+    summary_version: NotRequired[int]
+    summarized_through_message_id: NotRequired[str]
+
+
+class MemoryRetrieval(TypedDict):
+    source: Literal["temporal", "semantic", "recent_fallback", "none"]
+    results: list[MemorySummary]
+    warnings: NotRequired[list[dict[str, object]]]
+    error: NotRequired[dict[str, object]]
+    evidence: NotRequired[list[Evidence]]
 
 
 class AgentResult(TypedDict):
@@ -81,12 +119,14 @@ class FAQResult(AgentResult):
     status: Literal["success", "unavailable", "error"]
     answer: str
     citation_ids: list[str]
+    next_step: NotRequired[ToolNextStep]
 
 
 class ProductWorkFlowResult(AgentResult):
     status: Literal["success", "unavailable", "error"]
     answer: str
     evidence_ids: list[str]
+    lookup_status: NotRequired[SuggestionLookupStatus]
 
 
 class JudgeResult(AgentResult):
@@ -164,8 +204,11 @@ class GraphState(TypedDict, total=False):
     ]
 
     input_guardrail: InputGuardrailResult
+    greeting_classification: GreetingClassification
     output_guardrail: OutputGuardrailResult
     routing_decision: RoutingDecision
+    memory_retrieval: NotRequired[MemoryRetrieval]
+    router_answered: NotRequired[bool]
 
     agent_results: Annotated[
         AgentResults,

@@ -1,43 +1,32 @@
-from __future__ import annotations
-
-from typing import Any
+from collections.abc import Sequence
 
 from src.agents.judge.executor import JudgeExecutor
-from src.agents.judge.jev_client import JevEvaluation
-from src.graphs.contracts import JudgeDecision
+from src.agents.judge.jev_client import JevClientError, JevEvaluation
 from src.graphs.state import Evidence, ResponseDraft
 
 
-class FakeJudgeModel:
-    def __init__(self, result: Any) -> None:
+class FakeJevClient:
+    def __init__(self, result: JevEvaluation | Exception) -> None:
         self.result = result
-        self.messages: list[Any] | None = None
-        self.call_count = 0
+        self.calls = 0
+        self.response_draft: ResponseDraft | None = None
+        self.evidences: list[Evidence] | None = None
 
-    def invoke(self, messages: list[Any]) -> Any:
-        self.call_count += 1
-        self.messages = messages
-
+    def evaluate(
+        self,
+        *,
+        response_draft: ResponseDraft,
+        evidences: Sequence[Evidence],
+    ) -> JevEvaluation:
+        self.calls += 1
+        self.response_draft = response_draft
+        self.evidences = list(evidences)
         if isinstance(self.result, Exception):
             raise self.result
-
         return self.result
 
 
-class FakeJevClient:
-    def __init__(self, evaluation: JevEvaluation) -> None:
-        self.evaluation = evaluation
-        self.calls = 0
-
-    def evaluate(self, **_: Any) -> JevEvaluation:
-        self.calls += 1
-        return self.evaluation
-
-
-def _draft(
-    *,
-    citations: list[str] | None = None,
-) -> ResponseDraft:
+def _draft(*, citations: list[str] | None = None) -> ResponseDraft:
     return {
         "content": "O produto possui fluxo alto.",
         "citations": ["metric-1"] if citations is None else citations,
@@ -45,176 +34,74 @@ def _draft(
     }
 
 
-def _evidence() -> Evidence:
+def _evidence(evidence_id: str = "metric-1") -> Evidence:
     return {
-        "evidence_id": "metric-1",
+        "evidence_id": evidence_id,
         "source_type": "metric",
-        "source_id": "stock_metrics:product-10",
+        "source_id": f"stock_metrics:{evidence_id}",
         "content": "Classificação publicada: ALTO.",
-        "metadata": {
-            "product_id": "10",
-        },
+        "metadata": {"product_id": "10"},
     }
 
 
-def test_judge_approves_supported_draft_and_receives_evidence_content() -> None:
-    model = FakeJudgeModel(
-        JudgeDecision(
-            status="approved",
-            reason="Resposta sustentada pela evidência.",
-            evidence_ids=["metric-1"],
-        )
+def _approved_evaluation(*, confidence: float = 0.95) -> JevEvaluation:
+    return JevEvaluation(
+        verdict="approved",
+        reason_code="none",
+        confidence=confidence,
+        probabilities={"approved": confidence, "rejected": 1 - confidence},
+        model="jev-1.13.0",
+        input_tokens=100,
+        output_tokens=10,
     )
 
-    result = JudgeExecutor(model=model).invoke(
-        response_draft=_draft(),
-        evidences=[_evidence()],
+
+def test_judge_uses_jev_and_passes_the_draft_and_cited_evidence() -> None:
+    client = FakeJevClient(_approved_evaluation())
+    second_evidence = _evidence("metric-2")
+
+    result = JudgeExecutor(jev_client=client).invoke(
+        response_draft=_draft(citations=["metric-1", "metric-2"]),
+        evidences=[_evidence(), second_evidence],
     )
 
-    assert result == {
-        "status": "approved",
-        "reason": "Resposta sustentada pela evidência.",
-        "evidence_ids": ["metric-1"],
-    }
-    assert model.messages is not None
-    assert "O produto possui fluxo alto." in str(model.messages[-1].content)
-    assert "Classificação publicada: ALTO." in str(model.messages[-1].content)
+    assert result["status"] == "approved"
+    assert result["evidence_ids"] == ["metric-1", "metric-2"]
+    assert result["confidence"] == 0.95
+    assert result["model"] == "jev-1.13.0"
+    assert client.calls == 1
+    assert client.response_draft is not None
+    assert client.evidences is not None
+    assert [item["evidence_id"] for item in client.evidences] == [
+        "metric-1",
+        "metric-2",
+    ]
 
 
-def test_judge_fails_without_citations_without_calling_model() -> None:
-    model = FakeJudgeModel(
-        JudgeDecision(
-            status="approved",
-            reason="Não deveria ser chamado.",
-            evidence_ids=["metric-1"],
-        )
-    )
+def test_judge_fails_without_citations_without_calling_jev() -> None:
+    client = FakeJevClient(_approved_evaluation())
 
-    result = JudgeExecutor(model=model).invoke(
+    result = JudgeExecutor(jev_client=client).invoke(
         response_draft=_draft(citations=[]),
         evidences=[_evidence()],
     )
 
     assert result["status"] == "insufficient_evidence"
     assert result["error_code"] == "JUDGE_INSUFFICIENT_EVIDENCE"
-    assert model.call_count == 0
+    assert client.calls == 0
 
 
-def test_judge_rejects_unknown_citation_without_calling_model() -> None:
-    model = FakeJudgeModel(
-        JudgeDecision(
-            status="approved",
-            reason="Não deveria ser chamado.",
-            evidence_ids=["metric-1"],
-        )
-    )
+def test_judge_rejects_unknown_citation_without_calling_jev() -> None:
+    client = FakeJevClient(_approved_evaluation())
 
-    result = JudgeExecutor(model=model).invoke(
+    result = JudgeExecutor(jev_client=client).invoke(
         response_draft=_draft(citations=["unknown-evidence"]),
         evidences=[_evidence()],
     )
 
     assert result["status"] == "invalid"
     assert result["error_code"] == "JUDGE_UNKNOWN_EVIDENCE"
-    assert model.call_count == 0
-
-
-def test_judge_preserves_insufficient_evidence_decision() -> None:
-    model = FakeJudgeModel(
-        JudgeDecision(
-            status="insufficient_evidence",
-            reason="A evidência não sustenta toda a resposta.",
-            evidence_ids=["metric-1"],
-        )
-    )
-
-    result = JudgeExecutor(model=model).invoke(
-        response_draft=_draft(),
-        evidences=[_evidence()],
-    )
-
-    assert result == {
-        "status": "insufficient_evidence",
-        "reason": "A evidência não sustenta toda a resposta.",
-        "evidence_ids": ["metric-1"],
-    }
-
-
-def test_judge_rejects_approval_that_did_not_evaluate_all_citations() -> None:
-    second_evidence: Evidence = {
-        **_evidence(),
-        "evidence_id": "metric-2",
-        "source_id": "stock_metrics:product-11",
-    }
-    model = FakeJudgeModel(
-        JudgeDecision(
-            status="approved",
-            reason="Resposta sustentada.",
-            evidence_ids=["metric-1"],
-        )
-    )
-
-    result = JudgeExecutor(model=model).invoke(
-        response_draft=_draft(citations=["metric-1", "metric-2"]),
-        evidences=[_evidence(), second_evidence],
-    )
-
-    assert result["status"] == "invalid"
-    assert result["error_code"] == "JUDGE_INCOMPLETE_VALIDATION"
-
-
-def test_judge_fails_closed_without_retry_when_model_is_unavailable() -> None:
-    model = FakeJudgeModel(RuntimeError("model unavailable"))
-
-    result = JudgeExecutor(model=model).invoke(
-        response_draft=_draft(),
-        evidences=[_evidence()],
-    )
-
-    assert result["status"] == "invalid"
-    assert result["error_code"] == "JUDGE_UNAVAILABLE"
-    assert model.call_count == 1
-
-
-def test_judge_fails_closed_on_invalid_structured_output() -> None:
-    model = FakeJudgeModel(
-        {
-            "status": "approved",
-            "reason": "Resposta sustentada.",
-        }
-    )
-
-    result = JudgeExecutor(model=model).invoke(
-        response_draft=_draft(),
-        evidences=[_evidence()],
-    )
-
-    assert result["status"] == "invalid"
-    assert result["error_code"] == "JUDGE_INVALID_OUTPUT"
-
-
-def test_jev_approves_only_with_supported_verdict_and_threshold() -> None:
-    client = FakeJevClient(
-        JevEvaluation(
-            verdict="approved",
-            reason_code="none",
-            confidence=0.95,
-            probabilities={"approved": 0.95, "rejected": 0.05},
-            model="jev-1.13.0",
-            input_tokens=100,
-            output_tokens=10,
-        )
-    )
-
-    result = JudgeExecutor(jev_client=client).invoke(
-        response_draft=_draft(),
-        evidences=[_evidence()],
-    )
-
-    assert result["status"] == "approved"
-    assert result["confidence"] == 0.95
-    assert result["model"] == "jev-1.13.0"
-    assert client.calls == 1
+    assert client.calls == 0
 
 
 def test_jev_missing_evidence_returns_specific_rejection() -> None:
@@ -239,23 +126,49 @@ def test_jev_missing_evidence_returns_specific_rejection() -> None:
 
 
 def test_jev_rejects_low_confidence_approval() -> None:
-    client = FakeJevClient(
-        JevEvaluation(
-            verdict="approved",
-            reason_code="none",
-            confidence=0.60,
-            probabilities={"approved": 0.60, "rejected": 0.40},
-            model="jev-1.13.0",
-        )
-    )
+    client = FakeJevClient(_approved_evaluation(confidence=0.60))
 
     result = JudgeExecutor(
         jev_client=client,
         jev_confidence_threshold=0.85,
-    ).invoke(
+    ).invoke(response_draft=_draft(), evidences=[_evidence()])
+
+    assert result["status"] == "insufficient_evidence"
+    assert result["reason_code"] == "low_confidence"
+
+
+def test_jev_approves_at_the_configured_confidence_threshold() -> None:
+    client = FakeJevClient(_approved_evaluation(confidence=0.85))
+
+    result = JudgeExecutor(
+        jev_client=client,
+        jev_confidence_threshold=0.85,
+    ).invoke(response_draft=_draft(), evidences=[_evidence()])
+
+    assert result["status"] == "approved"
+    assert result["confidence"] == 0.85
+
+
+def test_jev_unavailable_preserves_internal_error_code() -> None:
+    client = FakeJevClient(JevClientError("JEV_UNAVAILABLE", "private diagnostic"))
+
+    result = JudgeExecutor(jev_client=client).invoke(
         response_draft=_draft(),
         evidences=[_evidence()],
     )
 
-    assert result["status"] == "insufficient_evidence"
-    assert result["reason_code"] == "low_confidence"
+    assert result["status"] == "invalid"
+    assert result["error_code"] == "JUDGE_JEV_UNAVAILABLE"
+    assert "private diagnostic" not in result["reason"]
+
+
+def test_jev_invalid_output_keeps_jev_error_classification() -> None:
+    client = FakeJevClient(JevClientError("JEV_INVALID_OUTPUT", "private diagnostic"))
+
+    result = JudgeExecutor(jev_client=client).invoke(
+        response_draft=_draft(),
+        evidences=[_evidence()],
+    )
+
+    assert result["status"] == "invalid"
+    assert result["error_code"] == "JUDGE_JEV_INVALID_OUTPUT"

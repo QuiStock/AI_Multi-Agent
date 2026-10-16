@@ -254,7 +254,7 @@ def test_product_workflow_reads_postgres_with_select_only_grants() -> None:
                 "Leite",
             )
 
-            assert [item.suggestion_id for item in suggestions] == [11]
+            assert [item.suggestion_id for item in suggestions] == [11, 10]
             detail = repository.get_product_suggestion_detail(
                 ProductWorkflowContext(
                     email="reader@example.test",

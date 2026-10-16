@@ -71,6 +71,7 @@ class QdrantSummaryIndexer:
                 if (
                     isinstance(current_version, int)
                     and current_version >= snapshot.summary_version
+                    and current.get("status") == "ended"
                 ):
                     return
         self._client.upsert(
@@ -133,14 +134,7 @@ class QdrantSummaryIndexer:
             return []
         points, _ = self._client.scroll(
             collection_name=self._collection_name,
-            scroll_filter=models.Filter(
-                must=[
-                    models.FieldCondition(
-                        key="memory_type",
-                        match=models.MatchValue(value="conversation_summary"),
-                    )
-                ]
-            ),
+            scroll_filter=models.Filter(must=[]),
             limit=limit,
             with_payload=True,
             with_vectors=False,
@@ -167,10 +161,6 @@ class QdrantSummaryIndexer:
                         key="email", match=models.MatchValue(value=email)
                     ),
                     models.FieldCondition(
-                        key="memory_type",
-                        match=models.MatchValue(value="conversation_summary"),
-                    ),
-                    models.FieldCondition(
                         key="status", match=models.MatchValue(value="ended")
                     ),
                 ],
@@ -187,6 +177,44 @@ class QdrantSummaryIndexer:
             order_by=models.OrderBy(key="updated_at", direction=models.Direction.DESC),
         )
         return [point.payload for point in result if isinstance(point.payload, dict)]
+
+    def mark_active(self, conversation_id: str) -> dict[str, object] | None:
+        """Mark an existing point active without changing its vector or summary."""
+        current = self.get(conversation_id)
+        if current is None:
+            return None
+        if current.get("status") != "active":
+            self._client.set_payload(
+                collection_name=self._collection_name,
+                payload={"status": "active"},
+                points=[self._point_id(conversation_id)],
+                wait=True,
+            )
+        return current
+
+    def restore_ended(self, conversation_id: str) -> bool:
+        """Restore an active point to ended after a failed Mongo reopen."""
+        if self.get(conversation_id) is None:
+            return False
+        self._client.set_payload(
+            collection_name=self._collection_name,
+            payload={"status": "ended"},
+            points=[self._point_id(conversation_id)],
+            wait=True,
+        )
+        return True
+
+    def mark_ended(self, conversation_id: str) -> bool:
+        """Repair status after reconciliation without touching summary content."""
+        if self.get(conversation_id) is None:
+            return False
+        self._client.set_payload(
+            collection_name=self._collection_name,
+            payload={"status": "ended"},
+            points=[self._point_id(conversation_id)],
+            wait=True,
+        )
+        return True
 
     def _ensure_collection(self, *, vector_size: int) -> None:
         if self._client.collection_exists(self._collection_name):

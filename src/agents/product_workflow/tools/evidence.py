@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+
 from src.agents.product_workflow.models import (
     ProductSuggestionCandidate,
     ProductSuggestionDetailRecord,
@@ -10,6 +12,71 @@ from src.agents.product_workflow.models import (
     SuggestionTriageData,
 )
 from src.agents.schemas.tool_result import ToolEvidence
+
+
+def _absence_evidence(*, source_id: str, content: str) -> ToolEvidence:
+    digest = hashlib.sha256(source_id.encode()).hexdigest()[:16]
+    return ToolEvidence(
+        evidence_id=f"product-workflow:empty:{digest}",
+        source_type="product_workflow",
+        source_id=source_id,
+        content=content,
+        metadata={"outcome": "not_found", "provenance": "postgresql_read"},
+    )
+
+
+def no_matching_suggestion_evidence(product_query: str) -> ToolEvidence:
+    digest = hashlib.sha256(product_query.strip().casefold().encode()).hexdigest()[:12]
+    return _absence_evidence(
+        source_id=f"authorized_product_suggestion_search:{digest}",
+        content=(
+            "A consulta autenticada não encontrou cards ou sugestões válidas "
+            "do tipo pedido ou promoção para o termo consultado no escopo "
+            "autorizado."
+        ),
+    )
+
+
+def no_suggestions_for_type_evidence(suggestion_type: str) -> ToolEvidence:
+    label = "pedido" if suggestion_type == "ORDER" else "promoção"
+    return _absence_evidence(
+        source_id=f"authorized_suggestion_list:{suggestion_type.lower()}",
+        content=(
+            f"A consulta autenticada não encontrou sugestões válidas do tipo "
+            f"{label} no escopo autorizado."
+        ),
+    )
+
+
+def no_more_suggestions_page_evidence(suggestion_type: str) -> ToolEvidence:
+    return _absence_evidence(
+        source_id=f"authorized_suggestion_page_end:{suggestion_type.lower()}",
+        content=(
+            "A página solicitada não contém mais sugestões após o cursor no "
+            "escopo autorizado."
+        ),
+    )
+
+
+def no_valid_promotion_evidence(direction: str) -> ToolEvidence:
+    description = "mais próxima" if direction == "nearest" else "mais longa"
+    return _absence_evidence(
+        source_id=f"authorized_promotion_expiration:{direction}",
+        content=(
+            "A consulta autenticada não encontrou promoções válidas com data "
+            f"de validade {description} no escopo autorizado."
+        ),
+    )
+
+
+def no_more_promotions_page_evidence(direction: str) -> ToolEvidence:
+    return _absence_evidence(
+        source_id=f"authorized_promotion_page_end:{direction}",
+        content=(
+            "A página solicitada não contém mais promoções empatadas após o "
+            "cursor no escopo autorizado."
+        ),
+    )
 
 
 def candidate_evidence(

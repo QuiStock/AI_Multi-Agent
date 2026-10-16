@@ -69,16 +69,18 @@ tests/                              # contratos, unitários e integração
 Fluxo executável atual:
 
 ```text
-HTTP -> input_guardrail -> context_enrichment -> normalize_user_message
-     -> router -> faq ou product_workflow
-     -> compiler -> evidence_judge -> output_guardrail
+HTTP -> input_guardrail -> greeting_guardrail
+     -> greeting ou context_enrichment -> normalize_user_message -> router
+     -> faq ou product_workflow
+     -> compiler -> judge node (JEV adapter) -> output_guardrail
      -> persist_turn -> resposta HTTP
 ```
 
 Rotas de esclarecimento, fora de escopo, entrada bloqueada e juiz bloqueado
 terminam em respostas controladas. A memória de retomada ocorre antes do
-router; a busca semântica opcional está conectada ao router e aos agentes
-especializados. Um resultado buscado pelo router é compartilhado pelo estado.
+router; a busca semântica opcional de conversas é responsabilidade exclusiva
+do router. Os agentes especializados recebem a mensagem já resolvida e não
+possuem ferramenta de memória.
 
 ## 1. Quem é cada agente
 
@@ -88,23 +90,39 @@ Guardrails não são agentes: são controles obrigatórios do fluxo.
 |---|---|---|
 | `router` | Classificar a intenção e escolher uma rota permitida. | Registrado e usado pelo grafo. |
 | `faq_rag` | Responder em português usando apenas documentos recuperados. | Registrado e ativo. |
-| `product_workflow` | Consultar e explicar sugestões e triagem comercial em modo read-only. | Card, executor, duas tools e repositório PostgreSQL direto registrados; sem decisões ou operações de escrita. |
-| `evidence_judge` | Avaliar se o rascunho está sustentado pelas evidências e citações. | Registrado e usado após o compiler. |
+| `product_workflow` | Consultar e explicar sugestões e triagem comercial em modo read-only. | Card, executor, quatro tools comerciais e repositório PostgreSQL direto registrados; sem decisões ou operações de escrita. |
 | `response_compiler` (`compiler`) | Sintetizar os resultados especializados em uma resposta candidata. | Registrado e usado antes do judge. |
+
+O nó `judge` não é um agente com card ou prompt: ele chama o JEV por meio
+de um adapter interno.
 
 ### Router
 
 Pode classificar em `faq`, `product_workflow`, `clarification_required` ou
-`out_of_scope`, usar o
-contexto recente e, quando configurado, chamar
-`search_conversation_summaries`. Não responde ao usuário, não consulta dados
-comerciais e não cria rotas para capacidades ausentes.
+`out_of_scope`, usar o contexto recente e, quando configurado, chamar sua
+única ferramenta, `search_conversation_summaries`, exclusivamente para
+resolver referências a conversas anteriores. Não responde ao usuário, não
+consulta dados comerciais e não cria rotas para capacidades ausentes.
+
+### Greeting guardrail
+
+O `greeting_guardrail` é uma etapa do guardrail de entrada, implementada em
+`src/guardrails/greeting.py`. Ele executa depois da validação de segurança e
+antes da retomada de contexto, usando uma chamada LLM estruturada própria
+somente para mensagens curtas. A saída é `greeting_only` ou `normal_request`;
+falha ou saída inválida segue para o router. Saudações recebem uma resposta
+fixa e segura, passam pelo output guardrail e são persistidas como um turno
+normal; uma saudação acompanhada de pergunta segue para o router. Saudações
+não consultam memória, compiler, judge ou tools.
 
 ### FAQ/RAG
 
 Pode buscar trechos `.txt`, `.md` e `.pdf` no Qdrant via `faq_search`, redigir
 uma resposta documental em português e indicar arquivo/página quando
-disponíveis. Cada chunk possui `audience=shared`, `audience=employee` ou
+disponíveis. A tool retorna `ToolResult[FAQSearchData]`: resultados seguem para
+composição; consulta executada sem evidência retorna `success` com `data.outcome`
+`not_found`, `warning` estável e `next_step=direct_response`. Cada chunk possui
+`audience=shared`, `audience=employee` ou
 `audience=manager`; o executor usa `role_code=MANAGER` ou
 `role_code=EMPLOYEE` e aplica o filtro server-side antes da busca.
 Não usa conhecimento externo, não inventa evidência, não recalcula regras do ML
@@ -113,23 +131,43 @@ e deve recusar quando não houver suporte suficiente.
 ### Product Workflow
 
 É somente leitura: usa o snapshot recebido para o produto do card ou consulta
-outra sugestão por query fixa parametrizada. O escopo de loja vem dos IDs de
+outra sugestão por nome, SKU, `product_id` ou `suggestion_id`, em query fixa
+parametrizada. `get_suggestion_for_product` retorna `status=unique` com o
+detalhe completo quando há uma única sugestão; com múltiplas retorna
+`status=ambiguous` e candidatos seguros sem escolher; sem resultado autorizado
+retorna `ToolResult.success` com `next_step=direct_response`; o grafo registra a
+consulta como sucesso e persiste a mensagem direta sem compiler/JEV. A captura
+do resultado da tool preserva `not_found` mesmo se o modelo falhar após a
+consulta. Falhas reais de dependência, timeout ou conexão retornam
+`status=unavailable` no estado do grafo e usam a mensagem temporária controlada.
+O escopo de loja vem dos IDs de
 lojas ativas carregados por `user_account.id`, junto de `email` e `role.code`
 autenticados: `EMPLOYEE` vê `available_for_triage`; `MANAGER` vê
-`SENT_TO_MANAGER`; ambas excluem `suggestion_log.event = 'EXPIRED'`. Snapshot
-tem proveniência cliente, nunca banco. Não recalcula ML, altera sugestões,
+`SENT_TO_MANAGER`; ambas excluem suggestion_log.event = 'EXPIRED'. O snapshot tem proveniência
+cliente, nunca banco. list_suggestions pagina as sugestões visíveis do tipo
+selecionado; get_promotion_by_expiration retorna a validade extrema e pagina
+empates. As tools retornam resumos numerados; a escolha é revalidada por
+get_suggestion_detail. Para ORDER, apresente current_batch_count e
+ml_batch_count separadamente; PROMOTION não possui quantidade de lote.
+Não recalcula ML, altera sugestões,
 cria pedidos, ativa promoções ou escreve no PostgreSQL.
 
-### Evidence Judge
 
-Recebe apenas `response_draft` e `evidences`. As validações estruturais são
-locais e o julgamento semântico usa o modelo JEV da TypeSafe por um adapter
-interno; JEV não é uma tool MCP. O juiz pode retornar `approved`,
-`insufficient_evidence` ou `invalid`, além de códigos estruturados de motivo e
-confiança para auditoria. Não responde ao usuário nem usa conhecimento
-externo. Quando a rejeição é corrigível, o compiler recebe o motivo para uma
-única reformulação; `missing_evidence` termina diretamente em mensagem
-controlada e toda reformulação passa novamente pelo juiz.
+O trace de tools do Product Workflow mantém nome da tool, status, desfecho,
+tipo/direção, paginação e contagens agregadas; não registra query, IDs de loja
+ou conteúdo comercial. Busca vazia registra contagens por estágio no escopo
+autorizado para localizar filtros de identidade, loja, cargo, tipo e expiração.
+
+### Avaliação JEV
+
+O nó `judge` valida localmente `response_draft` e `evidences`, depois chama
+exclusivamente o JEV da TypeSafe por `JudgeExecutor` e `TypeSafeJevClient`.
+Não há card, prompt ou fallback de LLM para julgamento. O resultado interno
+`JudgeResult` mantém status, códigos, confiança, modelo e uso de tokens; o
+trace persiste somente esses campos seguros pela allowlist. Falha do JEV
+retorna ao usuário `Desculpe, estamos com instabilidade com o fefo.`. Quando
+a rejeição é corrigível, o compiler recebe o resultado para uma única
+reformulação, que passa novamente pelo JEV.
 
 ### Response Compiler
 
@@ -156,7 +194,7 @@ Regras comuns:
 O contrato declarativo fica em `src/agents/schemas/agent_card.py`:
 
 - papéis fechados: `router`, `faq_rag`, `product_workflow`,
-  `evidence_judge`, `response_compiler`;
+  `response_compiler`;
 - `id` em `snake_case`, versão SemVer, prompt não vazio e tools sem IDs
   duplicados;
 - `FailurePolicy` descreve comportamento de timeout, retry e fallback e deve
@@ -169,10 +207,10 @@ está registrado e `src/api/dependencies.py` define o que entra no grafo.
 
 | Agente | Tool/capacidade | Limite |
 |---|---|---|
-| Router | `search_conversation_summaries` | Somente memória do próprio usuário; até 3 resumos encerrados, score inicial `>= 0.5`, conversa atual excluída e validação posterior no MongoDB. Sem resultado relevante, devolve lista vazia. |
-| FAQ/RAG | `faq_search`, `search_conversation_summaries` | `faq_search` consulta apenas o Qdrant da coleção FAQ; executa uma busca por turno, `top_k=4` e relevância mínima padrão `0.30`. Memória só resolve referências, nunca serve como fonte documental. |
-| Product Workflow | `get_suggestion_for_product`, `get_suggestion_detail`, `search_conversation_summaries` | Consultas comerciais parametrizadas e somente leitura; identidade, cargo e lojas vêm da autenticação. A memória só esclarece referência e não substitui a consulta atual ao banco. |
-| Judge | JEV via adapter interno | Validação estrutural local e julgamento semântico tipado; sem MCP, sem tools descobertas e sem fallback silencioso. |
+| Router | `search_conversation_summaries` | Única tool de memória; até 3 pontos Qdrant do próprio email, status `ended`, conversa atual excluída e score semântico mínimo `0.5`. `ontem` usa intervalo civil em `America/Sao_Paulo` sem embedding; sem match semântico usa até 3 recentes como `recent_fallback`. |
+| FAQ/RAG | `faq_search` | Consulta apenas o Qdrant da coleção FAQ; executa uma busca por turno, `top_k=4` e relevância mínima padrão `0.30`. Retorna `ToolResult[FAQSearchData]`, com até 20 resultados normalizados, evidências, `not_found` controlado e erros categorizados. |
+| Product Workflow | `get_suggestion_for_product`, `get_suggestion_detail`, `list_suggestions`, `get_promotion_by_expiration` | Busca autorizada por produto; listagem paginada de pedidos/promoções; validade extrema de promoção. Todas respeitam o escopo autenticado de lojas e cargo. Seleções são numeradas e revalidadas por `selection_id`. |
+| Nó judge | JEV via adapter interno | Validação estrutural local e julgamento semântico tipado; sem card, prompt, LLM alternativo ou tools descobertas. |
 | Compiler | Nenhuma | Usa somente resultados e evidências já presentes no estado. |
 
 Detalhes de wiring importantes:
@@ -180,18 +218,19 @@ Detalhes de wiring importantes:
 - A composição injeta o retriever base no `FAQExecutor`; a tool `faq_search` é
   construída por requisição com o escopo do `role_code` e não guarda role em
   estado global mutável.
-- `get_graph()` injeta o mesmo serviço de busca semântica no router, FAQ e
-  Product Workflow. Cada agente decide se chama sua própria tool; a identidade
-  e a mensagem sanitizada são vinculadas pelo servidor. O resultado fica na
-  resposta da tool e não é repassado pelo estado do grafo. Resumos encontrados
-  geram evidência de contexto anterior no resultado da tool, sem substituir
-  evidência documental ou comercial.
-- `faq_tool.py` ainda retorna `str`/JSON legado. O contrato-alvo é
-  `ToolResult[FAQSearchData]`; a migração deve usar
-  `src/agents/tooling/result_factory.py`, sem documentar o legado como contrato
-  final.
+- `get_graph()` injeta o serviço de busca semântica de conversas somente no
+  router. A identidade e a mensagem sanitizada são vinculadas pelo servidor.
+  O resultado fica na resposta da tool do router e não concede autorização
+  nem substitui evidência documental ou comercial dos especialistas.
+- `faq_tool.py` retorna `str` apenas como transporte JSON da visão do agente,
+  mas o envelope é construído e validado como `ToolResult[FAQSearchData]` via
+  `src/agents/tooling/result_factory.py`. `meta` e `error.details` ficam apenas
+  no envelope interno/estado.
 - `run_faq_node` encaminha o `request` sanitizado ao FAQ e projeta as evidências
   retornadas para `GraphState.evidences`.
+- `run_greeting_guardrail_node` recebe somente a mensagem já sanitizada e,
+  para uma saudação isolada, define a rota `greeting`; o guardrail não chama
+  tools e a resposta fixa não é escrita pelo modelo.
 - `ToolBinding` descreve argumentos; não concede autorização. Autorização,
   tenant/store scope, limites, timeout e filtros pertencem ao servidor.
 
@@ -201,24 +240,33 @@ Não há chamadas diretas entre agentes. A comunicação passa por `GraphState` 
 pelos adapters em `src/graphs/adapters.py`.
 ```text
 input_guardrail
+  -> greeting_guardrail -> greeting
   -> context_enrichment -> normalize_user_message -> router
   -> capacidade ativa -> response_draft (compiler)
   -> agent_results.judge (judge)
-  -> output_guardrail -> final_response -> persist_turn
+  -> se aprovado: final_response (promove draft e o limpa)
+  -> output_guardrail (lê apenas final_response) -> persist_turn
 ```
+
+Em rejeição corrigível, `response_draft` permanece disponível para a única
+reformulação do compiler; após aprovação, o judge o limpa. O output guardrail
+sempre valida e finaliza `final_response`, nunca usa `response_draft` como
+fallback, e limpa qualquer draft residual ao concluir o turno.
 
 Ownership de escrita:
 
 | Campo | Dono |
 |---|---|
 | `request.sanitized_message`, `input_guardrail`, `pii_map` | input guardrail |
+| `greeting_classification`, `routing_decision` para `greeting` | greeting guardrail |
 | `messages` de retomada | context enrichment |
 | `routing_decision` | router |
 | `agent_results.faq` / `product_workflow` | capacidade correspondente |
 | `evidences` | capacidade que as obteve, via reducer por `evidence_id` |
-| `response_draft` | compiler |
+| `response_draft` | compiler; o judge limpa após promover um draft aprovado |
 | `agent_results.judge` | judge |
-| `output_guardrail`, `final_response`, `status` terminal | output/finalização |
+| `final_response` | greeting/respostas controladas; judge promove somente draft aprovado; output guardrail finaliza |
+| `output_guardrail`, `status` terminal | output/finalização |
 
 `src/graphs/state.py` é o único `GraphState`. O reducer de `messages` é
 `add_messages`; `agent_results` preserva resultados por agente; `evidences`
@@ -226,9 +274,11 @@ faz merge por `evidence_id`. Não adicione chaves ad hoc.
 
 O router recebe `messages` sanitizadas e `request` com `request_id`, `user_id`,
 `email`, `role_code`, `store_ids`, `conversation_id`, `sent_at` e
-`sanitized_message`. O compiler recebe todos os
-resultados/evidências disponíveis. O judge recebe o draft e as evidências. A
-resposta final é produzida pelo guardrail/finalização, não pelo judge.
+`sanitized_message`. O compiler recebe todos os resultados/evidências
+disponíveis. O judge recebe o draft e as evidências; após aprovação, o adapter
+promove o conteúdo para `final_response`. O output guardrail lê somente
+`final_response`, valida/sanitiza seu conteúdo e limpa qualquer draft residual
+antes da persistência.
 
 ## 5. Formato de entrada e saída
 
@@ -257,6 +307,18 @@ de 4.000 caracteres. A resposta contém `conversation_id`, `request_id`,
 `response` e status `success`, `rejected`, `clarification_required`,
 `out_of_scope` ou `error`.
 
+As mensagens públicas de bloqueio são controladas e não expõem JEV, evidências,
+compiler, `reason_code`, ferramentas ou detalhes de banco. Judge bloqueado por
+falta de evidência usa `Desculpe, não foi possível te ajudar neste momento.
+Tente novamente mais tarde.`; indisponibilidade do Product Workflow usa
+`Desculpe, não foi possível consultar essas informações agora. Tente novamente
+mais tarde.`; `out_of_scope` usa `Desculpe, não consigo ajudar com esse assunto.
+Posso ajudar com informações sobre o Quistock, produtos e sugestões.`;
+`clarification_required` usa `Pode me dar mais detalhes sobre o que você precisa
+no Quistock?`; e entrada bloqueada usa `Desculpe, não posso tratar desse tipo de
+assunto no Quistock.`. Os status, códigos técnicos, logs, telemetria e
+persistência permanecem internos.
+
 Memória:
 
 - `POST /api/v1/conversations/{conversation_id}/end` retorna `202` e enfileira
@@ -276,16 +338,21 @@ Memória:
 O estado usa `request`, `messages`, guardrails, `routing_decision`,
 `agent_results`, `evidences`, `response_draft`, `final_response`, `status` e
 `errors`. Os contratos Pydantic de fronteira são `RouteDecision`,
-`CompilerResult` e `JudgeDecision` em `src/graphs/contracts.py`.
+`CompilerResult` em `src/graphs/contracts.py`; o resultado do judge é o
+TypedDict interno `JudgeResult` em `src/graphs/state.py`.
 
-Tools novas devem retornar `ToolResult[DataT]` com:
+Tools devem retornar `ToolResult[DataT]` com:
 
 ```text
-schema_version, status, response, data, actions, evidence, warnings, error, meta
+schema_version, status, next_step, response, data, actions, evidence, warnings,
+error, meta
 ```
 
 Status: `success`, `partial` ou `error`. `success` não possui erro; `partial`
-explica a incompletude; `error` possui `ToolError` e não expõe dados. Use
+explica a incompletude; `error` possui `ToolError` e não expõe dados. `next_step`
+separa `continue`, `direct_response`, `clarification` e `controlled_error`;
+`direct_response` e `clarification` exigem resposta direta, e erro exige
+`controlled_error`. Use
 `compose_success`, `direct_success`, `partial_result` e `tool_error`; serialize
 com `result_adapter`. A visão do agente omite `meta` e `error.details`; o
 estado/auditoria pode manter o envelope completo.
@@ -347,12 +414,13 @@ foram avaliadas; sem evidência suficiente retorna `insufficient_evidence`.
 |---|---|
 | Entrada insegura ou inválida | Bloquear com mensagem controlada; não continuar o grafo. |
 | Router indisponível/saída inválida | `clarification_required`; não adivinhar a rota. |
+| Product Workflow sem resultado autorizado | Consulta bem-sucedida (`ToolResult.success`), resposta direta controlada e persistida; não reportar indisponibilidade. |
 | Rota sem capacidade registrada | `out_of_scope`; não ativar fallback silencioso. |
-| FAQ sem evidência | Responder de forma controlada/indisponível e não usar conhecimento externo. |
+| FAQ sem evidência | `success` técnico com `outcome=not_found`, `next_step=direct_response` e mensagem controlada; segue direto para persistência, sem conhecimento externo. |
 | Tool/DB/Qdrant indisponível | Retornar erro/partial seguro, preservar código estável e permitir retry apenas quando `retryable`; não inventar dados. |
 | Judge `missing_evidence`, `insufficient_evidence` ou `invalid` | Bloquear a resposta factual; `missing_evidence` retorna mensagem controlada sem reformulação, e outros motivos corrigíveis permitem no máximo uma reformulação antes de bloquear. |
 | Output guardrail falha | Substituir pela resposta controlada e não revelar detalhes internos. |
-| Memória sem candidatos | Retornar lista vazia e, se a referência anterior for indispensável, pedir esclarecimento. Não usar resumos recentes sem relevância. |
+| Memória sem candidatos | Recall usa resposta controlada; se a referência anterior for indispensável, pedir esclarecimento. Fallback recente nunca é apresentado como match semântico e não identifica produto/regra atual. |
 | Encerramento/Redis indisponível | Não fingir resumo concluído; API informa indisponibilidade e o worker/reconciliação pode tentar novamente. |
 
 Erros técnicos para tools devem usar as categorias `validation`,
@@ -365,16 +433,32 @@ Não faça retries ilimitados.
 - `enrich_context` só restaura histórico quando `is_resuming_conversation` está
   ativo; conversa nova não busca Qdrant automaticamente.
 - Resumos no Qdrant são filtrados por `email`, status encerrado, score e
-  exclusão da conversa atual; o payload deve conter versão válida. O MongoDB
-  confirma a propriedade e o status da conversa. Não há fallback para resumos
-  recentes sem relevância semântica.
+  exclusão da conversa atual; o payload deve conter versão e watermark válidos.
+  A recuperação não consulta MongoDB, não depende de `memory_type` ou `title` e
+  usa o texto persistido no próprio ponto. `ontem` usa o intervalo civil
+  anterior em `America/Sao_Paulo`, convertido para UTC, sem embedding. Busca
+  semântica sem match pode retornar até três pontos recentes marcados como
+  `recent_fallback`, sem afirmar correspondência temática.
+- A tool de memória pertence exclusivamente ao router. Recall puro é formatado
+  localmente e segue direto para persistência; memória usada por FAQ ou Product
+  Workflow apenas resolve referências e não substitui evidência atual.
 - O encerramento é assíncrono: MongoDB registra o job, Redis Streams entrega,
   o worker faz retry limitado e o resumo incremental usa
   `summarized_through_message_id`. O mesmo `conversation_id` recebe upsert no
   índice de resumos no Qdrant; MongoDB não armazena o conteúdo do resumo.
 - Checkpoints locais são efêmeros; o histórico durável é o MongoDB.
+- Na retomada, o lock por conversa é adquirido antes de marcar o ponto Qdrant
+  como `active` e reabrir o MongoDB. Falha ao reabrir restaura `ended` ou deixa
+  reconciliação reparar o estado. Encerramento posterior volta a `ended` sem
+  perder vetor, resumo ou watermark.
 - Preserve `request_id`, `tool_call_id` e `trace_id` nas fronteiras existentes.
   Não registre conteúdo sensível, credenciais, PII ou prompts privados.
+- Inputs bloqueados retornam uma mensagem controlada e são persistidos como um
+  turno normal em `conversations.messages`. O conteúdo original nunca é
+  persistido: a mensagem do usuário usa o marcador `[ENTRADA_BLOQUEADA]`, e a
+  resposta do assistente é a mensagem controlada. O bloqueio não chama o
+  greeting guardrail, router, compiler, judge ou tools; o texto original,
+  `pii_map`, credenciais e detalhes de diagnóstico ficam fora do histórico.
 
 ## Testes e manutenção
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -40,8 +40,11 @@ class FAQSearchData(FAQToolModel):
         max_length=1_000,
     )
 
+    outcome: Literal["found", "not_found"]
+
     result_count: int = Field(
         ge=0,
+        le=20,
     )
 
     results: list[FAQSearchItem] = Field(

@@ -14,12 +14,14 @@ def build_detail_data(
     detail: ProductSuggestionDetailRecord,
     *,
     selection_ref: str,
+    selection_id: str | None = None,
     manager: bool,
 ) -> SuggestionDetailData:
     """Build the public card and expose triage only to managers."""
 
     card = SuggestionCardData(
         selection_ref=selection_ref,
+        selection_id=selection_id,
         product_id=detail.product_id,
         product_name=detail.product_name,
         category_name=detail.category_name,
@@ -30,12 +32,30 @@ def build_detail_data(
         suggestion_type=detail.suggestion_type,
         origin=detail.origin,
         status=detail.status,
-        ml_batch_count=detail.ml_batch_count,
-        current_batch_count=detail.current_batch_count,
-        effective_batch_count=(detail.current_batch_count or detail.ml_batch_count),
+        ml_batch_count=(
+            detail.ml_batch_count if detail.suggestion_type == "ORDER" else None
+        ),
+        current_batch_count=(
+            detail.current_batch_count if detail.suggestion_type == "ORDER" else None
+        ),
+        effective_batch_count=(
+            (detail.current_batch_count or detail.ml_batch_count)
+            if detail.suggestion_type == "ORDER"
+            else None
+        ),
+        batch_count=(
+            (detail.current_batch_count or detail.ml_batch_count)
+            if detail.suggestion_type == "ORDER"
+            else None
+        ),
         ml_discount_percentage=detail.ml_discount_percentage,
         current_discount_percentage=detail.current_discount_percentage,
         effective_discount_percentage=(
+            detail.current_discount_percentage
+            if detail.current_discount_percentage is not None
+            else detail.ml_discount_percentage
+        ),
+        discount_percentage=(
             detail.current_discount_percentage
             if detail.current_discount_percentage is not None
             else detail.ml_discount_percentage

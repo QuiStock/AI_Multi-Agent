@@ -5,6 +5,13 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+SuggestionLookupStatus = Literal[
+    "unique",
+    "ambiguous",
+    "not_found",
+    "unavailable",
+]
+
 
 class ProductWorkflowContext(BaseModel):
     """Authenticated context supplied by the API, never by the model."""
@@ -38,6 +45,8 @@ class ProductSuggestionSearchRecord(BaseModel):
         "APPROVED",
         "REJECTED",
     ]
+    promotion_valid_until: date | None = None
+
 
 
 class ProductSuggestionCandidate(BaseModel):
@@ -46,7 +55,10 @@ class ProductSuggestionCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     position: int = Field(ge=1)
+    selection_id: str = Field(min_length=1, max_length=240)
     selection_ref: str = Field(min_length=1, max_length=240)
+    suggestion_id: int = Field(ge=1)
+    product_id: int = Field(ge=1)
     product_name: str = Field(min_length=1, max_length=200)
     category_name: str | None = Field(default=None, max_length=150)
     sku: str = Field(min_length=1, max_length=100)
@@ -59,6 +71,8 @@ class ProductSuggestionCandidate(BaseModel):
         "APPROVED",
         "REJECTED",
     ]
+    promotion_valid_until: date | None = None
+
 
 
 class ProductSuggestionSearchData(BaseModel):
@@ -67,7 +81,10 @@ class ProductSuggestionSearchData(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     product_query: str = Field(min_length=1, max_length=200)
+    status: SuggestionLookupStatus
     outcome: Literal["found", "ambiguous", "not_found"]
+    suggestion: SuggestionCardData | None = None
+    triage: SuggestionTriageData | None = None
     candidates: list[ProductSuggestionCandidate] = Field(max_length=6)
 
 
@@ -77,6 +94,7 @@ class SuggestionCardData(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     selection_ref: str = Field(min_length=1, max_length=240)
+    selection_id: str | None = Field(default=None, max_length=240)
     product_id: int = Field(ge=1)
     product_name: str = Field(min_length=1, max_length=200)
     category_name: str | None = Field(default=None, max_length=150)
@@ -96,9 +114,11 @@ class SuggestionCardData(BaseModel):
     ml_batch_count: int | None = Field(default=None, gt=0)
     current_batch_count: int | None = Field(default=None, gt=0)
     effective_batch_count: int | None = Field(default=None, gt=0)
+    batch_count: int | None = Field(default=None, gt=0)
     ml_discount_percentage: float | None = Field(default=None, ge=0, le=100)
     current_discount_percentage: float | None = Field(default=None, ge=0, le=100)
     effective_discount_percentage: float | None = Field(default=None, ge=0, le=100)
+    discount_percentage: float | None = Field(default=None, ge=0, le=100)
     reference_sale_price: float | None = Field(default=None, ge=0)
     promotional_price: float | None = Field(default=None, ge=0)
     promotion_valid_from: date | None = None
@@ -169,3 +189,41 @@ class SuggestionDetailData(BaseModel):
     visibility: Literal["employee", "manager"]
     card: SuggestionCardData
     triage: SuggestionTriageData | None = None
+
+
+# ProductSuggestionSearchData refers to the complete card types declared below
+# it in the source file. Rebuild after all models exist so Pydantic resolves the
+# forward references deterministically on every supported runtime.
+ProductSuggestionSearchData.model_rebuild()
+
+
+class ProductSuggestionPage(BaseModel):
+    """Repository page of authorized suggestions plus a keyset cursor."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    suggestions: list[ProductSuggestionSearchRecord] = Field(max_length=50)
+    next_cursor: str | None = Field(default=None, max_length=2048)
+
+
+class SuggestionListData(BaseModel):
+    """One authorized page of summary candidates for a suggestion type."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    suggestion_type: Literal["ORDER", "PROMOTION"]
+    candidates: list[ProductSuggestionCandidate] = Field(max_length=50)
+    next_cursor: str | None = Field(default=None, max_length=2048)
+
+
+class PromotionExpirationData(BaseModel):
+    """Nearest or longest-valid promotion, preserving ties and pagination."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    direction: Literal["nearest", "longest"]
+    outcome: Literal["found", "ambiguous", "not_found"]
+    promotion_valid_until: date | None = None
+    candidates: list[ProductSuggestionCandidate] = Field(max_length=50)
+    detail: SuggestionDetailData | None = None
+    next_cursor: str | None = Field(default=None, max_length=2048)

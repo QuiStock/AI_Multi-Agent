@@ -13,13 +13,42 @@ from src.graphs.contracts import RouteDecision
 from src.graphs.state import GraphState, RoutingDecision
 from src.llm_factory import get_structured_model
 
-from .executor import RouterExecutor
 from .router_prompt import ROUTER_SYSTEM_PROMPT
 
 
 def _normalize_decision(decision: RouteDecision) -> RoutingDecision:
     """Convert a model decision into the closed shared-state contract."""
-    return RouterExecutor._normalize_decision(decision)
+
+    if decision.route == "faq":
+        return {
+            "route": "faq",
+            "target_agent": "faq",
+            "outcome": "dispatch",
+            "reason": decision.reason,
+        }
+
+    if decision.route == "product_workflow":
+        return {
+            "route": "product_workflow",
+            "target_agent": "product_workflow",
+            "outcome": "dispatch",
+            "reason": decision.reason,
+        }
+
+    if decision.route == "clarification_required":
+        return {
+            "route": "clarification_required",
+            "target_agent": None,
+            "outcome": "clarification_required",
+            "reason": decision.reason,
+        }
+
+    return {
+        "route": "out_of_scope",
+        "target_agent": None,
+        "outcome": "out_of_scope",
+        "reason": decision.reason,
+    }
 
 
 def route_router_state(

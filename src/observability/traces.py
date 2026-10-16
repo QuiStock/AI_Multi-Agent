@@ -24,6 +24,7 @@ TraceStatus = Literal["running", "completed", "error"]
 FinalTraceStatus = Literal["completed", "error"]
 _TOOL_RESULT_STATUSES = {"success", "partial", "error"}
 _TOOL_ERROR_CODE_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
+_TOOL_OUTCOMES = {"found", "ambiguous", "not_found", "unique", "empty", "results"}
 
 
 @dataclass(slots=True)
@@ -581,9 +582,30 @@ class TraceRecorder(BaseCallbackHandler):
             summary["tool_error_code"] = error_code
             summary.setdefault("tool_status", "error")
 
+        data = cls._mapping_value(payload.get("data"))
+        if data is not None:
+            outcome = cls._safe_tool_outcome(
+                data.get("outcome") or data.get("status")
+            )
+            if outcome is not None:
+                summary["tool_outcome"] = outcome
+
+            suggestion_type = data.get("suggestion_type")
+            if suggestion_type in {"ORDER", "PROMOTION"}:
+                summary["tool_suggestion_type"] = suggestion_type
+
+            direction = data.get("direction")
+            if direction in {"nearest", "longest"}:
+                summary["tool_direction"] = direction
+
+            if "next_cursor" in data:
+                summary["tool_has_next_page"] = data.get("next_cursor") is not None
+
         results_count = cls._tool_results_count(payload)
         if results_count is not None:
             summary["tool_results_count"] = results_count
+            if data is not None and "tool_outcome" not in summary:
+                summary["tool_outcome"] = "empty" if results_count == 0 else "results"
 
         evidence_count = cls._tool_evidence_count(payload)
         if evidence_count is not None:
@@ -634,11 +656,14 @@ class TraceRecorder(BaseCallbackHandler):
         if data is not None:
             nested_count = cls._first_sequence_count(
                 data,
-                ("results", "candidates", "cards"),
+                ("results", "candidates", "suggestions", "cards", "items"),
             )
             if nested_count is not None:
                 return nested_count
-            if cls._mapping_value(data.get("card")) is not None:
+            if any(
+                cls._mapping_value(data.get(key)) is not None
+                for key in ("card", "detail", "suggestion")
+            ):
                 return 1
         return None
 
@@ -676,6 +701,10 @@ class TraceRecorder(BaseCallbackHandler):
         return None
 
     @staticmethod
+    def _safe_tool_outcome(value: Any) -> str | None:
+        return value if isinstance(value, str) and value in _TOOL_OUTCOMES else None
+
+    @staticmethod
     def _safe_tool_summary_attributes(
         attributes: Mapping[str, Any],
     ) -> dict[str, str | int | float | bool]:
@@ -689,6 +718,22 @@ class TraceRecorder(BaseCallbackHandler):
         )
         if error_code is not None:
             safe["tool_error_code"] = error_code
+
+        outcome = TraceRecorder._safe_tool_outcome(attributes.get("tool_outcome"))
+        if outcome is not None:
+            safe["tool_outcome"] = outcome
+
+        suggestion_type = attributes.get("tool_suggestion_type")
+        if suggestion_type in {"ORDER", "PROMOTION"}:
+            safe["tool_suggestion_type"] = suggestion_type
+
+        direction = attributes.get("tool_direction")
+        if direction in {"nearest", "longest"}:
+            safe["tool_direction"] = direction
+
+        has_next_page = attributes.get("tool_has_next_page")
+        if isinstance(has_next_page, bool):
+            safe["tool_has_next_page"] = has_next_page
 
         for key in ("tool_results_count", "tool_evidence_count"):
             count = attributes.get(key)

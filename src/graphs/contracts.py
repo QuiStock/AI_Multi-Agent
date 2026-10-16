@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Literal, Self
+from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 from src.graphs.state import RouteName
 
@@ -14,8 +14,18 @@ class RouteDecision(BaseModel):
 
     route: RouteName
     reason: str = Field(min_length=1, max_length=240)
-    peer_id: str | None = None
-    skill_id: str | None = None
+    memory_action: Literal[
+        "none",
+        "pure_recall",
+        "faq_context",
+        "product_context",
+    ] = "none"
+
+
+class GreetingDecision(BaseModel):
+    """Structured result of the dedicated greeting classifier."""
+
+    category: Literal["greeting_only", "normal_request"]
 
 
 class CompilerResult(BaseModel):
@@ -48,39 +58,3 @@ class CompilerResult(BaseModel):
             raise ValueError("Citation IDs cannot be duplicated")
 
         return citations
-
-
-class JudgeDecision(BaseModel):
-    """Structured evidence judgment produced by the judge model."""
-
-    status: Literal[
-        "approved",
-        "insufficient_evidence",
-        "invalid",
-    ]
-    reason: str = Field(min_length=1, max_length=500)
-    evidence_ids: list[str] = Field(
-        default_factory=list,
-        max_length=64,
-    )
-
-    @field_validator("evidence_ids")
-    @classmethod
-    def validate_unique_evidence_ids(
-        cls,
-        evidence_ids: list[str],
-    ) -> list[str]:
-        if any(not evidence_id.strip() for evidence_id in evidence_ids):
-            raise ValueError("Evidence IDs cannot be empty")
-
-        if len(evidence_ids) != len(set(evidence_ids)):
-            raise ValueError("Evidence IDs cannot be duplicated")
-
-        return evidence_ids
-
-    @model_validator(mode="after")
-    def validate_approved_result(self) -> Self:
-        if self.status == "approved" and not self.evidence_ids:
-            raise ValueError("An approved judgment must reference evaluated evidence")
-
-        return self

@@ -24,6 +24,10 @@ class ReconciliationIndexer(Protocol):
 
     def delete(self, conversation_id: str) -> None: ...
 
+    def mark_ended(self, conversation_id: str) -> bool: ...
+
+    def mark_active(self, conversation_id: str) -> dict[str, object] | None: ...
+
 
 class ReconciliationScheduler(Protocol):
     def end_and_schedule(
@@ -77,6 +81,8 @@ class SummaryReconciler:
                     email=snapshot.email,
                 )
                 scheduled += 1
+            elif point is not None and point.get("status") == "active":
+                self._indexer.mark_ended(snapshot.conversation_id)
 
         ended_ids = {snapshot.conversation_id for snapshot in snapshots}
         orphaned = 0
@@ -84,10 +90,11 @@ class SummaryReconciler:
             conversation_id = payload.get("conversation_id")
             if not isinstance(conversation_id, str):
                 continue
-            if (
-                conversation_id not in ended_ids
-                or states.get(conversation_id) != "ended"
-            ):
+            if conversation_id not in ended_ids:
+                if states.get(conversation_id) == "active":
+                    if callable(getattr(self._indexer, "mark_active", None)):
+                        self._indexer.mark_active(conversation_id)
+                        continue
                 self._indexer.delete(conversation_id)
                 orphaned += 1
 
@@ -104,6 +111,8 @@ class SummaryReconciler:
         point: dict[str, object] | None,
     ) -> bool:
         if point is None:
+            return True
+        if point.get("status") not in {None, "ended", "active"}:
             return True
         if point.get("email") != snapshot.email:
             return True

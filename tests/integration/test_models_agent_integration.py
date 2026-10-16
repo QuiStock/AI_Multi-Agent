@@ -40,6 +40,8 @@ def test_faq_executor_builds_compiled_graph(
     tool = create_faq_search_tool(
         FakeRetriever(),
         allowed_audiences=("shared", "manager"),
+        request_id="integration-request",
+        trace_id="integration-trace",
     )
 
     assert executor.model is not None

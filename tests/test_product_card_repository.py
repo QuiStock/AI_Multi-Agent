@@ -10,7 +10,6 @@ import pytest
 from langchain_core.messages import AIMessage
 from psycopg import errors as psycopg_errors
 
-import src.agents.product_workflow.executor as executor_module
 from src.agents.product_workflow.executor import ProductWorkflowExecutor
 from src.agents.product_workflow.schemas import ProductCard
 from src.agents.product_workflow.tools.product_card_repository import (
@@ -137,9 +136,7 @@ def test_repository_rejects_empty_query_before_database_access() -> None:
     assert pool.calls == 0
 
 
-def test_snapshot_is_evidence_without_database_lookup(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_snapshot_is_evidence_without_database_lookup() -> None:
     class Repository:
         def search(self, **_: Any) -> list[ProductCard]:
             pytest.fail("snapshot question must not look up PostgreSQL")
@@ -153,41 +150,79 @@ def test_snapshot_is_evidence_without_database_lookup(
                 ]
             }
 
-    monkeypatch.setattr(
-        executor_module, "create_agent_from_card", lambda **_: FakeAgent()
+    executor = ProductWorkflowExecutor(
+        repository=Repository(),  # type: ignore[arg-type]
+        model=object(),
+        agent_factory=lambda **_: FakeAgent(),
     )
-    executor = ProductWorkflowExecutor(Repository(), model=object())  # type: ignore[arg-type]
     result = executor.invoke(
         {
             "request": {
                 "email": "user@example.test",
+                "user_id": 42,
                 "role_code": "EMPLOYEE",
                 "store_ids": [10],
                 "request_id": "req-1",
-                "product_card": {"product_name": "Leite Integral", "sku": "SKU-1"},
+                "product_card": {
+                    "product_id": 1427,
+                    "suggestion_id": 87531,
+                    "product_name": "Café Torrado e Moído 500g",
+                    "category_name": "Mercearia",
+                    "sku": "CAF-500-TRAD",
+                    "suggestion_type": "PROMOTION",
+                    "batch_count": 3,
+                    "expiration_date": "2026-11-30",
+                    "discount_percentage": 15,
+                    "reference_sale_price": 29.9,
+                    "promotional_price": 25.42,
+                    "promotion_valid_from": "2026-10-14",
+                    "promotion_valid_until": "2026-10-31",
+                },
             },
             "messages": [],
         }
     )
-    assert result["status"] == "success"
-    assert result["evidences"][0]["source_type"] == "client_card_snapshot"
-    assert (
-        result["evidences"][0]["metadata"]["provenance"] == "client_request_unverified"
-    )
+    assert result["answer"] == "O card indica leite integral."
+    assert result["evidences"] == [
+        {
+            "evidence_id": "client-card:1427:87531:CAF-500-TRAD",
+            "source_type": "client_card_snapshot",
+            "source_id": "CAF-500-TRAD",
+            "content": (
+                '{"product_id":1427,"suggestion_id":87531,'
+                '"product_name":"Café Torrado e Moído 500g",'
+                '"category_name":"Mercearia","sku":"CAF-500-TRAD",'
+                '"suggestion_type":"PROMOTION","batch_count":3,'
+                '"expiration_date":"2026-11-30","discount_percentage":"15",'
+                '"reference_sale_price":"29.9","promotional_price":"25.42",'
+                '"promotion_valid_from":"2026-10-14",'
+                '"promotion_valid_until":"2026-10-31"}'
+            ),
+            "metadata": {
+                "origin": "conversation_request.product_card",
+                "product_id": 1427,
+                "suggestion_id": 87531,
+                "sku": "CAF-500-TRAD",
+            },
+        }
+    ]
+    assert "verification_status" not in result["evidences"][0]
 
 
-def test_executor_denies_unsupported_role_even_with_client_snapshot(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_executor_denies_unsupported_role_even_with_client_snapshot() -> None:
     def unexpected_agent(**_: Any) -> None:
         pytest.fail("unauthorized role must not start the agent")
 
-    monkeypatch.setattr(executor_module, "create_agent_from_card", unexpected_agent)
-    executor = ProductWorkflowExecutor(object(), model=object())  # type: ignore[arg-type]
+    executor = ProductWorkflowExecutor(
+        repository=object(),  # type: ignore[arg-type]
+        model=object(),
+        agent_factory=unexpected_agent,
+    )
     result = executor.invoke(
         {
             "request": {
                 "email": "user@example.test",
+                "user_id": 42,
                 "role_code": "REGIONAL_MANAGER",
                 "store_ids": [10],
                 "request_id": "req-denied",
@@ -196,7 +231,7 @@ def test_executor_denies_unsupported_role_even_with_client_snapshot(
             "messages": [],
         }
     )
-    assert result["status"] == "error"
+    assert result["error_code"] == "PRODUCT_WORKFLOW_AUTHORIZATION"
     assert result["evidences"] == []
 
 

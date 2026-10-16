@@ -67,6 +67,14 @@ class ToolStatus(StrEnum):
     ERROR = "error"
 
 
+ToolNextStep: TypeAlias = Literal[
+    "continue",
+    "direct_response",
+    "clarification",
+    "controlled_error",
+]
+
+
 class ResponseContent(ContractModel):
     text: str = Field(
         min_length=1,
@@ -292,6 +300,7 @@ class ToolResult(ContractModel, Generic[DataT]):
     schema_version: Literal["1.0"] = "1.0"
 
     status: ToolStatus
+    next_step: ToolNextStep = "continue"
     response: ToolResponse
 
     data: DataT | None = None
@@ -317,8 +326,24 @@ class ToolResult(ContractModel, Generic[DataT]):
     @model_validator(mode="after")
     def validate_result_invariants(self) -> Self:
         self._validate_status_invariants()
+        self._validate_next_step_invariants()
         self._validate_response_invariants()
         return self
+
+    def _validate_next_step_invariants(self) -> None:
+        if self.status is ToolStatus.ERROR and self.next_step != "controlled_error":
+            raise ValueError("An error result must use controlled_error as next_step")
+
+        if self.next_step == "controlled_error" and self.status is not ToolStatus.ERROR:
+            raise ValueError("controlled_error requires an error result")
+
+        if self.next_step in {"direct_response", "clarification"} and not isinstance(
+            self.response,
+            DirectResponse,
+        ):
+            raise ValueError(
+                "direct_response and clarification require a direct response",
+            )
 
     def _validate_status_invariants(self) -> None:
         if self.status is ToolStatus.SUCCESS:

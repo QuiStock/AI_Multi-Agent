@@ -16,6 +16,7 @@ from src.agents.schemas.tool_result import (
     ToolErrorCategory,
     ToolEvidence,
     ToolMetadata,
+    ToolNextStep,
     ToolResponse,
     ToolResult,
     ToolStatus,
@@ -85,9 +86,11 @@ def compose_success(
     data: DataT,
     meta: ToolMetadata,
     extras: ToolResultExtras = ToolResultExtras(),
+    next_step: ToolNextStep = "continue",
 ) -> ToolResult[DataT]:
     return ToolResult[DataT](
         status=ToolStatus.SUCCESS,
+        next_step=next_step,
         response=response,
         data=data,
         actions=list(extras.actions),
@@ -104,9 +107,11 @@ def direct_success(
     meta: ToolMetadata,
     data: DataT | None = None,
     extras: ToolResultExtras = ToolResultExtras(),
+    next_step: ToolNextStep = "direct_response",
 ) -> ToolResult[DataT]:
     return ToolResult[DataT](
         status=ToolStatus.SUCCESS,
+        next_step=next_step,
         response=DirectResponse(content=content),
         data=data,
         actions=list(extras.actions),
@@ -124,9 +129,11 @@ def partial_result(
     meta: ToolMetadata,
     extras: ToolResultExtras,
     error: ToolError | None = None,
+    next_step: ToolNextStep = "continue",
 ) -> ToolResult[DataT]:
     return ToolResult[DataT](
         status=ToolStatus.PARTIAL,
+        next_step=next_step,
         response=response,
         data=data,
         actions=list(extras.actions),
@@ -149,6 +156,7 @@ def tool_error(
 
     return ToolResult[None](
         status=ToolStatus.ERROR,
+        next_step="controlled_error",
         response=response,
         data=None,
         actions=[],

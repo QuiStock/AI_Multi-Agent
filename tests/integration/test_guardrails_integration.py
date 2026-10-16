@@ -102,5 +102,6 @@ def test_compiler_output_node_replaces_nonapproved_judge() -> None:
 
     assert result["output_guardrail"]["status"] == "passed"
     assert result["output_guardrail"]["reason_code"] == "judge_not_approved"
-    assert result["response_draft"]["content"].startswith("Não foi possível liberar")
+    assert result["final_response"]["content"].startswith("Não foi possível liberar")
+    assert result["response_draft"] is None
     assert result["status"] == "in_progress"

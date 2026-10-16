@@ -173,6 +173,26 @@ def test_product_search_applies_manager_sent_to_manager_visibility() -> None:
     assert "AVAILABLE_FOR_TRIAGE IS TRUE" not in query_text
 
 
+def test_product_search_accepts_product_or_suggestion_numeric_reference() -> None:
+    cursor = FakeCursor([])
+    repository = PostgresProductWorkflowRepository(FakePool(cursor))
+    context = ProductWorkflowContext(
+        email="manager@example.com",
+        user_id=7,
+        role_code="MANAGER",
+        store_ids=(30,),
+        request_id="request-3",
+        trace_id="trace-3",
+    )
+
+    repository.search_product_suggestions(context, "1427")
+
+    query, params = cursor.queries[-1]
+    assert "P.ID = %S" in query.upper()
+    assert "S.ID = %S" in query.upper()
+    assert 1427 in params
+
+
 def test_product_detail_projects_triage_without_decision_or_log() -> None:
     cursor = FakeCursor(
         [

@@ -42,6 +42,15 @@ class FailedProductExecutor:
         }
 
 
+class NotFoundProductExecutor:
+    def invoke(self, _: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "answer": "Produto não encontrado; informe o SKU.",
+            "evidences": [],
+            "lookup_status": "not_found",
+        }
+
+
 class NoCall:
     def invoke(self, *_: Any, **__: Any) -> Any:
         raise AssertionError(
@@ -85,4 +94,47 @@ def test_lookup_error_uses_terminal_fallback_without_compiler_or_judge() -> None
         }
     )
     assert result["final_response"]["status"] == "error"
-    assert "não consegui consultar" in result["final_response"]["content"].lower()
+    assert result["final_response"]["content"] == (
+        "Desculpe, não foi possível consultar essas informações agora. "
+        "Tente novamente mais tarde."
+    )
+    assert "banco" not in result["final_response"]["content"].lower()
+    assert "ferramenta" not in result["final_response"]["content"].lower()
+    assert result["agent_results"]["product_workflow"]["answer"] == (
+        "Não consegui consultar os dados do produto agora."
+    )
+
+
+def test_not_found_is_successful_lookup_and_direct_clarification() -> None:
+    graph = create_agent_graph(
+        input_guardrail=_passed_input,
+        router=Router(),
+        capabilities={
+            "product_workflow": partial(
+                run_product_workflow_node, executor=NotFoundProductExecutor()
+            )
+        },
+        judge=NoCall(),
+        compiler=NoCall(),
+        output_guardrail=no_guardrail,
+        context_enricher=EmptyContext(),
+    )
+
+    result = graph.invoke(
+        {
+            "request": {
+                "request_id": "req-not-found",
+                "email": "user@example.test",
+                "role_code": "EMPLOYEE",
+                "conversation_id": "conv-not-found",
+                "sanitized_message": "Mostre o card de Arroz Branco 5kg",
+            },
+            "messages": [HumanMessage(content="Mostre o card de Arroz Branco 5kg")],
+        }
+    )
+
+    assert result["agent_results"]["product_workflow"]["status"] == "success"
+    assert result["final_response"]["status"] == "clarification_required"
+    assert (
+        result["final_response"]["content"] == "Produto não encontrado; informe o SKU."
+    )

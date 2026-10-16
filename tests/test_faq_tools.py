@@ -27,20 +27,38 @@ def test_faq_search_rejects_empty_query() -> None:
     search_tool = create_faq_search_tool(
         FakeRetriever([]),
         allowed_audiences=("shared", "employee"),
+        request_id="request-1",
+        trace_id="trace-1",
+        call_id_factory=lambda: "call-1",
     )
 
-    assert search_tool.invoke({"query": "   "}) == "A consulta não pode estar vazia."
+    result = json.loads(search_tool.invoke({"query": "   "}))
+
+    assert result["status"] == "error"
+    assert result["next_step"] == "controlled_error"
+    assert result["error"]["code"] == "FAQ_INVALID_QUERY"
 
 
 def test_faq_search_reports_missing_evidence() -> None:
     search_tool = create_faq_search_tool(
         FakeRetriever([]),
         allowed_audiences=("shared", "employee"),
+        request_id="request-1",
+        trace_id="trace-1",
+        call_id_factory=lambda: "call-1",
     )
 
-    result = search_tool.invoke({"query": "qual é a regra?"})
+    result = json.loads(search_tool.invoke({"query": "qual é a regra?"}))
 
-    assert result == ("Nenhuma evidência relevante encontrada na base de conhecimento.")
+    assert result["status"] == "success"
+    assert result["next_step"] == "direct_response"
+    assert result["data"] == {
+        "query": "qual é a regra?",
+        "outcome": "not_found",
+        "result_count": 0,
+        "results": [],
+    }
+    assert result["warnings"][0]["code"] == "NO_RELEVANT_EVIDENCE"
 
 
 def test_faq_search_serializes_retrieved_evidence() -> None:
@@ -55,12 +73,20 @@ def test_faq_search_serializes_retrieved_evidence() -> None:
             ]
         ),
         allowed_audiences=("shared", "manager"),
+        request_id="request-1",
+        trace_id="trace-1",
+        call_id_factory=lambda: "call-1",
     )
 
     result = json.loads(search_tool.invoke({"query": "qual é a regra?"}))
 
-    assert result["resultados"][0]["arquivo"] == "manual.md"
-    assert result["resultados"][0]["relevancia"] == 0.91
+    assert result["status"] == "success"
+    assert result["next_step"] == "continue"
+    assert result["data"]["outcome"] == "found"
+    assert result["data"]["result_count"] == 1
+    assert result["data"]["results"][0]["file_name"] == "manual.md"
+    assert result["data"]["results"][0]["relevance"] == 0.91
+    assert result["evidence"][0]["source_type"] == "faq_document"
 
 
 def test_faq_search_executes_only_one_lookup_per_turn() -> None:
@@ -68,6 +94,9 @@ def test_faq_search_executes_only_one_lookup_per_turn() -> None:
     search_tool = create_faq_search_tool(
         retriever,
         allowed_audiences=("shared", "employee"),
+        request_id="request-1",
+        trace_id="trace-1",
+        call_id_factory=lambda: "call-1",
     )
 
     first = search_tool.invoke({"query": "Primeira pergunta"})
@@ -99,7 +128,11 @@ def test_faq_executor_binds_manager_scope_per_request(monkeypatch) -> None:
 
     result = executor.invoke(
         {
-            "request": {"role_id": 2},
+            "request": {
+                "request_id": "request-1",
+                "trace_id": "trace-1",
+                "role_code": "MANAGER",
+            },
             "messages": [],
         }
     )

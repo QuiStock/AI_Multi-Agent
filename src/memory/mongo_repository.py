@@ -216,6 +216,24 @@ class MongoConversationRepository:
             _stored_messages(document), key=lambda message: message.created_at
         )
 
+    def validate_resume_conversation(
+        self,
+        *,
+        conversation_id: str,
+        email: str,
+    ) -> None:
+        """Validate ownership and ended eligibility before touching Qdrant."""
+        if not conversation_id.strip() or not email.strip():
+            raise ValueError("conversation_id e email são obrigatórios")
+        existing = self._collection.find_one(
+            {"_id": conversation_id, "email": email},
+            {"status": 1},
+        )
+        if existing is None:
+            raise ConversationNotFoundError(conversation_id)
+        if existing.get("status") != "ended":
+            raise ConversationNotEndedError(conversation_id)
+
     def list_ended_conversations(self, *, email: str) -> list[ConversationListItem]:
         """Return IDs and titles of this user's ended conversations for the API."""
         if not email.strip():

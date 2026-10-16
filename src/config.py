@@ -64,8 +64,13 @@ class Settings(BaseSettings):
     postgres_dsn: str | None = None
     jwt_issuer: str | None = None
     jwt_jwks_url: str | None = None
-    postgres_pool_timeout_seconds: float = Field(default=2.0, gt=0)
-    health_probe_timeout_seconds: float = Field(default=2.0, gt=0)
+    auth_bypass_local_tests: bool = True
+    auth_bypass_user_id: int = Field(default=810000208, ge=1)
+    auth_bypass_email: str = "finalv1.usuario.08@quistock.test"
+    auth_bypass_role_code: Literal["MANAGER", "EMPLOYEE"] = "MANAGER"
+    auth_bypass_store_id: int = Field(default=810000504, ge=1)
+    postgres_pool_timeout_seconds: float = Field(default=5.0, gt=0)
+    health_probe_timeout_seconds: float = Field(default=5.0, gt=0)
     mongodb_uri: str | None = None
     mongodb_db: str | None = None
     qdrant_url: str | None = None

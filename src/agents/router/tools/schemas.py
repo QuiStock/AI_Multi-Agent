@@ -18,10 +18,12 @@ class ConversationSummaryItem(BaseModel):
     title: str | None = None
     summary: str = Field(min_length=1)
     updated_at: str = Field(min_length=1)
+    summary_version: int | None = Field(default=None, ge=1)
+    summarized_through_message_id: str | None = None
 
 
 class SearchConversationSummariesData(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    source: Literal["semantic", "none"]
+    source: Literal["temporal", "semantic", "recent_fallback", "none"]
     results: list[ConversationSummaryItem] = Field(max_length=3)
