@@ -77,7 +77,7 @@ _SAFE_LOG_ATTRIBUTES = {
     "judge_status",
     "judge_error_code",
     "judge_reason_code",
-    "judge_confidence",
+    "judge_noul_probability",
     "judge_model",
     "judge_input_tokens",
     "judge_output_tokens",

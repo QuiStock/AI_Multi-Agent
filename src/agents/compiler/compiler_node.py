@@ -1,88 +1,83 @@
-"""Compiler node for normalizing responses from specialized agents."""
-
 from __future__ import annotations
 
-import json
-from collections.abc import Callable
-from functools import partial
-from typing import Any
+import logging
 
-from langchain_core.messages import AnyMessage, HumanMessage, SystemMessage
-from pydantic import ValidationError
+from src.agents.compiler.executor import CompilerExecutor
+from src.graphs.state import (
+    AgentError,
+    GraphState,
+    ResponseDraft,
+)
 
-from src.graphs.contracts import CompilerResult
-from src.graphs.state import GraphState
-from src.llm_factory import get_structured_model
+logger = logging.getLogger(__name__)
 
-from .compiler_prompt import COMPILER_SYSTEM_PROMPT
-
-
-def _compiler_messages(state: GraphState) -> list[AnyMessage]:
-    outputs = json.dumps(
-        state.get("agent_outputs", []),
-        ensure_ascii=False,
-    )
-    context = HumanMessage(
-        content=(f"Resultados dos agentes especializados, já normalizados:\n{outputs}")
-    )
-    return [
-        SystemMessage(content=COMPILER_SYSTEM_PROMPT),
-        *state.get("messages", []),
-        context,
-    ]
+COMPILER_BLOCKED_RESPONSE = (
+    "Não foi possível gerar uma resposta agora. Tente novamente mais tarde."
+)
 
 
-def compile_response_state(
+def run_compiler_node(
     state: GraphState,
     *,
-    structured_model: Any,
-) -> dict[str, Any]:
-    """Compile specialized-agent outputs into the final response contract."""
-
-    if not state.get("agent_outputs"):
-        return {
-            "validation": {
-                "status": "blocked",
-                "reason": "Nenhum resultado de agente foi disponibilizado.",
-            },
-            "final_response": {
-                "content": "Não foi possível gerar uma resposta.",
-                "status": "error",
-            },
-        }
-
+    compiler: CompilerExecutor,
+) -> GraphState:
     try:
-        result = structured_model.invoke(_compiler_messages(state))
-        if not isinstance(result, CompilerResult):
-            result = CompilerResult.model_validate(result)
-    except ValidationError:
-        return {
-            "validation": {
-                "status": "blocked",
-                "reason": "A saída do compilador não respeitou o contrato esperado.",
-            },
-            "final_response": {
-                "content": "Não foi possível gerar uma resposta.",
-                "status": "error",
-            },
+        judge_state = state.get("judge")
+        result = compiler.invoke(
+            messages=state.get("messages", []),
+            agent_results=state.get("agent_results", {}),
+            evidences=state.get("evidences", []),
+            judge_feedback=(
+                judge_state.get("judge_feedback") if judge_state is not None else None
+            ),
+        )
+    except Exception:
+        result = {
+            "content": "Não foi possível gerar uma resposta.",
+            "citations": [],
+            "status": "blocked",
+            "error_code": "COMPILER_NODE_FAILURE",
         }
-
-    return {
-        "validation": {
-            "status": "passed",
-            "reason": "A resposta foi compilada conforme o contrato esperado.",
+    logger.info(
+        "response_compiler_completed",
+        extra={
+            "event": "agent_completed",
+            "status": result["status"],
+            "citation_count": len(result["citations"]),
+            "error_code": result.get("error_code"),
         },
-        "final_response": result.model_dump(),
+    )
+
+    response_draft: ResponseDraft = {
+        "content": result["content"],
+        "citations": result["citations"],
+        "status": "draft" if result["status"] == "success" else "blocked",
     }
+    update: GraphState = {
+        "response_draft": response_draft,
+    }
+    error_code = result.get("error_code")
+    if error_code:
+        error: AgentError = {
+            "agent": "compiler",
+            "source": (
+                "model" if error_code == "COMPILER_EXECUTION_FAILED" else "executor"
+            ),
+            "code": error_code,
+            "message": "O compiler não conseguiu gerar uma resposta.",
+            "retryable": error_code
+            in {"COMPILER_EXECUTION_FAILED", "COMPILER_NODE_FAILURE"},
+        }
+        update["errors"] = [error]
+    return update
 
 
-def create_compiler_node(
-    model: Any | None = None,
-) -> Callable[[GraphState], dict[str, Any]]:
-    """Create a compiler node with optional structured-model injection."""
-
-    structured_model = model or get_structured_model(CompilerResult)
-    return partial(compile_response_state, structured_model=structured_model)
-
-
-compiler_node = create_compiler_node
+def compiler_blocked_node(_: GraphState) -> GraphState:
+    return {
+        "final_response": {
+            "content": COMPILER_BLOCKED_RESPONSE,
+            "status": "error",
+        },
+        "response_draft": None,
+        "status": "completed",
+    }

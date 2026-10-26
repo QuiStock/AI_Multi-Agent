@@ -6,6 +6,7 @@ from langgraph.graph import add_messages
 from src.graphs.state import (
     FAQResult,
     GraphState,
+    ProductWorkFlowResult,
     RoutingDecision,
     merge_agent_results,
     merge_evidence,
@@ -27,22 +28,20 @@ def test_agent_results_are_merged_by_agent_name() -> None:
     faq_result: FAQResult = {
         "status": "success",
         "answer": "A regra está no manual.",
-        "citation_ids": ["faq-1"],
     }
 
+    product_result: ProductWorkFlowResult = {
+        "status": "success",
+        "answer": "Sugestão vigente.",
+        "evidence_ids": ["suggestion-1"],
+    }
     merged = merge_agent_results(
         {"faq": faq_result},
-        {
-            "judge": {
-                "status": "approved",
-                "reason": "Evidência suficiente.",
-                "evidence_ids": ["faq-1"],
-            }
-        },
+        {"product_workflow": product_result},
     )
 
     assert merged["faq"] == faq_result
-    assert merged["judge"]["status"] == "approved"
+    assert merged["product_workflow"] == product_result
 
 
 def test_evidence_reducer_replaces_duplicate_ids_instead_of_appending() -> None:
@@ -63,10 +62,37 @@ def test_evidence_reducer_replaces_duplicate_ids_instead_of_appending() -> None:
     assert merged == [retry]
 
 
+def test_product_workflow_evidence_replaces_the_previous_commercial_page() -> None:
+    summary = {
+        "evidence_id": "summary-1",
+        "source_type": "conversation_summary",
+        "source_id": "summary-1",
+        "content": "Resumo anterior.",
+        "metadata": {},
+    }
+    page = {
+        "evidence_id": "product-search:1",
+        "source_type": "product_workflow",
+        "source_id": "product-search:1",
+        "content": '{"status":"ambiguous"}',
+        "metadata": {},
+    }
+    detail = {
+        "evidence_id": "suggestion-detail:1",
+        "source_type": "product_workflow",
+        "source_id": "suggestion-detail:1",
+        "content": '{"status":"unique"}',
+        "metadata": {},
+    }
+
+    merged = merge_evidence([summary, page], [detail])
+
+    assert merged == [summary, detail]
+
+
 def test_routing_decision_is_separate_from_turn_status() -> None:
     decision: RoutingDecision = {
         "route": "faq",
-        "target_agent": "faq",
         "outcome": "dispatch",
         "reason": "A pergunta trata de uma regra documentada.",
     }
@@ -75,6 +101,6 @@ def test_routing_decision_is_separate_from_turn_status() -> None:
         "status": "in_progress",
     }
 
-    assert state["routing_decision"]["target_agent"] == "faq"
+    assert state["routing_decision"]["route"] == "faq"
     assert state["routing_decision"]["outcome"] == "dispatch"
     assert state["status"] == "in_progress"

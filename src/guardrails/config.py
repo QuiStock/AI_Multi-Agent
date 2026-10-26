@@ -4,18 +4,6 @@ from typing import Literal, TypedDict
 GuardrailStatus = Literal["passed", "blocked"]
 
 
-class GuardrailResult(TypedDict, total=False):
-    status: GuardrailStatus
-    reason_code: str
-    reason: str
-    redactions: list[str]
-    violations: list[str]
-    history_marker: str
-    sanitized_message: str
-    sanitized_content: str
-    pii_map: dict[str, str]
-
-
 class InputGuardrailResult(TypedDict, total=False):
     status: GuardrailStatus
     reason_code: str
@@ -23,7 +11,6 @@ class InputGuardrailResult(TypedDict, total=False):
     redactions: list[str]
     history_marker: str
     sanitized_message: str
-    pii_map: dict[str, str]
 
 
 class OutputGuardrailResult(TypedDict, total=False):
@@ -50,7 +37,4 @@ class GuardrailConfig:
     max_output_chars: int = 6_000
     remove_emojis: bool = True
     validate_markdown: bool = True
-    require_sources_for_faq: bool = True
     block_unsupported_commercial_claims: bool = True
-
-    timeout_ms: int = 1_500

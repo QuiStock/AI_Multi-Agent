@@ -10,13 +10,15 @@ from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, ToolMes
 from src.agents.judge.executor import JudgeExecutor
 from src.agents.judge.jev_client import JevEvaluation
 from src.agents.product_workflow.executor import ProductWorkflowExecutor
+from src.agents.product_workflow.product_workflow_node import (
+    run_product_workflow_node,
+)
 from src.agents.product_workflow.product_workflow_prompt import (
-    PRODUCT_WORKFLOW_SNAPSHOT_SYSTEM_PROMPT,
     PRODUCT_WORKFLOW_SYSTEM_PROMPT,
 )
-from src.graphs.adapters import run_product_workflow_node
 from src.graphs.agent_graph import create_agent_graph
-from src.graphs.state import Evidence, GraphState, ResponseDraft, RoutingDecision
+from src.graphs.contracts import RouteResponse
+from src.graphs.state import Evidence, GraphState, ResponseDraft
 
 PRODUCT_CARD: dict[str, object] = {
     "product_id": 1427,
@@ -54,12 +56,11 @@ class ProductRouter:
         _: Sequence[AnyMessage],
         *,
         request_context: dict[str, Any] | None = None,
-    ) -> RoutingDecision:
+    ) -> RouteResponse:
         return {
             "route": "product_workflow",
-            "target_agent": "product_workflow",
-            "outcome": "dispatch",
             "reason": "Consulta sobre product_card.",
+            "status": "success",
         }
 
 
@@ -76,15 +77,20 @@ class EmptyContext:
 class CapturingCompiler:
     def __init__(self, content: str) -> None:
         self.content = content
-        self.state: GraphState | None = None
+        self.evidences: Sequence[Evidence] | None = None
 
-    def invoke(self, state: GraphState) -> ResponseDraft:
-        self.state = state
-        evidence = state["evidences"][0]
+    def invoke(
+        self,
+        *,
+        evidences: Sequence[Evidence],
+        **_: Any,
+    ) -> ResponseDraft:
+        self.evidences = evidences
+        evidence = evidences[0]
         return {
             "content": self.content,
             "citations": [evidence["evidence_id"]],
-            "status": "draft",
+            "status": "success",
         }
 
 
@@ -96,17 +102,18 @@ class CapturingJevClient:
     def evaluate(
         self,
         *,
+        user_question: str,
         response_draft: ResponseDraft,
         evidences: Sequence[Evidence],
+        prior_assistant_message: str | None = None,
     ) -> JevEvaluation:
         self.evidences = evidences
         rejected = self.reason_code != "none"
         return JevEvaluation(
             verdict="rejected" if rejected else "approved",
             reason_code=self.reason_code,  # type: ignore[arg-type]
-            confidence=0.95,
-            probabilities={"approved": 0.95, "rejected": 0.05},
             model="jev-test",
+            noul_probability=0.95,
         )
 
 
@@ -211,15 +218,15 @@ def test_product_card_evidence_reaches_compiler_and_jev(
     result = graph.invoke(
         {
             "request": _request(),
-            "messages": [HumanMessage(content=question)],
+            "messages": [HumanMessage(content=question, id="request-1:user")],
         }
     )
 
     assert result["final_response"]["status"] == "success"
-    assert result["agent_results"]["judge"]["status"] == "approved"
-    assert compiler.state is not None
+    assert result["judge"]["status"] == "approved"
+    assert compiler.evidences is not None
     assert jev_client.evidences is not None
-    evidence = compiler.state["evidences"][0]
+    evidence = compiler.evidences[0]
     assert evidence["source_type"] == "client_card_snapshot"
     assert evidence in jev_client.evidences
     assert expected_field in evidence["content"]
@@ -252,15 +259,22 @@ def test_missing_product_card_field_is_not_invented_and_jev_blocks_claim() -> No
     result = graph.invoke(
         {
             "request": _request(card_without_validity),
-            "messages": [HumanMessage(content="Qual é a validade da promoção?")],
+            "messages": [
+                HumanMessage(
+                    content="Qual é a validade da promoção?",
+                    id="request-1:user",
+                )
+            ],
         }
     )
 
-    assert result["agent_results"]["judge"]["status"] == "insufficient_evidence"
-    assert result["final_response"]["status"] == "error"
-    assert compiler.state is not None
-    assert '"promotion_valid_until":null' in compiler.state["evidences"][0]["content"]
-    assert '"promotion_valid_until":"' not in compiler.state["evidences"][0]["content"]
+    assert result["judge"]["status"] == "insufficient_evidence"
+    assert result["final_response"]["status"] == "clarification_required"
+    assert "2026-12-31" not in result["final_response"]["content"]
+    assert compiler.evidences is not None
+    content = compiler.evidences[0]["content"]
+    assert '"promotion_valid_until":null' in content.replace(" ", "")
+    assert '"promotion_valid_until":"' not in content.replace(" ", "")
 
 
 def test_product_card_snapshot_is_kept_in_the_common_evidence_list() -> None:
@@ -279,12 +293,9 @@ def test_product_card_snapshot_is_kept_in_the_common_evidence_list() -> None:
 
 
 def test_product_card_prompts_do_not_classify_snapshot_as_unverified() -> None:
-    prompts = (
-        PRODUCT_WORKFLOW_SYSTEM_PROMPT,
-        PRODUCT_WORKFLOW_SNAPSHOT_SYSTEM_PROMPT,
-    )
-    assert all("unverified" not in prompt.lower() for prompt in prompts)
-    assert all("não foi verificado" not in prompt.lower() for prompt in prompts)
+    prompt = PRODUCT_WORKFLOW_SYSTEM_PROMPT
+    assert "unverified" not in prompt.lower()
+    assert "não foi verificado" not in prompt.lower()
 
 
 def test_product_workflow_without_product_card_keeps_tool_flow() -> None:
@@ -305,6 +316,22 @@ def test_product_workflow_without_product_card_keeps_tool_flow() -> None:
                         tool_call_id="tool-1",
                         content=json.dumps(
                             {
+                                "schema_version": "1.0",
+                                "status": "success",
+                                "data": {
+                                    "product_query": "Cafe",
+                                    "page": 1,
+                                    "has_more": False,
+                                    "status": "unique",
+                                    "suggestion": {
+                                        "selection_id": "candidate-1",
+                                        "product_name": "Cafe",
+                                        "sku": "CAF-500-TRAD",
+                                        "suggestion_type": "PROMOTION",
+                                        "promotional_price": 25.42,
+                                        "created_at": "2026-10-03T12:00:00Z",
+                                    },
+                                },
                                 "evidence": [
                                     {
                                         "evidence_id": "product-search:suggestion:1",
@@ -313,7 +340,15 @@ def test_product_workflow_without_product_card_keeps_tool_flow() -> None:
                                         "content": "Preço publicado: R$ 25,42.",
                                         "metadata": {"sku": "CAF-500-TRAD"},
                                     }
-                                ]
+                                ],
+                                "error": None,
+                                "meta": {
+                                    "tool_name": "get_suggestion_for_product",
+                                    "tool_version": "1.0.0",
+                                    "tool_call_id": "tool-1",
+                                    "trace_id": "trace-1",
+                                    "timestamp": "2026-10-03T12:00:00Z",
+                                },
                             }
                         ),
                     ),
@@ -326,11 +361,15 @@ def test_product_workflow_without_product_card_keeps_tool_flow() -> None:
         return NormalAgent()
 
     request = _request(card=None)
-    result = ProductWorkflowExecutor(
+    executor = ProductWorkflowExecutor(
         repository=object(),  # type: ignore[arg-type]
         model=object(),
         agent_factory=factory,
-    ).invoke({"request": request, "messages": []})
+    )
+    result = run_product_workflow_node(
+        {"request": request, "messages": []},
+        executor=executor,
+    )
 
     assert captured["tools"]
     assert result["evidences"][0]["source_type"] == "product_workflow"

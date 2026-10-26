@@ -5,11 +5,29 @@ from __future__ import annotations
 EMPLOYEE_ROLE_ID = 3
 MANAGER_ROLE_ID = 2
 MAX_PRODUCT_QUERY_LENGTH = 200
-MAX_SUGGESTION_RESULTS = 6
-DEFAULT_SUGGESTION_PAGE_SIZE = 20
-MAX_SUGGESTION_PAGE_SIZE = 50
-MAX_PROMOTION_TIE_PAGE_SIZE = 50
-MAX_CURSOR_LENGTH = 2048
+PRODUCT_SEARCH_PAGE_SIZE = 6
+MAX_PRODUCT_SEARCH_PAGE = 100
+STATEMENT_TIMEOUT_MS = 5_000
+
+AUTHORIZED_SUGGESTION_FROM = """
+FROM "suggestion" AS s
+JOIN "product" AS p
+  ON p.id = s.product_id
+ AND p.active IS TRUE
+LEFT JOIN "category" AS c
+  ON c.id = p.category_id
+ AND c.active IS TRUE
+JOIN "store" AS st
+  ON st.id = s.store_id
+ AND st.status::text = 'ACTIVE'
+JOIN "user_store" AS us
+  ON us.store_id = s.store_id
+ AND us.active IS TRUE
+ AND us.unassigned_at IS NULL
+JOIN "user_account" AS ua
+  ON ua.id = us.user_id
+ AND ua.status::text = 'ACTIVE'
+"""
 
 ALLOWED_SUGGESTION_TYPES_CLAUSE = "s.type::text IN ('ORDER', 'PROMOTION')"
 NOT_EXPIRED_SUGGESTION_CLAUSE = """

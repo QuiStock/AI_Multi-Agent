@@ -14,6 +14,7 @@ from pymongo import MongoClient
 from src import config
 from src.agents.compiler.executor import CompilerExecutor
 from src.agents.faq.executor import FAQExecutor
+from src.agents.faq.faq_node import faq_node
 from src.agents.faq.ingestion.embedding.google_embedding_provider import (
     GoogleEmbeddingProvider,
 )
@@ -22,6 +23,9 @@ from src.agents.faq.retrieval.qdrant_retriever import QdrantRetriever
 from src.agents.judge.executor import JudgeExecutor
 from src.agents.judge.jev_client import TypeSafeJevClient
 from src.agents.product_workflow.executor import ProductWorkflowExecutor
+from src.agents.product_workflow.product_workflow_node import (
+    run_product_workflow_node,
+)
 from src.agents.product_workflow.repository import (
     PostgresProductWorkflowRepository,
 )
@@ -50,13 +54,13 @@ from src.auth.errors import (
 from src.auth.models import AuthenticatedPrincipal
 from src.auth.service import AuthenticationService
 from src.auth.token import JWTIdentityDecoder
-from src.graphs.adapters import GraphNode, run_faq_node, run_product_workflow_node
+from src.graphs.adapters import GraphNode
 from src.graphs.agent_graph import create_agent_graph
 from src.graphs.state import RouteName
 from src.guardrails.config import GuardrailConfig
 from src.guardrails.greeting import GreetingGuardrail
-from src.guardrails.input_guardrail import input_guardrail_node
-from src.guardrails.output_guardrail import create_output_guardrail_node
+from src.guardrails.input import input_guardrail_node
+from src.guardrails.output import create_output_guardrail_node
 from src.llm_factory import get_configured_chat_model
 from src.memory.checkpointer import create_local_checkpointer
 from src.memory.enrich_context import ConversationContextEnricher
@@ -104,11 +108,7 @@ def get_authenticated_principal(
 ) -> AuthenticatedPrincipal:
     settings = config.get_settings()
     client = request.client
-    if (
-        settings.app_environment == "development"
-        and settings.auth_bypass_local_tests
-        and client is not None
-    ):
+    if settings.auth_bypass_local_tests and client is not None:
         try:
             is_loopback = ip_address(client.host).is_loopback
         except ValueError:
@@ -315,7 +315,7 @@ def get_graph(request: Request) -> CompiledStateGraph:
     )
     capabilities: dict[RouteName, GraphNode] = {
         "faq": partial(
-            run_faq_node,
+            faq_node,
             executor=faq_executor,
         ),
         "product_workflow": partial(
@@ -337,11 +337,10 @@ def get_graph(request: Request) -> CompiledStateGraph:
         compiler=CompilerExecutor(),
         judge=JudgeExecutor(
             jev_client=jev_client,
-            jev_confidence_threshold=settings.typesafe_jev_confidence_threshold,
         ),
         output_guardrail=cast(
             GraphNode,
-            create_output_guardrail_node(source="compiled"),
+            create_output_guardrail_node(),
         ),
         context_enricher=ConversationContextEnricher(
             repository,

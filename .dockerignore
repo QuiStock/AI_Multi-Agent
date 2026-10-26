@@ -3,5 +3,8 @@
 !uv.lock
 !src/
 !src/**
-!scripts/
-!scripts/**
+
+# Local planning and ops. Not part of the image.
+/scripts/
+/specs/
+/docs/

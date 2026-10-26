@@ -1,18 +1,17 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from functools import partial
 from typing import Literal
 
 from .config import GuardrailConfig, OutputGuardrailResult
-from .pii import restore_pii_placeholders
+from .pii import extract_pii_markers
 
 CONTROLLED_OUTPUT_RESPONSE = (
     "Não foi possível liberar essa resposta. "
     "Tente novamente ou entre em contato com o suporte."
 )
-
 
 def _controlled_correction(
     reason_code: str,
@@ -28,9 +27,6 @@ def _controlled_correction(
         violations=violations,
         sanitized_content=CONTROLLED_OUTPUT_RESPONSE,
     )
-
-
-OutputSource = Literal["faq", "compiled", "greeting"]
 
 
 _EMOJI_PATTERN = re.compile("[\U0001f1e6-\U0001f1ff\U0001f300-\U0001faff\u2600-\u27bf]")
@@ -143,22 +139,6 @@ def _markdown_result(
     )
 
 
-def _missing_sources_result(
-    *,
-    source: OutputSource,
-    references: Sequence[str],
-    sanitized_result: str | None,
-    config: GuardrailConfig,
-) -> OutputGuardrailResult | None:
-    if source != "faq" or not config.require_sources_for_faq or references:
-        return None
-
-    return _controlled_correction(
-        "missing_sources",
-        "A resposta do FAQ não possui fontes suficientes.",
-    )
-
-
 def _commercial_claim_result(
     sanitized: str,
     sanitized_result: str | None,
@@ -177,12 +157,41 @@ def _commercial_claim_result(
     )
 
 
+def _current_user_message(state: Mapping[str, object]) -> str:
+    request = state.get("request")
+    request_id = request.get("request_id") if isinstance(request, Mapping) else None
+    if not isinstance(request_id, str) or not request_id:
+        return ""
+
+    expected_message_id = f"{request_id}:user"
+    messages = state.get("messages", [])
+    if not isinstance(messages, list):
+        return ""
+
+    for message in reversed(messages):
+        if isinstance(message, Mapping):
+            message_id = message.get("id")
+            role = message.get("type") or message.get("role")
+            content = message.get("content")
+        else:
+            message_id = getattr(message, "id", None)
+            role = getattr(message, "type", None)
+            content = getattr(message, "content", None)
+
+        if (
+            message_id == expected_message_id
+            and role in {"human", "user"}
+            and isinstance(content, str)
+        ):
+            return content
+
+    return ""
+
+
 def validate_output(
     content: str,
     *,
     config: GuardrailConfig | None = None,
-    source: OutputSource,
-    references: Sequence[str] = (),
 ) -> OutputGuardrailResult:
     config = config or GuardrailConfig()
 
@@ -199,15 +208,6 @@ def validate_output(
     )
     if markdown_result is not None:
         return markdown_result
-
-    sources_result = _missing_sources_result(
-        source=source,
-        references=references,
-        sanitized_result=sanitized_result,
-        config=config,
-    )
-    if sources_result is not None:
-        return sources_result
 
     commercial_claim_result = _commercial_claim_result(
         sanitized,
@@ -229,7 +229,6 @@ def output_guardrail_node(
     state: Mapping[str, object],
     *,
     guardrail_config: GuardrailConfig | None = None,
-    source: OutputSource,
 ) -> dict[str, object]:
     response = state.get("final_response")
 
@@ -248,76 +247,27 @@ def output_guardrail_node(
             "status": "success",
         }
     else:
-        raw_agent_results = state.get("agent_results")
-        raw_greeting = state.get("greeting_classification")
-        is_greeting = isinstance(raw_greeting, Mapping) and (
-            raw_greeting.get("category") == "greeting_only"
-        )
-        effective_source: OutputSource = "greeting" if is_greeting else source
-        judge = (
-            raw_agent_results.get("judge")
-            if isinstance(raw_agent_results, Mapping)
-            else None
-        )
-
-        if effective_source == "compiled" and not isinstance(judge, Mapping):
+        raw_content = response.get("content")
+        if not isinstance(raw_content, str):
             result = _controlled_correction(
-                "judge_missing",
-                "A resposta não possui validação do agente juiz.",
-                violations=["judge_missing"],
-            )
-            content = CONTROLLED_OUTPUT_RESPONSE
-        elif (
-            effective_source == "compiled"
-            and isinstance(judge, Mapping)
-            and judge.get("status") != "approved"
-        ):
-            result = _controlled_correction(
-                "judge_not_approved",
-                "A resposta não foi aprovada pelas evidências disponíveis.",
-                violations=["judge_not_approved"],
+                "invalid_output_type",
+                "A resposta final não possui conteúdo textual.",
             )
             content = CONTROLLED_OUTPUT_RESPONSE
         else:
-            raw_content = response.get("content")
-            if not isinstance(raw_content, str):
+            allowed_markers = extract_pii_markers(_current_user_message(state))
+            response_markers = extract_pii_markers(raw_content)
+            if response_markers - allowed_markers:
                 result = _controlled_correction(
-                    "invalid_output_type",
-                    "A resposta final não possui conteúdo textual.",
+                    "unexpected_pii_marker",
+                    "A resposta contém um marcador PII não autorizado para este turno.",
+                    violations=["unexpected_pii_marker"],
                 )
                 content = CONTROLLED_OUTPUT_RESPONSE
             else:
-                raw_evidences = state.get("evidences", [])
-                references = (
-                    [
-                        item["content"]
-                        for item in raw_evidences
-                        if isinstance(item, Mapping)
-                        and isinstance(item.get("content"), str)
-                    ]
-                    if isinstance(raw_evidences, list)
-                    else []
-                )
-
-                if not references:
-                    raw_results = state.get("agent_results", {})
-                    references = (
-                        [
-                            value[key]
-                            for value in raw_results.values()
-                            if isinstance(value, Mapping)
-                            for key in ("answer", "content")
-                            if isinstance(value.get(key), str)
-                        ]
-                        if isinstance(raw_results, Mapping)
-                        else []
-                    )
-
                 result = validate_output(
                     raw_content,
                     config=guardrail_config,
-                    source=effective_source,
-                    references=references,
                 )
                 sanitized_content = result.get("sanitized_content")
                 content = (
@@ -326,13 +276,6 @@ def output_guardrail_node(
                     else raw_content
                 )
 
-    raw_pii_map = state.get("pii_map", {})
-    pii_map = (
-        {str(key): str(value) for key, value in raw_pii_map.items()}
-        if isinstance(raw_pii_map, Mapping)
-        else {}
-    )
-    restored_content = restore_pii_placeholders(content, pii_map)
     response_status = response.get("status")
     if response_status not in {
         "success",
@@ -347,7 +290,7 @@ def output_guardrail_node(
         "output_guardrail": result,
         "response_draft": None,
         "final_response": {
-            "content": restored_content,
+            "content": content,
             "status": response_status,
         },
         "status": "in_progress",
@@ -356,11 +299,9 @@ def output_guardrail_node(
 
 def create_output_guardrail_node(
     *,
-    source: OutputSource,
     guardrail_config: GuardrailConfig | None = None,
 ) -> Callable[[Mapping[str, object]], dict[str, object]]:
     return partial(
         output_guardrail_node,
-        source=source,
         guardrail_config=guardrail_config,
     )

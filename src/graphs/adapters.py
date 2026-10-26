@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any, Protocol, cast
+from typing import Protocol
 
 from langchain_core.messages import (
     AIMessage,
@@ -12,41 +12,11 @@ from langchain_core.messages import (
     RemoveMessage,
 )
 
-from src.agents.product_workflow.models import SuggestionLookupStatus
-from src.graphs.contracts import GreetingDecision
-from src.graphs.state import (
-    Evidence,
-    ExternalA2AResult,
-    FAQResult,
-    GraphState,
-    GreetingClassification,
-    JudgeResult,
-    ProductWorkFlowResult,
-    ResponseDraft,
-    RoutingDecision,
-)
+from src.graphs.state import GraphState
 
 GraphUpdate = GraphState
 GraphNode = Callable[[GraphState], GraphUpdate]
 logger = logging.getLogger(__name__)
-
-
-class RouterExecutorPort(Protocol):
-    def invoke(
-        self,
-        messages: Sequence[AnyMessage],
-        *,
-        request_context: Mapping[str, Any] | None = None,
-    ) -> RoutingDecision: ...
-
-
-class GreetingGuardrailPort(Protocol):
-    def invoke(
-        self,
-        messages: Sequence[AnyMessage],
-        *,
-        request_context: Mapping[str, Any] | None = None,
-    ) -> GreetingDecision: ...
 
 
 class ConversationContextEnricherPort(Protocol):
@@ -72,354 +42,6 @@ class MemoryMessagePersistencePort(Protocol):
         consulted_agents: list[str],
         sent_at: datetime | None = None,
     ) -> None: ...
-
-
-class FAQExecutorPort(Protocol):
-    def invoke(self, state: dict[str, Any]) -> dict[str, Any]: ...
-
-
-class ProductWorkflowExecutorPort(Protocol):
-    def invoke(self, state: GraphState) -> dict[str, Any]: ...
-
-
-class ExternalA2AExecutorPort(Protocol):
-    def invoke(self, state: GraphState) -> dict[str, Any]: ...
-
-
-class CompilerExecutorPort(Protocol):
-    def invoke(self, state: GraphState) -> ResponseDraft: ...
-
-
-class JudgeExecutorPort(Protocol):
-    def invoke(
-        self,
-        *,
-        response_draft: ResponseDraft | None,
-        evidences: Sequence[Evidence],
-    ) -> JudgeResult: ...
-
-
-def sanitized_state(state: GraphState) -> GraphState:
-    """Keep private PII restoration data away from agent executors."""
-    agent_state = dict(state)
-    agent_state.pop("pii_map", None)
-    return cast(GraphState, agent_state)
-
-
-def run_router_node(
-    state: GraphState,
-    *,
-    router: RouterExecutorPort,
-) -> GraphUpdate:
-    current_state = sanitized_state(state)
-    decision = router.invoke(
-        current_state.get("messages", []),
-        request_context=current_state.get("request"),
-    )
-    logger.info(
-        "router_decision_completed",
-        extra={
-            "event": "router_decision_completed",
-            "route": decision["route"],
-            "outcome": decision["outcome"],
-            "target_agent": decision["target_agent"] or "none",
-        },
-    )
-
-    routing_decision: RoutingDecision = {
-        "route": decision["route"],
-        "target_agent": decision["target_agent"],
-        "outcome": decision["outcome"],
-        "reason": decision["reason"],
-    }
-    if decision.get("memory_action", "none") != "none":
-        routing_decision["memory_action"] = decision["memory_action"]
-    raw_decision = cast(Mapping[str, Any], decision)
-    update: dict[str, Any] = {
-        "routing_decision": routing_decision,
-        "status": "in_progress",
-    }
-    memory = raw_decision.get("memory_retrieval")
-    if isinstance(memory, dict):
-        update["memory_retrieval"] = memory
-        evidence = memory.get("evidence")
-        if isinstance(evidence, list):
-            update["evidences"] = evidence
-    router_response = raw_decision.get("router_response")
-    if isinstance(router_response, str) and router_response.strip():
-        restored_response = _restore_pii_placeholders(
-            router_response,
-            state.get("pii_map", {}),
-        )
-        update["final_response"] = {
-            "content": restored_response,
-            "status": (
-                "success"
-                if isinstance(memory, dict)
-                and memory.get("results")
-                and not memory.get("error")
-                else "clarification_required"
-            ),
-        }
-        update["router_answered"] = True
-    return cast(GraphUpdate, update)
-
-
-def _restore_pii_placeholders(content: str, pii_map: Mapping[str, str]) -> str:
-    """Restore only server-created placeholders in locally formatted output."""
-    restored = content
-    for placeholder, original in pii_map.items():
-        if isinstance(placeholder, str) and isinstance(original, str):
-            restored = restored.replace(placeholder, original)
-    return restored
-
-
-def run_greeting_guardrail_node(
-    state: GraphState,
-    *,
-    guardrail: GreetingGuardrailPort,
-) -> GraphUpdate:
-    """Run the greeting guardrail before memory and model routing."""
-    current_state = sanitized_state(state)
-    decision = guardrail.invoke(
-        current_state.get("messages", []),
-        request_context=current_state.get("request"),
-    )
-    classification: GreetingClassification = {
-        "category": decision.category,
-    }
-    update: GraphUpdate = {
-        "greeting_classification": classification,
-        "status": "in_progress",
-    }
-    if decision.category == "greeting_only":
-        update["routing_decision"] = {
-            "route": "greeting",
-            "target_agent": None,
-            "outcome": "dispatch",
-            "reason": "Saudação isolada identificada pelo classificador.",
-        }
-    return update
-
-
-def run_faq_node(
-    state: GraphState,
-    *,
-    executor: FAQExecutorPort,
-) -> GraphUpdate:
-    current_state = sanitized_state(state)
-    result = executor.invoke(
-        {
-            "messages": current_state.get("messages", []),
-            "request": current_state.get("request"),
-            "memory_retrieval": current_state.get("memory_retrieval"),
-        }
-    )
-
-    answer = str(result.get("answer", "")).strip()
-    evidences = cast(
-        list[Evidence],
-        result.get("evidences", []),
-    )
-
-    citation_ids = [evidence["evidence_id"] for evidence in evidences]
-
-    raw_next_step = result.get("next_step", "continue")
-    next_step = (
-        raw_next_step
-        if raw_next_step
-        in {"continue", "direct_response", "clarification", "controlled_error"}
-        else "controlled_error"
-    )
-    tool_status = result.get("tool_status")
-    faq_result: FAQResult = {
-        "status": (
-            "success"
-            if tool_status == "success" or (answer and evidences)
-            else "unavailable"
-            if result.get("error_code") == "FAQ_DEPENDENCY_UNAVAILABLE"
-            else "error"
-        ),
-        "answer": answer,
-        "citation_ids": citation_ids,
-        "next_step": cast(Any, next_step),
-    }
-    error_code = result.get("error_code")
-    if isinstance(error_code, str) and error_code:
-        faq_result["error_code"] = error_code
-    logger.info(
-        "faq_agent_completed",
-        extra={
-            "event": "agent_completed",
-            "status": faq_result["status"],
-            "evidence_count": len(evidences),
-            "reason_code": error_code if isinstance(error_code, str) else None,
-        },
-    )
-
-    return {
-        "agent_results": {
-            "faq": faq_result,
-        },
-        "evidences": evidences,
-    }
-
-
-def run_product_workflow_node(
-    state: GraphState,
-    *,
-    executor: ProductWorkflowExecutorPort,
-) -> GraphUpdate:
-    current_state = sanitized_state(state)
-    result = executor.invoke(current_state)
-    answer = str(result.get("answer", "")).strip()
-    evidences = cast(list[Evidence], result.get("evidences", []))
-    error_code = result.get("error_code")
-    lookup_status = result.get("lookup_status")
-    product_result: ProductWorkFlowResult = {
-        "status": "success"
-        if lookup_status in {"ambiguous", "not_found"} or (answer and evidences)
-        else "unavailable"
-        if error_code == "PRODUCT_WORKFLOW_UNAVAILABLE"
-        else "error",
-        "answer": answer,
-        "evidence_ids": [item["evidence_id"] for item in evidences],
-    }
-    if isinstance(error_code, str) and error_code:
-        product_result["error_code"] = error_code
-    if lookup_status in {"unique", "ambiguous", "not_found", "unavailable"}:
-        product_result["lookup_status"] = cast(
-            SuggestionLookupStatus,
-            lookup_status,
-        )
-    logger.info(
-        "product_workflow_agent_completed",
-        extra={
-            "event": "agent_completed",
-            "status": product_result["status"],
-            "outcome": product_result.get("lookup_status"),
-            "evidence_count": len(evidences),
-            "reason_code": error_code if isinstance(error_code, str) else None,
-        },
-    )
-    return {
-        "agent_results": {
-            "product_workflow": product_result,
-        },
-        "evidences": evidences,
-    }
-
-
-def run_external_a2a_node(
-    state: GraphState,
-    *,
-    executor: ExternalA2AExecutorPort,
-) -> GraphUpdate:
-    result = executor.invoke(sanitized_state(state))
-    answer = str(result.get("answer", "")).strip()
-    evidences = cast(list[Evidence], result.get("evidences", []))
-    error_code = result.get("error_code")
-    external_result: ExternalA2AResult = {
-        "status": "success" if answer and evidences else "unavailable",
-        "answer": answer,
-        "evidence_ids": [item["evidence_id"] for item in evidences],
-    }
-    if isinstance(error_code, str) and error_code:
-        external_result["error_code"] = error_code
-    logger.info(
-        "external_a2a_completed",
-        extra={
-            "event": "agent_completed",
-            "status": external_result["status"],
-            "evidence_count": len(evidences),
-            "reason_code": error_code,
-        },
-    )
-    return {"agent_results": {"external_a2a": external_result}, "evidences": evidences}
-
-
-def run_judge_node(
-    state: GraphState,
-    *,
-    judge: JudgeExecutorPort,
-) -> GraphUpdate:
-    response_draft = state.get("response_draft")
-    try:
-        judge_result = judge.invoke(
-            response_draft=response_draft,
-            evidences=state.get("evidences", []),
-        )
-    except Exception:
-        judge_result = {
-            "status": "invalid",
-            "reason": "O agente juiz não conseguiu validar a resposta.",
-            "evidence_ids": [],
-            "error_code": "JUDGE_ADAPTER_FAILURE",
-        }
-
-    draft_content = (
-        response_draft.get("content") if isinstance(response_draft, Mapping) else None
-    )
-    approved_content: str | None = None
-    if judge_result["status"] == "approved":
-        if isinstance(draft_content, str) and draft_content.strip():
-            approved_content = draft_content
-        else:
-            judge_result = {
-                "status": "invalid",
-                "reason": "O judge aprovou uma resposta sem draft válido.",
-                "evidence_ids": [],
-                "error_code": "JUDGE_MISSING_DRAFT",
-            }
-
-    logger.info(
-        "judge_evaluation_completed",
-        extra={
-            "event": "judge_evaluation_completed",
-            "judge_status": judge_result["status"],
-            "evidence_count": len(judge_result["evidence_ids"]),
-            "judge_error_code": judge_result.get("error_code"),
-            "judge_reason_code": judge_result.get("reason_code"),
-            "judge_confidence": judge_result.get("confidence"),
-            "judge_model": judge_result.get("model"),
-            "judge_input_tokens": judge_result.get("input_tokens"),
-            "judge_output_tokens": judge_result.get("output_tokens"),
-        },
-    )
-
-    update: GraphUpdate = {
-        "agent_results": {
-            "judge": judge_result,
-        },
-    }
-    if approved_content is not None:
-        update["final_response"] = {
-            "content": approved_content,
-            "status": "success",
-        }
-        update["response_draft"] = None
-
-    return update
-
-
-def run_compiler_node(
-    state: GraphState,
-    *,
-    compiler: CompilerExecutorPort,
-) -> GraphUpdate:
-    result = compiler.invoke(sanitized_state(state))
-    logger.info(
-        "response_compiler_completed",
-        extra={
-            "event": "agent_completed",
-            "status": result["status"],
-            "citation_count": len(result["citations"]),
-        },
-    )
-
-    return {
-        "response_draft": result,
-    }
 
 
 def run_context_enrichment_node(
@@ -502,35 +124,6 @@ def _request_for_persistence(state: GraphState) -> tuple[str, str, str]:
     return values
 
 
-def run_normalize_user_message_node(state: GraphState) -> GraphUpdate:
-    """Ensure the current sanitized user message has this request's stable ID."""
-    if "request" not in state:
-        return {}
-
-    _, _, request_id = _request_for_persistence(state)
-    message_id = f"{request_id}:user"
-    messages = list(state.get("messages", []))
-    current_human = next(
-        (
-            message
-            for message in reversed(messages)
-            if isinstance(message, HumanMessage)
-        ),
-        None,
-    )
-    if current_human is None:
-        raise ValueError("A mensagem sanitizada do usuário não foi encontrada")
-    if not isinstance(current_human.content, str) or not current_human.content.strip():
-        raise ValueError("A mensagem sanitizada do usuário é inválida")
-    if current_human.id == message_id:
-        return {}
-    updates: list[AnyMessage] = []
-    if current_human.id:
-        updates.append(cast(AnyMessage, RemoveMessage(id=current_human.id)))
-    updates.append(HumanMessage(content=current_human.content, id=message_id))
-    return {"messages": updates}
-
-
 def run_persist_turn_node(
     state: GraphState,
     *,
@@ -564,8 +157,14 @@ def run_persist_turn_node(
     if not isinstance(user_message.content, str) or not user_message.content.strip():
         raise ValueError("A mensagem sanitizada do turno é inválida")
 
-    target_agent = state.get("routing_decision", {}).get("target_agent")
-    consulted_agents = [target_agent] if isinstance(target_agent, str) else []
+    routing_decision = state.get("routing_decision", {})
+    route = routing_decision.get("route")
+    consulted_agents = (
+        [route]
+        if routing_decision.get("outcome") == "dispatch"
+        and route in {"faq", "product_workflow"}
+        else []
+    )
     sent_at = request.get("sent_at") if request else None
     if sent_at is not None and not isinstance(sent_at, datetime):
         raise ValueError("sent_at precisa ser um datetime com timezone")
@@ -595,14 +194,7 @@ def run_persist_turn_node(
                 id=f"{request_id}:assistant",
             )
         ],
-        "pii_map": {},
         "status": "completed",
     }
 
 
-def run_output_guardrail_node(
-    state: GraphState,
-    *,
-    guardrail: GraphNode,
-) -> GraphUpdate:
-    return guardrail(state)

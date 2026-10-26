@@ -584,21 +584,30 @@ class TraceRecorder(BaseCallbackHandler):
 
         data = cls._mapping_value(payload.get("data"))
         if data is not None:
-            outcome = cls._safe_tool_outcome(
-                data.get("outcome") or data.get("status")
-            )
+            outcome = cls._safe_tool_outcome(data.get("outcome") or data.get("status"))
             if outcome is not None:
                 summary["tool_outcome"] = outcome
 
-            suggestion_type = data.get("suggestion_type")
-            if suggestion_type in {"ORDER", "PROMOTION"}:
-                summary["tool_suggestion_type"] = suggestion_type
+            suggestion_types = data.get("suggestion_types")
+            if (
+                isinstance(suggestion_types, list)
+                and len(suggestion_types) == 1
+                and suggestion_types[0] in {"ORDER", "PROMOTION"}
+            ):
+                summary["tool_suggestion_type"] = suggestion_types[0]
+            else:
+                suggestion_type = data.get("suggestion_type")
+                if suggestion_type in {"ORDER", "PROMOTION"}:
+                    summary["tool_suggestion_type"] = suggestion_type
 
             direction = data.get("direction")
             if direction in {"nearest", "longest"}:
                 summary["tool_direction"] = direction
 
-            if "next_cursor" in data:
+            has_more = data.get("has_more")
+            if isinstance(has_more, bool):
+                summary["tool_has_next_page"] = has_more
+            elif "next_cursor" in data:
                 summary["tool_has_next_page"] = data.get("next_cursor") is not None
 
         results_count = cls._tool_results_count(payload)

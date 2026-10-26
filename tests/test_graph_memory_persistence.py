@@ -26,9 +26,8 @@ class ClarificationRouter:
     ) -> dict[str, Any]:
         return {
             "route": "clarification_required",
-            "target_agent": None,
-            "outcome": "clarification_required",
             "reason": "A pergunta precisa de mais detalhes.",
+            "status": "success",
         }
 
 
@@ -68,7 +67,6 @@ def _passed_input(state: dict[str, Any]) -> dict[str, Any]:
             "reason": "Aprovado.",
             "redactions": [],
             "sanitized_message": "mensagem sanitizada",
-            "pii_map": {"[PII]": "original"},
         },
     )
 
@@ -144,7 +142,7 @@ def test_accepted_turn_persists_user_and_assistant_together() -> None:
         ("request-1:assistant", "ai"),
     ]
     assert result["messages"][0].content == "mensagem sanitizada"
-    assert result["pii_map"] == {}
+    assert "pii_map" not in result
 
 
 def test_rejected_input_persists_a_safe_marker_as_a_normal_turn() -> None:

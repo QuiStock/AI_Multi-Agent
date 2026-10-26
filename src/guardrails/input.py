@@ -10,36 +10,12 @@ from .config import (
     GuardrailConfig,
     InputGuardrailResult,
 )
+from .pii import redact_sensitive_data
 
 CONTROLLED_INPUT_RESPONSE = (
     "Não posso processar essa solicitação. "
     "Posso ajudar com informações documentadas sobre os processos da organização."
 )
-
-_PII_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("CPF", re.compile(r"\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b")),
-    ("CNPJ", re.compile(r"\b\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}\b")),
-    (
-        "EMAIL",
-        re.compile(r"\b[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9.-]+\b"),
-    ),
-    (
-        "TELEFONE",
-        re.compile(r"(?<!\d)\(?\d{2}\)?\s?\d{4,5}-?\d{4}(?!\d)"),
-    ),
-    (
-        "CARTAO",
-        re.compile(r"(?<!\d)(?:\d{4}[ -]?){3}\d{4}(?!\d)"),
-    ),
-    (
-        "CREDENCIAL",
-        re.compile(
-            r"(?i)\b(?:api[_ -]?key|token|senha|password|secret)"
-            r"\s*[:=]\s*\S+"
-        ),
-    ),
-)
-
 
 _INJECTION_PATTERNS = tuple(
     re.compile(pattern, re.IGNORECASE)
@@ -59,6 +35,8 @@ _INJECTION_PATTERNS = tuple(
         r"###\s*instruction",
         r"override\s+(your\s+)?instructions",
         r"desconsider[ea]\s+(suas\s+)?instru[çc][oõ]es",
+        r"ignore\s+(as\s+|suas\s+)?regras",
+        r"desconsider[ea]\s+(as\s+|suas\s+)?regras",
     )
 )
 
@@ -78,6 +56,15 @@ _INTERNAL_DATA_KEYWORDS = (
     "dados de outros clientes",
     "lista de clientes",
     "credenciais",
+    "sql",
+    "schema",
+    "query",
+    "consulta sql",
+    "select ",
+    "tabela suggestion",
+    "tabela product",
+    "user_account",
+    "user_store",
 )
 
 
@@ -140,27 +127,6 @@ def _latest_human_message(state: Mapping[str, Any]) -> str | None:
     return None
 
 
-def _redact_sensitive_data(
-    text: str,
-) -> tuple[str, list[str], dict[str, str]]:
-    redactions: list[str] = []
-    pii_map: dict[str, str] = {}
-    sanitized = text
-
-    for kind, pattern in _PII_PATTERNS:
-        if pattern.search(sanitized):
-
-            def replace_match(match: re.Match[str]) -> str:
-                placeholder = f"[DADO_SENSIVEL_{kind}_{len(pii_map) + 1}]"
-                pii_map[placeholder] = match.group(0)
-                return placeholder
-
-            sanitized = pattern.sub(replace_match, sanitized)
-            redactions.append(kind)
-
-    return sanitized, redactions, pii_map
-
-
 def _blocked(
     reason_code: str,
     reason: str,
@@ -178,6 +144,7 @@ def _blocked(
 def _initial_input_result(
     text: str | None,
     config: GuardrailConfig,
+    original_length: int | None = None,
 ) -> InputGuardrailResult | None:
     if text is None or (config.reject_empty_input and not text.strip()):
         return _blocked(
@@ -194,7 +161,9 @@ def _initial_input_result(
             "sanitized_message": text,
         }
 
-    if len(text) > config.max_input_chars:
+    if (original_length if original_length is not None else len(text)) > (
+        config.max_input_chars
+    ):
         return _blocked(
             "message_too_long",
             "A mensagem excede o limite permitido.",
@@ -244,11 +213,13 @@ def validate_input(
     state: Mapping[str, Any],
     *,
     config: GuardrailConfig | None = None,
+    already_sanitized: bool = False,
+    original_length: int | None = None,
 ) -> InputGuardrailResult:
     config = config or GuardrailConfig()
     text = _latest_human_message(state)
 
-    initial_result = _initial_input_result(text, config)
+    initial_result = _initial_input_result(text, config, original_length)
     if initial_result is not None:
         return initial_result
 
@@ -256,10 +227,18 @@ def validate_input(
 
     sanitized = text
     redactions: list[str] = []
-    pii_map: dict[str, str] = {}
 
-    if config.redact_sensitive_data:
-        sanitized, redactions, pii_map = _redact_sensitive_data(text)
+    if config.redact_sensitive_data and not already_sanitized:
+        sanitized, redactions, _ = redact_sensitive_data(text)
+    elif already_sanitized:
+        redactions = list(
+            dict.fromkeys(
+                re.findall(
+                    r"\[DADO_SENSIVEL_([A-Z]+)(?:_[A-Za-z0-9-]+)?_\d+\]",
+                    text,
+                )
+            )
+        )
 
     static_result = _static_input_result(
         sanitized,
@@ -275,7 +254,6 @@ def validate_input(
         "reason": "Entrada aprovada pelo guardrail.",
         "redactions": redactions,
         "sanitized_message": sanitized,
-        "pii_map": pii_map,
     }
 
 
@@ -285,19 +263,31 @@ def input_guardrail_node(
     validator: Callable[[Mapping[str, Any]], InputGuardrailResult] | None = None,
     guardrail_config: GuardrailConfig | None = None,
 ) -> dict[str, Any]:
+    request = state.get("request")
+    already_sanitized = (
+        isinstance(request, Mapping)
+        and request.get("pii_redacted_before_graph") is True
+    )
+    original_length_value = (
+        request.get("original_message_length") if isinstance(request, Mapping) else None
+    )
+    original_length = (
+        original_length_value if isinstance(original_length_value, int) else None
+    )
     result = (
         validator(state)
         if validator is not None
         else validate_input(
             state,
             config=guardrail_config,
+            already_sanitized=already_sanitized,
+            original_length=original_length,
         )
     )
 
     # Sanitized text and original PII mappings are transient guardrail output.
     # Only the sanitized message is written into the shared messages channel.
     sanitized_message = result.get("sanitized_message")
-    pii_map = result.get("pii_map")
     public_result = {
         key: value
         for key, value in result.items()
@@ -323,8 +313,5 @@ def input_guardrail_node(
         update["messages"] = [
             HumanMessage(content=sanitized_message, id=latest_human.id)
         ]
-
-    if isinstance(pii_map, dict):
-        update["pii_map"] = pii_map
 
     return update

@@ -20,6 +20,12 @@ def _draft() -> ResponseDraft:
     }
 
 
+def _section(regras: str, name: str) -> str:
+    start = regras.index(f"<{name}>")
+    end = regras.index(f"</{name}>")
+    return regras[start:end]
+
+
 def _evidence() -> Evidence:
     return {
         "evidence_id": "metric-1",
@@ -56,12 +62,7 @@ def test_typesafe_client_sends_typed_judge_questions(
             {
                 "model": "jev-1.13.0",
                 "answers": {
-                    "verdict": {
-                        "type": "choice",
-                        "choice": "approved",
-                        "confidence": 0.96,
-                        "probabilities": {"approved": 0.96, "rejected": 0.04},
-                    },
+                    "verdict": {"type": "noul", "noul": 0.96},
                     "reason_code": {
                         "type": "choice",
                         "choice": "none",
@@ -83,6 +84,7 @@ def test_typesafe_client_sends_typed_judge_questions(
         timeout_seconds=3.0,
     )
     result = client.evaluate(
+        user_question="2",
         response_draft=_draft(),
         evidences=[_evidence()],
     )
@@ -93,12 +95,77 @@ def test_typesafe_client_sends_typed_judge_questions(
     assert request.get_header("Authorization") == "Bearer test-key"
     assert captured["timeout"] == 3.0
     assert payload["model"] == "jev-1.13.0"
+    assert payload["state"]["user_question"] == "2"
+    assert "prior_assistant_message" not in payload["state"]
+    regras = payload["state"]["regras"]
+    memory = _section(regras, "sobre memória")
+    product = _section(regras, "sobre produtos ou sugestão")
+    policy = _section(regras, "sobre políticas")
+    assert "apenas contexto" in regras
     assert payload["state"]["response_draft"] == _draft()
     assert payload["state"]["evidences"] == [_evidence()]
-    assert payload["questions"]["verdict"]["type"] == "choice"
+    assert "o que falamos tal dia" in memory
+    assert "outro dia" in memory
+    assert "conversation_summary" in memory
+    assert "recent_fallback" in memory
+    assert "página_n" in product
+    assert "não é o item de mesmo número" in product
+    assert "product-search" in product
+    assert "lista que reproduz a posição e o nome" in product
+    assert "status not_found" in product
+    assert "outcome not_found" in policy
+    assert "result_count 0" in policy
+    assert (
+        "página_n"
+        in payload["questions"]["reason_code"]["criteria"]["does_not_answer_question"]
+    )
+    assert (
+        "outro dia"
+        in payload["questions"]["reason_code"]["criteria"]["does_not_answer_question"]
+    )
+    assert (
+        "card unique"
+        in payload["questions"]["reason_code"]["criteria"]["ambiguous_evidence"]
+    )
+    assert "página_n" in payload["questions"]["verdict"]["instructions"]
+    assert "Aplique o campo regras" in payload["questions"]["verdict"]["instructions"]
+    assert payload["questions"]["verdict"]["type"] == "noul"
     assert result.verdict == "approved"
     assert result.reason_code == "none"
-    assert result.confidence == 0.96
+    assert result.noul_probability == 0.96
+
+
+def test_typesafe_client_sends_prior_assistant_message_as_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_urlopen(request: Any, *, timeout: float) -> FakeResponse:
+        captured["request"] = request
+        return FakeResponse(
+            {
+                "answers": {
+                    "verdict": {"type": "noul", "noul": 0.91},
+                    "reason_code": {"type": "choice", "choice": "none"},
+                }
+            }
+        )
+
+    monkeypatch.setattr("src.agents.judge.jev_client.urlopen", fake_urlopen)
+    client = TypeSafeJevClient(api_key="test-key")
+
+    client.evaluate(
+        user_question="página 2",
+        prior_assistant_message="As promoções vigentes são:\n1. Agua",
+        response_draft=_draft(),
+        evidences=[_evidence()],
+    )
+
+    payload = json.loads(captured["request"].data.decode("utf-8"))
+    assert payload["state"]["user_question"] == "página 2"
+    assert payload["state"]["prior_assistant_message"] == (
+        "As promoções vigentes são:\n1. Agua"
+    )
 
 
 def test_typesafe_client_fails_without_api_key() -> None:
@@ -106,6 +173,7 @@ def test_typesafe_client_fails_without_api_key() -> None:
 
     with pytest.raises(JevClientError, match="não está configurada"):
         client.evaluate(
+            user_question="2",
             response_draft=_draft(),
             evidences=[_evidence()],
         )
@@ -125,9 +193,9 @@ def test_typesafe_client_rejects_unknown_choice(
                         "probabilities": {"maybe": 1.0},
                     },
                     "reason_code": {
-                        "choice": "none",
+                        "choice": "talvez",
                         "confidence": 1.0,
-                        "probabilities": {"none": 1.0},
+                        "probabilities": {"talvez": 1.0},
                     },
                 }
             }
@@ -138,6 +206,7 @@ def test_typesafe_client_rejects_unknown_choice(
 
     with pytest.raises(JevClientError, match="fora do contrato"):
         client.evaluate(
+            user_question="2",
             response_draft=_draft(),
             evidences=[_evidence()],
         )

@@ -6,7 +6,7 @@ import pytest
 from langchain_core.messages import HumanMessage
 
 from src.agents.router.executor import RouterExecutor
-from src.graphs.adapters import run_router_node
+from src.agents.router.router_node import run_router_node
 from src.graphs.contracts import RouteDecision
 from src.graphs.state import RouteName as Route
 

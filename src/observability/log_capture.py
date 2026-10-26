@@ -42,6 +42,10 @@ _SAFE_ATTRIBUTE_KEYS = {
     "model_name",
     "error_type",
     "status",
+    "judge_status",
+    "judge_error_code",
+    "judge_reason_code",
+    "judge_noul_probability",
 }
 _LEVEL_LOCK = RLock()
 _ACTIVE_CAPTURES = 0

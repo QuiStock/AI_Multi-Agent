@@ -1,30 +1,34 @@
 from __future__ import annotations
 
-import base64
-import json
-import logging
+import unicodedata
 from collections.abc import Sequence
 from datetime import date
 from typing import Any, Literal, Protocol, cast
 
-from .filters import (
-    ALLOWED_SUGGESTION_TYPES_CLAUSE,
-    MAX_CURSOR_LENGTH,
-    MAX_PRODUCT_QUERY_LENGTH,
-    MAX_PROMOTION_TIE_PAGE_SIZE,
-    MAX_SUGGESTION_PAGE_SIZE,
-    MAX_SUGGESTION_RESULTS,
-    NOT_EXPIRED_SUGGESTION_CLAUSE,
-    visibility_clause,
-)
-from .models import (
+from .contracts import (
     ProductSuggestionDetailRecord,
-    ProductSuggestionPage,
+    ProductSuggestionListingRecord,
     ProductSuggestionSearchRecord,
     ProductWorkflowContext,
 )
+from .filters import (
+    ALLOWED_SUGGESTION_TYPES_CLAUSE,
+    AUTHORIZED_SUGGESTION_FROM,
+    MAX_PRODUCT_QUERY_LENGTH,
+    MAX_PRODUCT_SEARCH_PAGE,
+    NOT_EXPIRED_SUGGESTION_CLAUSE,
+    PRODUCT_SEARCH_PAGE_SIZE,
+    STATEMENT_TIMEOUT_MS,
+    visibility_clause,
+)
 
-logger = logging.getLogger(__name__)
+_SEARCH_ACCENTS = "ÁÀÂÃÄáàâãäÉÈÊËéèêëÍÌÎÏíìîïÓÒÔÕÖóòôõöÚÙÛÜúùûüÇçÑñ"
+_SEARCH_PLAIN = "AAAAAaaaaaEEEEeeeeIIIIiiiiOOOOOoooooUUUUuuuuCcNn"
+
+
+def _fold_search_text(value: str) -> str:
+    normalized = unicodedata.normalize("NFC", value)
+    return normalized.translate(str.maketrans(_SEARCH_ACCENTS, _SEARCH_PLAIN))
 
 
 class ProductWorkflowDependencyError(RuntimeError):
@@ -39,7 +43,7 @@ class ProductWorkflowRepository(Protocol):
         context: ProductWorkflowContext,
         product_query: str,
         *,
-        limit: int = 6,
+        page: int = 1,
     ) -> list[ProductSuggestionSearchRecord]: ...
 
     def get_product_suggestion_detail(
@@ -51,26 +55,31 @@ class ProductWorkflowRepository(Protocol):
     def list_product_suggestions(
         self,
         context: ProductWorkflowContext,
-        suggestion_type: Literal["ORDER", "PROMOTION"],
+        suggestion_type: str | Sequence[str],
         *,
-        page_size: int = 20,
-        cursor: str | None = None,
-    ) -> ProductSuggestionPage: ...
+        page: int = 1,
+    ) -> list[ProductSuggestionListingRecord]: ...
 
     def find_promotions_by_expiration(
         self,
         context: ProductWorkflowContext,
-        direction: Literal["nearest", "longest"],
+        direction: Literal["nearest", "longest"] | None = None,
         *,
-        page_size: int = 50,
-        cursor: str | None = None,
-    ) -> ProductSuggestionPage: ...
+        reference_date: date | None = None,
+        until: date | None = None,
+        page: int = 1,
+    ) -> list[ProductSuggestionListingRecord]: ...
 
 
 class PostgresProductWorkflowRepository:
     """Direct, parameterized, read-only access to the commercial PostgreSQL."""
 
-    def __init__(self, pool: Any, *, statement_timeout_ms: int = 2_000):
+    def __init__(
+        self,
+        pool: Any,
+        *,
+        statement_timeout_ms: int = STATEMENT_TIMEOUT_MS,
+    ):
         self._pool = pool
         self._statement_timeout_ms = statement_timeout_ms
 
@@ -79,59 +88,34 @@ class PostgresProductWorkflowRepository:
         context: ProductWorkflowContext,
         product_query: str,
         *,
-        limit: int = 6,
+        page: int = 1,
     ) -> list[ProductSuggestionSearchRecord]:
         role_code = self._require_supported_role(context)
         query = product_query.strip()
         if not query or len(query) > MAX_PRODUCT_QUERY_LENGTH:
             raise ValueError("Consulta de produto inválida")
-        if limit < 1 or limit > MAX_SUGGESTION_RESULTS:
-            raise ValueError("Limite de produtos inválido")
+        if type(page) is not int or page < 1 or page > MAX_PRODUCT_SEARCH_PAGE:
+            raise ValueError("Página de produtos inválida")
+        offset = (page - 1) * PRODUCT_SEARCH_PAGE_SIZE
 
         visibility = visibility_clause(role_code)
         escaped_query = (
-            query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            _fold_search_text(query)
+            .replace("\\", "\\\\")
+            .replace("%", "\\%")
+            .replace("_", "\\_")
         )
         pattern = f"%{escaped_query}%"
-        numeric_reference: int | None = None
-        if query.isdecimal():
-            parsed_reference = int(query)
-            if parsed_reference > 0:
-                numeric_reference = parsed_reference
-        identifier_clause = ""
-        identifier_params: list[Any] = []
-        if numeric_reference is not None:
-            identifier_clause = "OR p.id = %s OR s.id = %s"
-            identifier_params = [numeric_reference, numeric_reference]
         sql = f"""
             SELECT
                 s.id,
                 s.product_id,
-                s.store_id,
                 p.name AS product_name,
                 c.name AS category_name,
                 p.sku,
-                st.name AS store_name,
                 s.type::text,
-                s.status::text,
-                s.promotion_valid_until
-            FROM "suggestion" AS s
-            JOIN "product" AS p
-              ON p.id = s.product_id
-             AND p.active IS TRUE
-            LEFT JOIN "category" AS c
-              ON c.id = p.category_id
-             AND c.active IS TRUE
-            JOIN "store" AS st
-              ON st.id = s.store_id
-             AND st.status::text = 'ACTIVE'
-            JOIN "user_store" AS us
-              ON us.store_id = s.store_id
-             AND us.active IS TRUE
-             AND us.unassigned_at IS NULL
-            JOIN "user_account" AS ua
-              ON ua.id = us.user_id
-             AND ua.status::text = 'ACTIVE'
+                s.status::text
+            {AUTHORIZED_SUGGESTION_FROM}
             WHERE ua.id = %s
               AND LOWER(ua.email) = LOWER(%s)
               AND s.store_id = ANY(%s)
@@ -139,13 +123,12 @@ class PostgresProductWorkflowRepository:
               AND {ALLOWED_SUGGESTION_TYPES_CLAUSE}
               AND {NOT_EXPIRED_SUGGESTION_CLAUSE}
               AND (
-                  p.name ILIKE %s ESCAPE '\\'
-                  OR p.sku ILIKE %s ESCAPE '\\'
-                  OR c.name ILIKE %s ESCAPE '\\'
-                  {identifier_clause}
+                  translate(p.name, %s, %s) ILIKE %s ESCAPE '\\'
+                  OR translate(p.sku, %s, %s) ILIKE %s ESCAPE '\\'
               )
-            ORDER BY product_name ASC, p.sku ASC, s.store_id ASC, s.id ASC
+            ORDER BY p.name ASC, p.sku ASC, s.store_id ASC, s.id ASC
             LIMIT %s
+            OFFSET %s
         """
         rows = self._fetch_all(
             sql,
@@ -153,158 +136,17 @@ class PostgresProductWorkflowRepository:
                 context.user_id,
                 context.email,
                 list(context.store_ids),
+                _SEARCH_ACCENTS,
+                _SEARCH_PLAIN,
                 pattern,
+                _SEARCH_ACCENTS,
+                _SEARCH_PLAIN,
                 pattern,
-                pattern,
-                *identifier_params,
-                limit,
+                PRODUCT_SEARCH_PAGE_SIZE + 1,
+                offset,
             ],
         )
-        if not rows:
-            self._log_empty_product_search_diagnostics(
-                context=context,
-                pattern=pattern,
-                role_code=role_code,
-                numeric_reference=numeric_reference,
-            )
         return [_search_record_from_row(row) for row in rows]
-
-    def _log_empty_product_search_diagnostics(
-        self,
-        *,
-        context: ProductWorkflowContext,
-        pattern: str,
-        role_code: str,
-        numeric_reference: int | None,
-    ) -> None:
-        """Log scoped aggregate counts explaining an empty eligible lookup."""
-        visibility = visibility_clause(role_code)
-        identifier_clause = ""
-        identifier_params: list[Any] = []
-        if numeric_reference is not None:
-            identifier_clause = "OR p.id = %s OR s.id = %s"
-            identifier_params = [numeric_reference, numeric_reference]
-        sql = f"""
-            WITH query_scope AS (
-                SELECT
-                    s.id,
-                    s.store_id,
-                    s.type::text AS type,
-                    s.status::text AS status,
-                    s.available_for_triage
-                FROM "suggestion" AS s
-                JOIN "product" AS p
-                  ON p.id = s.product_id
-                 AND p.active IS TRUE
-                LEFT JOIN "category" AS c
-                  ON c.id = p.category_id
-                 AND c.active IS TRUE
-                JOIN "store" AS st
-                  ON st.id = s.store_id
-                 AND st.status::text = 'ACTIVE'
-                WHERE s.store_id = ANY(%s)
-                  AND (
-                      p.name ILIKE %s ESCAPE '\\'
-                      OR p.sku ILIKE %s ESCAPE '\\'
-                      OR c.name ILIKE %s ESCAPE '\\'
-                      {identifier_clause}
-                  )
-            ), user_store_scope AS (
-                SELECT s.*
-                FROM query_scope AS s
-                WHERE EXISTS (
-                    SELECT 1
-                    FROM "user_account" AS ua
-                    JOIN "user_store" AS us
-                      ON us.user_id = ua.id
-                     AND us.store_id = s.store_id
-                     AND us.active IS TRUE
-                     AND us.unassigned_at IS NULL
-                    WHERE ua.id = %s
-                      AND LOWER(ua.email) = LOWER(%s)
-                      AND ua.status::text = 'ACTIVE'
-                )
-            ), supported_type AS (
-                SELECT s.*
-                FROM user_store_scope AS s
-                WHERE {ALLOWED_SUGGESTION_TYPES_CLAUSE}
-            ), role_visible AS (
-                SELECT s.*
-                FROM supported_type AS s
-                WHERE {visibility}
-            ), not_expired AS (
-                SELECT s.*
-                FROM role_visible AS s
-                WHERE {NOT_EXPIRED_SUGGESTION_CLAUSE}
-            )
-            SELECT
-                (SELECT COUNT(*) FROM query_scope),
-                (SELECT COUNT(*) FROM user_store_scope),
-                (SELECT COUNT(*) FROM supported_type),
-                (SELECT COUNT(*) FROM role_visible),
-                (SELECT COUNT(*) FROM not_expired)
-        """
-        try:
-            row = self._fetch_one(
-                sql,
-                [
-                    list(context.store_ids),
-                    pattern,
-                    pattern,
-                    pattern,
-                    *identifier_params,
-                    context.user_id,
-                    context.email,
-                ],
-            )
-        except ProductWorkflowDependencyError as exc:
-            logger.warning(
-                "product_workflow_lookup_filter_diagnostics_failed",
-                extra={
-                    "event": "product_workflow_lookup_filter_diagnostics_failed",
-                    "error_type": type(exc).__name__,
-                },
-            )
-            return
-
-        if row is None or len(row) != 5:
-            logger.warning(
-                "product_workflow_lookup_filter_diagnostics_failed",
-                extra={
-                    "event": "product_workflow_lookup_filter_diagnostics_failed",
-                    "error_type": "UnexpectedDiagnosticResult",
-                },
-            )
-            return
-
-        counts = [int(value or 0) for value in row]
-        if counts[0] == 0:
-            excluded_at_stage = "authorized_store_product_match"
-        elif counts[1] == 0:
-            excluded_at_stage = "active_user_store_assignment"
-        elif counts[2] == 0:
-            excluded_at_stage = "supported_suggestion_type"
-        elif counts[3] == 0:
-            excluded_at_stage = "role_visibility"
-        elif counts[4] == 0:
-            excluded_at_stage = "expired_suggestion"
-        else:
-            excluded_at_stage = "search_query_filter_mismatch"
-
-        logger.info(
-            "product_workflow_lookup_filter_diagnostics",
-            extra={
-                "event": "product_workflow_lookup_filter_diagnostics",
-                "excluded_at_stage": excluded_at_stage,
-                "role_code": role_code,
-                "authorized_store_count": len(context.store_ids),
-                "query_scope_match_count": counts[0],
-                "user_store_match_count": counts[1],
-                "supported_type_match_count": counts[2],
-                "role_visible_match_count": counts[3],
-                "not_expired_match_count": counts[4],
-            },
-        )
 
     def get_product_suggestion_detail(
         self,
@@ -342,23 +184,7 @@ class PostgresProductWorkflowRepository:
                 triage.last_action::text,
                 triage.forwarded_at,
                 triage.updated_at
-            FROM "suggestion" AS s
-            JOIN "product" AS p
-              ON p.id = s.product_id
-             AND p.active IS TRUE
-            LEFT JOIN "category" AS c
-              ON c.id = p.category_id
-             AND c.active IS TRUE
-            JOIN "store" AS st
-              ON st.id = s.store_id
-             AND st.status::text = 'ACTIVE'
-            JOIN "user_store" AS us
-              ON us.store_id = s.store_id
-             AND us.active IS TRUE
-             AND us.unassigned_at IS NULL
-            JOIN "user_account" AS ua
-              ON ua.id = us.user_id
-             AND ua.status::text = 'ACTIVE'
+            {AUTHORIZED_SUGGESTION_FROM}
             LEFT JOIN "suggestion_triage" AS triage
               ON triage.suggestion_id = s.id
             LEFT JOIN "user_account" AS employee
@@ -389,30 +215,13 @@ class PostgresProductWorkflowRepository:
     def list_product_suggestions(
         self,
         context: ProductWorkflowContext,
-        suggestion_type: Literal["ORDER", "PROMOTION"],
+        suggestion_type: str | Sequence[str],
         *,
-        page_size: int = 20,
-        cursor: str | None = None,
-    ) -> ProductSuggestionPage:
+        page: int = 1,
+    ) -> list[ProductSuggestionListingRecord]:
         role_code = self._require_supported_role(context)
-        if suggestion_type not in ("ORDER", "PROMOTION"):
-            raise ValueError("Tipo de sugestão inválido")
-        if page_size < 1 or page_size > MAX_SUGGESTION_PAGE_SIZE:
-            raise ValueError("Tamanho da página inválido")
-
-        cursor_key = _decode_keyset_cursor(
-            cursor,
-            kind="suggestion_list",
-            filter_value=suggestion_type,
-        )
-        cursor_clause = ""
-        cursor_params: list[Any] = []
-        if cursor_key is not None:
-            cursor_clause = """
-                AND (p.name, p.sku, s.store_id, s.id) > (%s, %s, %s, %s)
-            """
-            cursor_params = list(cursor_key)
-
+        suggestion_types = normalize_suggestion_types(suggestion_type)
+        offset = _page_offset(page)
         visibility = visibility_clause(role_code)
         sql = f"""
             SELECT
@@ -426,32 +235,16 @@ class PostgresProductWorkflowRepository:
                 s.type::text,
                 s.status::text,
                 s.promotion_valid_until
-            FROM "suggestion" AS s
-            JOIN "product" AS p
-              ON p.id = s.product_id
-             AND p.active IS TRUE
-            LEFT JOIN "category" AS c
-              ON c.id = p.category_id
-             AND c.active IS TRUE
-            JOIN "store" AS st
-              ON st.id = s.store_id
-             AND st.status::text = 'ACTIVE'
-            JOIN "user_store" AS us
-              ON us.store_id = s.store_id
-             AND us.active IS TRUE
-             AND us.unassigned_at IS NULL
-            JOIN "user_account" AS ua
-              ON ua.id = us.user_id
-             AND ua.status::text = 'ACTIVE'
+            {AUTHORIZED_SUGGESTION_FROM}
             WHERE ua.id = %s
               AND LOWER(ua.email) = LOWER(%s)
               AND s.store_id = ANY(%s)
               AND {visibility}
-              AND s.type::text = %s
+              AND s.type::text = ANY(%s)
               AND {NOT_EXPIRED_SUGGESTION_CLAUSE}
-              {cursor_clause}
             ORDER BY p.name ASC, p.sku ASC, s.store_id ASC, s.id ASC
             LIMIT %s
+            OFFSET %s
         """
         rows = self._fetch_all(
             sql,
@@ -459,52 +252,52 @@ class PostgresProductWorkflowRepository:
                 context.user_id,
                 context.email,
                 list(context.store_ids),
-                suggestion_type,
-                *cursor_params,
-                page_size + 1,
+                suggestion_types,
+                PRODUCT_SEARCH_PAGE_SIZE + 1,
+                offset,
             ],
         )
-        has_more = len(rows) > page_size
-        records = [_search_record_from_row(row) for row in rows[:page_size]]
-        next_cursor = (
-            _encode_keyset_cursor(
-                kind="suggestion_list",
-                filter_value=suggestion_type,
-                record=records[-1],
-            )
-            if has_more and records
-            else None
-        )
-        return ProductSuggestionPage(
-            suggestions=records,
-            next_cursor=next_cursor,
-        )
+        return [_listing_record_from_row(row) for row in rows]
 
     def find_promotions_by_expiration(
         self,
         context: ProductWorkflowContext,
-        direction: Literal["nearest", "longest"],
+        direction: Literal["nearest", "longest"] | None = None,
         *,
-        page_size: int = 50,
-        cursor: str | None = None,
-    ) -> ProductSuggestionPage:
+        reference_date: date | None = None,
+        until: date | None = None,
+        page: int = 1,
+    ) -> list[ProductSuggestionListingRecord]:
         role_code = self._require_supported_role(context)
-        if direction not in ("nearest", "longest"):
+        floor = reference_date or date.today()
+        offset = _page_offset(page)
+        if until is not None:
+            return self._promotions_until(
+                context,
+                role_code=role_code,
+                floor=floor,
+                until=until,
+                offset=offset,
+            )
+        if direction != "nearest" and direction != "longest":
             raise ValueError("Direção de validade inválida")
-        if page_size < 1 or page_size > MAX_PROMOTION_TIE_PAGE_SIZE:
-            raise ValueError("Tamanho da página de promoções inválido")
+        return self._promotions_by_extreme(
+            context,
+            role_code=role_code,
+            floor=floor,
+            direction=direction,
+            offset=offset,
+        )
 
-        cursor_data = _decode_expiration_cursor(cursor, direction=direction)
-        cursor_clause = ""
-        cursor_params: list[Any] = []
-        if cursor_data is not None:
-            valid_until, cursor_key = cursor_data
-            cursor_clause = """
-                AND v.promotion_valid_until = %s
-                AND (v.product_name, v.sku, v.store_id, v.id) > (%s, %s, %s, %s)
-            """
-            cursor_params = [valid_until, *cursor_key]
-
+    def _promotions_by_extreme(
+        self,
+        context: ProductWorkflowContext,
+        *,
+        role_code: str,
+        floor: date,
+        direction: Literal["nearest", "longest"],
+        offset: int,
+    ) -> list[ProductSuggestionListingRecord]:
         extreme_aggregate = "MIN" if direction == "nearest" else "MAX"
         visibility = visibility_clause(role_code)
         sql = f"""
@@ -520,29 +313,13 @@ class PostgresProductWorkflowRepository:
                     s.type::text,
                     s.status::text,
                     s.promotion_valid_until
-                FROM "suggestion" AS s
-                JOIN "product" AS p
-                  ON p.id = s.product_id
-                 AND p.active IS TRUE
-                LEFT JOIN "category" AS c
-                  ON c.id = p.category_id
-                 AND c.active IS TRUE
-                JOIN "store" AS st
-                  ON st.id = s.store_id
-                 AND st.status::text = 'ACTIVE'
-                JOIN "user_store" AS us
-                  ON us.store_id = s.store_id
-                 AND us.active IS TRUE
-                 AND us.unassigned_at IS NULL
-                JOIN "user_account" AS ua
-                  ON ua.id = us.user_id
-                 AND ua.status::text = 'ACTIVE'
+                {AUTHORIZED_SUGGESTION_FROM}
                 WHERE ua.id = %s
                   AND LOWER(ua.email) = LOWER(%s)
                   AND s.store_id = ANY(%s)
                   AND {visibility}
                   AND s.type::text = 'PROMOTION'
-                  AND s.promotion_valid_until >= CURRENT_DATE
+                  AND s.promotion_valid_until >= %s
                   AND {NOT_EXPIRED_SUGGESTION_CLAUSE}
             ),
             extreme_validity AS (
@@ -563,31 +340,81 @@ class PostgresProductWorkflowRepository:
             FROM visible_promotions AS v
             CROSS JOIN extreme_validity AS e
             WHERE v.promotion_valid_until = e.valid_until
-              {cursor_clause}
             ORDER BY v.product_name ASC, v.sku ASC, v.store_id ASC, v.id ASC
             LIMIT %s
+            OFFSET %s
         """
-        rows = self._fetch_all(
+        return self._promotion_rows(
             sql,
             [
                 context.user_id,
                 context.email,
                 list(context.store_ids),
-                *cursor_params,
-                page_size + 1,
+                floor,
+                PRODUCT_SEARCH_PAGE_SIZE + 1,
+                offset,
             ],
         )
-        has_more = len(rows) > page_size
-        records = [_search_record_from_row(row) for row in rows[:page_size]]
-        next_cursor = (
-            _encode_expiration_cursor(direction=direction, record=records[-1])
-            if has_more and records
-            else None
+
+    def _promotions_until(
+        self,
+        context: ProductWorkflowContext,
+        *,
+        role_code: str,
+        floor: date,
+        until: date,
+        offset: int,
+    ) -> list[ProductSuggestionListingRecord]:
+        visibility = visibility_clause(role_code)
+        sql = f"""
+            SELECT
+                s.id,
+                s.product_id,
+                s.store_id,
+                p.name AS product_name,
+                c.name AS category_name,
+                p.sku,
+                st.name AS store_name,
+                s.type::text,
+                s.status::text,
+                s.promotion_valid_until
+            {AUTHORIZED_SUGGESTION_FROM}
+            WHERE ua.id = %s
+              AND LOWER(ua.email) = LOWER(%s)
+              AND s.store_id = ANY(%s)
+              AND {visibility}
+              AND s.type::text = 'PROMOTION'
+              AND s.promotion_valid_until >= %s
+              AND s.promotion_valid_until <= %s
+              AND {NOT_EXPIRED_SUGGESTION_CLAUSE}
+            ORDER BY
+                s.promotion_valid_until ASC,
+                p.name ASC,
+                p.sku ASC,
+                s.store_id ASC,
+                s.id ASC
+            LIMIT %s
+            OFFSET %s
+        """
+        return self._promotion_rows(
+            sql,
+            [
+                context.user_id,
+                context.email,
+                list(context.store_ids),
+                floor,
+                until,
+                PRODUCT_SEARCH_PAGE_SIZE + 1,
+                offset,
+            ],
         )
-        return ProductSuggestionPage(
-            suggestions=records,
-            next_cursor=next_cursor,
-        )
+
+    def _promotion_rows(
+        self,
+        sql: str,
+        params: list[Any],
+    ) -> list[ProductSuggestionListingRecord]:
+        return [_listing_record_from_row(row) for row in self._fetch_all(sql, params)]
 
     @staticmethod
     def _require_supported_role(context: ProductWorkflowContext) -> str:
@@ -629,6 +456,29 @@ def _search_record_from_row(
     row: tuple[Any, ...],
 ) -> ProductSuggestionSearchRecord:
     return ProductSuggestionSearchRecord(
+        suggestion_id=int(row[0]),
+        product_id=int(row[1]),
+        product_name=str(row[2]),
+        category_name=str(row[3]) if row[3] is not None else None,
+        sku=str(row[4]),
+        suggestion_type=cast(Literal["ORDER", "PROMOTION"], str(row[5])),
+        suggestion_status=cast(
+            Literal[
+                "GENERATED",
+                "IN_EMPLOYEE_TRIAGE",
+                "SENT_TO_MANAGER",
+                "APPROVED",
+                "REJECTED",
+            ],
+            str(row[6]),
+        ),
+    )
+
+
+def _listing_record_from_row(
+    row: tuple[Any, ...],
+) -> ProductSuggestionListingRecord:
+    return ProductSuggestionListingRecord(
         suggestion_id=int(row[0]),
         product_id=int(row[1]),
         store_id=int(row[2]),
@@ -698,123 +548,28 @@ def _detail_record_from_row(
     )
 
 
-def _record_key(
-    record: ProductSuggestionSearchRecord,
-) -> tuple[str, str, int, int]:
-    return (
-        record.product_name,
-        record.sku,
-        record.store_id,
-        record.suggestion_id,
-    )
+def normalize_suggestion_types(
+    suggestion_type: str | Sequence[object],
+) -> list[Literal["ORDER", "PROMOTION"]]:
+    """Accept one type, or both, and return them in stable order."""
+
+    if isinstance(suggestion_type, str):
+        raw: list[object] = [suggestion_type]
+    elif isinstance(suggestion_type, Sequence):
+        raw = list(suggestion_type)
+    else:
+        raise ValueError("Tipo de sugestão inválido")
+    if not raw:
+        raise ValueError("Tipo de sugestão inválido")
+    seen: list[Literal["ORDER", "PROMOTION"]] = []
+    for item in raw:
+        if item not in ("ORDER", "PROMOTION") or item in seen:
+            raise ValueError("Tipo de sugestão inválido")
+        seen.append(cast(Literal["ORDER", "PROMOTION"], item))
+    return [item for item in ("ORDER", "PROMOTION") if item in seen]
 
 
-def _encode_cursor_payload(payload: dict[str, object]) -> str:
-    encoded = base64.urlsafe_b64encode(
-        json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
-    ).decode("ascii").rstrip("=")
-    if len(encoded) > MAX_CURSOR_LENGTH:
-        raise ValueError("Cursor de paginação excede o tamanho permitido")
-    return encoded
-
-
-def _decode_cursor_payload(cursor: str | None) -> dict[str, Any] | None:
-    if cursor is None:
-        return None
-    if not isinstance(cursor, str) or not cursor or len(cursor) > MAX_CURSOR_LENGTH:
-        raise ValueError("Cursor de paginação inválido")
-    try:
-        raw = base64.b64decode(
-            cursor.encode("ascii") + b"=" * (-len(cursor) % 4),
-            altchars=b"-_",
-            validate=True,
-        )
-        payload = json.loads(raw)
-    except (UnicodeEncodeError, ValueError) as exc:
-        raise ValueError("Cursor de paginação inválido") from exc
-    if not isinstance(payload, dict):
-        raise ValueError("Cursor de paginação inválido")
-    return payload
-
-
-def _validate_record_key(value: object) -> tuple[str, str, int, int]:
-    if (
-        not isinstance(value, list)
-        or len(value) != 4
-        or not isinstance(value[0], str)
-        or not isinstance(value[1], str)
-        or type(value[2]) is not int
-        or type(value[3]) is not int
-        or value[2] < 1
-        or value[3] < 1
-    ):
-        raise ValueError("Cursor de paginação inválido")
-    return value[0], value[1], value[2], value[3]
-
-
-def _decode_keyset_cursor(
-    cursor: str | None,
-    *,
-    kind: str,
-    filter_value: str,
-) -> tuple[str, str, int, int] | None:
-    payload = _decode_cursor_payload(cursor)
-    if payload is None:
-        return None
-    if payload.get("kind") != kind or payload.get("filter") != filter_value:
-        raise ValueError("Cursor de paginação incompatível com a consulta")
-    return _validate_record_key(payload.get("key"))
-
-
-def _encode_keyset_cursor(
-    *,
-    kind: str,
-    filter_value: str,
-    record: ProductSuggestionSearchRecord,
-) -> str:
-    return _encode_cursor_payload(
-        {
-            "kind": kind,
-            "filter": filter_value,
-            "key": list(_record_key(record)),
-        }
-    )
-
-
-def _decode_expiration_cursor(
-    cursor: str | None,
-    *,
-    direction: Literal["nearest", "longest"],
-) -> tuple[date, tuple[str, str, int, int]] | None:
-    payload = _decode_cursor_payload(cursor)
-    if payload is None:
-        return None
-    if payload.get("kind") != "promotion_expiration" or payload.get(
-        "direction"
-    ) != direction:
-        raise ValueError("Cursor de validade incompatível com a consulta")
-    valid_until_value = payload.get("valid_until")
-    if not isinstance(valid_until_value, str):
-        raise ValueError("Cursor de validade inválido")
-    try:
-        valid_until = date.fromisoformat(valid_until_value)
-    except ValueError as exc:
-        raise ValueError("Cursor de validade inválido") from exc
-    return valid_until, _validate_record_key(payload.get("key"))
-
-
-def _encode_expiration_cursor(
-    *,
-    direction: Literal["nearest", "longest"],
-    record: ProductSuggestionSearchRecord,
-) -> str:
-    if record.promotion_valid_until is None:
-        raise ValueError("Promoção sem data de validade")
-    return _encode_cursor_payload(
-        {
-            "kind": "promotion_expiration",
-            "direction": direction,
-            "valid_until": record.promotion_valid_until.isoformat(),
-            "key": list(_record_key(record)),
-        }
-    )
+def _page_offset(page: int) -> int:
+    if type(page) is not int or page < 1 or page > MAX_PRODUCT_SEARCH_PAGE:
+        raise ValueError("Página de produtos inválida")
+    return (page - 1) * PRODUCT_SEARCH_PAGE_SIZE

@@ -1,0 +1,2 @@
+INFO:     127.0.0.1:50257 - "GET /api/v1/observability/traces/live?after=0&limit=500 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50147 - "GET /api/v1/observability/traces/live?after=0&limit=500 HTTP/1.1" 200 OK

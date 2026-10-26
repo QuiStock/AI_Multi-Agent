@@ -10,9 +10,4 @@ COMPILER_CARD = AgentCard(
     version="1.0.0",
     system_prompt_template=COMPILER_SYSTEM_PROMPT,
     tools=[],
-    tags=["compiler", "answer"],
-    routing_intents=[
-        "resposta",
-        "síntese de resposta",
-    ],
 )

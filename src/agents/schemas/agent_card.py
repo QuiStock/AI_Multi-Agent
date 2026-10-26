@@ -2,7 +2,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .policies import FailurePolicy, PromptVariable
+from .policies import PromptVariable
 from .tool_binding import ToolBinding
 
 
@@ -30,12 +30,7 @@ class AgentCard(BaseModel):
 
     tools: list[ToolBinding]
 
-    failure_policy: FailurePolicy | None = None
     prompt_variables: list[PromptVariable] = Field(default_factory=list)
-
-    tags: list[str] = Field(default_factory=list)
-
-    routing_intents: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_unique_tools(self) -> "AgentCard":

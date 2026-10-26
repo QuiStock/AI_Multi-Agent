@@ -1,0 +1,781 @@
+[
+  {
+    "cell": null,
+    "code": "PLR0913",
+    "end_location": {
+      "column": 23,
+      "row": 90
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\api\\routes\\observability.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 90
+    },
+    "message": "Too many arguments in function definition (8 > 5)",
+    "name": "too-many-arguments",
+    "noqa_row": 90,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/too-many-arguments"
+  },
+  {
+    "cell": null,
+    "code": "PLR0917",
+    "end_location": {
+      "column": 23,
+      "row": 90
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\api\\routes\\observability.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 90
+    },
+    "message": "Too many positional arguments (8 > 5)",
+    "name": "too-many-positional-arguments",
+    "noqa_row": 90,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/too-many-positional-arguments"
+  },
+  {
+    "cell": null,
+    "code": "PLR0913",
+    "end_location": {
+      "column": 16,
+      "row": 139
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\api\\routes\\observability.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 139
+    },
+    "message": "Too many arguments in function definition (7 > 5)",
+    "name": "too-many-arguments",
+    "noqa_row": 139,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/too-many-arguments"
+  },
+  {
+    "cell": null,
+    "code": "PLR0917",
+    "end_location": {
+      "column": 16,
+      "row": 139
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\api\\routes\\observability.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 139
+    },
+    "message": "Too many positional arguments (7 > 5)",
+    "name": "too-many-positional-arguments",
+    "noqa_row": 139,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/too-many-positional-arguments"
+  },
+  {
+    "cell": null,
+    "code": "PLR0913",
+    "end_location": {
+      "column": 16,
+      "row": 169
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\api\\routes\\observability.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 169
+    },
+    "message": "Too many arguments in function definition (9 > 5)",
+    "name": "too-many-arguments",
+    "noqa_row": 169,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/too-many-arguments"
+  },
+  {
+    "cell": null,
+    "code": "PLR0917",
+    "end_location": {
+      "column": 16,
+      "row": 169
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\api\\routes\\observability.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 169
+    },
+    "message": "Too many positional arguments (9 > 5)",
+    "name": "too-many-positional-arguments",
+    "noqa_row": 169,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/too-many-positional-arguments"
+  },
+  {
+    "cell": null,
+    "code": "PLR2004",
+    "end_location": {
+      "column": 38,
+      "row": 68
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\api\\schemas\\observability.py",
+    "fix": null,
+    "location": {
+      "column": 31,
+      "row": 68
+    },
+    "message": "Magic value used in comparison, consider replacing `100_000` with a constant variable",
+    "name": "magic-value-comparison",
+    "noqa_row": 68,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/magic-value-comparison"
+  },
+  {
+    "cell": null,
+    "code": "C901",
+    "end_location": {
+      "column": 17,
+      "row": 49
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\api\\services\\conversation_service.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 49
+    },
+    "message": "`converse` is too complex (13 > 10)",
+    "name": "complex-structure",
+    "noqa_row": 49,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/complex-structure"
+  },
+  {
+    "cell": null,
+    "code": "PLR0912",
+    "end_location": {
+      "column": 17,
+      "row": 49
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\api\\services\\conversation_service.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 49
+    },
+    "message": "Too many branches (13 > 12)",
+    "name": "too-many-branches",
+    "noqa_row": 49,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/too-many-branches"
+  },
+  {
+    "cell": null,
+    "code": "PLR0915",
+    "end_location": {
+      "column": 17,
+      "row": 49
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\api\\services\\conversation_service.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 49
+    },
+    "message": "Too many statements (54 > 50)",
+    "name": "too-many-statements",
+    "noqa_row": 49,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/too-many-statements"
+  },
+  {
+    "cell": null,
+    "code": "PLR0913",
+    "end_location": {
+      "column": 27,
+      "row": 31
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\api\\services\\observability_service.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 31
+    },
+    "message": "Too many arguments in function definition (7 > 5)",
+    "name": "too-many-arguments",
+    "noqa_row": 31,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/too-many-arguments"
+  },
+  {
+    "cell": null,
+    "code": "PLR0913",
+    "end_location": {
+      "column": 26,
+      "row": 71
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\api\\services\\observability_service.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 71
+    },
+    "message": "Too many arguments in function definition (6 > 5)",
+    "name": "too-many-arguments",
+    "noqa_row": 71,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/too-many-arguments"
+  },
+  {
+    "cell": null,
+    "code": "PLR0913",
+    "end_location": {
+      "column": 20,
+      "row": 156
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\api\\services\\observability_service.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 156
+    },
+    "message": "Too many arguments in function definition (8 > 5)",
+    "name": "too-many-arguments",
+    "noqa_row": 156,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/too-many-arguments"
+  },
+  {
+    "cell": null,
+    "code": "SIM102",
+    "end_location": {
+      "column": 42,
+      "row": 220
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\api\\services\\observability_service.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 219
+    },
+    "message": "Use a single `if` statement instead of nested `if` statements",
+    "name": "collapsible-if",
+    "noqa_row": 219,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/collapsible-if"
+  },
+  {
+    "cell": null,
+    "code": "C901",
+    "end_location": {
+      "column": 41,
+      "row": 62
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\memory\\mongo_repository.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 62
+    },
+    "message": "`list_observability_conversations` is too complex (15 > 10)",
+    "name": "complex-structure",
+    "noqa_row": 62,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/complex-structure"
+  },
+  {
+    "cell": null,
+    "code": "PLR0913",
+    "end_location": {
+      "column": 41,
+      "row": 62
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\memory\\mongo_repository.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 62
+    },
+    "message": "Too many arguments in function definition (7 > 5)",
+    "name": "too-many-arguments",
+    "noqa_row": 62,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/too-many-arguments"
+  },
+  {
+    "cell": null,
+    "code": "PLR0912",
+    "end_location": {
+      "column": 41,
+      "row": 62
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\memory\\mongo_repository.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 62
+    },
+    "message": "Too many branches (14 > 12)",
+    "name": "too-many-branches",
+    "noqa_row": 62,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/too-many-branches"
+  },
+  {
+    "cell": null,
+    "code": "PLR2004",
+    "end_location": {
+      "column": 33,
+      "row": 74
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\memory\\mongo_repository.py",
+    "fix": null,
+    "location": {
+      "column": 30,
+      "row": 74
+    },
+    "message": "Magic value used in comparison, consider replacing `200` with a constant variable",
+    "name": "magic-value-comparison",
+    "noqa_row": 74,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/magic-value-comparison"
+  },
+  {
+    "cell": null,
+    "code": "PLR2004",
+    "end_location": {
+      "column": 38,
+      "row": 76
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\memory\\mongo_repository.py",
+    "fix": null,
+    "location": {
+      "column": 31,
+      "row": 76
+    },
+    "message": "Magic value used in comparison, consider replacing `100_000` with a constant variable",
+    "name": "magic-value-comparison",
+    "noqa_row": 76,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/magic-value-comparison"
+  },
+  {
+    "cell": null,
+    "code": "SIM102",
+    "end_location": {
+      "column": 64,
+      "row": 98
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\memory\\mongo_repository.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 97
+    },
+    "message": "Use a single `if` statement instead of nested `if` statements",
+    "name": "collapsible-if",
+    "noqa_row": 97,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/collapsible-if"
+  },
+  {
+    "cell": null,
+    "code": "PLR2004",
+    "end_location": {
+      "column": 33,
+      "row": 155
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\memory\\mongo_repository.py",
+    "fix": null,
+    "location": {
+      "column": 30,
+      "row": 155
+    },
+    "message": "Magic value used in comparison, consider replacing `200` with a constant variable",
+    "name": "magic-value-comparison",
+    "noqa_row": 155,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/magic-value-comparison"
+  },
+  {
+    "cell": null,
+    "code": "PLR2004",
+    "end_location": {
+      "column": 38,
+      "row": 157
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\memory\\mongo_repository.py",
+    "fix": null,
+    "location": {
+      "column": 31,
+      "row": 157
+    },
+    "message": "Magic value used in comparison, consider replacing `100_000` with a constant variable",
+    "name": "magic-value-comparison",
+    "noqa_row": 157,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/magic-value-comparison"
+  },
+  {
+    "cell": null,
+    "code": "C901",
+    "end_location": {
+      "column": 15,
+      "row": 27
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\memory\\qdrant_summary_indexer.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 27
+    },
+    "message": "`upsert` is too complex (11 > 10)",
+    "name": "complex-structure",
+    "noqa_row": 27,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/complex-structure"
+  },
+  {
+    "cell": null,
+    "code": "PLR0913",
+    "end_location": {
+      "column": 21,
+      "row": 86
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\observability\\ai_usage_repository.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 86
+    },
+    "message": "Too many arguments in function definition (10 > 5)",
+    "name": "too-many-arguments",
+    "noqa_row": 86,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/too-many-arguments"
+  },
+  {
+    "cell": null,
+    "code": "PLR0913",
+    "end_location": {
+      "column": 24,
+      "row": 192
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\observability\\ai_usage_repository.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 192
+    },
+    "message": "Too many arguments in function definition (10 > 5)",
+    "name": "too-many-arguments",
+    "noqa_row": 192,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/too-many-arguments"
+  },
+  {
+    "cell": null,
+    "code": "PLR2004",
+    "end_location": {
+      "column": 35,
+      "row": 127
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\observability\\live_trace_store.py",
+    "fix": null,
+    "location": {
+      "column": 30,
+      "row": 127
+    },
+    "message": "Magic value used in comparison, consider replacing `1_000` with a constant variable",
+    "name": "magic-value-comparison",
+    "noqa_row": 127,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/magic-value-comparison"
+  },
+  {
+    "cell": null,
+    "code": "PLR0913",
+    "end_location": {
+      "column": 29,
+      "row": 149
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\observability\\live_trace_store.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 149
+    },
+    "message": "Too many arguments in function definition (6 > 5)",
+    "name": "too-many-arguments",
+    "noqa_row": 149,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/too-many-arguments"
+  },
+  {
+    "cell": null,
+    "code": "C901",
+    "end_location": {
+      "column": 22,
+      "row": 30
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\observability\\metrics.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 30
+    },
+    "message": "`calculate_metrics` is too complex (11 > 10)",
+    "name": "complex-structure",
+    "noqa_row": 30,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/complex-structure"
+  },
+  {
+    "cell": null,
+    "code": "PLR0915",
+    "end_location": {
+      "column": 22,
+      "row": 30
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\observability\\metrics.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 30
+    },
+    "message": "Too many statements (59 > 50)",
+    "name": "too-many-statements",
+    "noqa_row": 30,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/too-many-statements"
+  },
+  {
+    "cell": null,
+    "code": "C901",
+    "end_location": {
+      "column": 26,
+      "row": 164
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\observability\\metrics.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 164
+    },
+    "message": "`calculate_slo_metrics` is too complex (12 > 10)",
+    "name": "complex-structure",
+    "noqa_row": 164,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/complex-structure"
+  },
+  {
+    "cell": null,
+    "code": "PLR0913",
+    "end_location": {
+      "column": 31,
+      "row": 248
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\observability\\metrics.py",
+    "fix": null,
+    "location": {
+      "column": 5,
+      "row": 248
+    },
+    "message": "Too many arguments in function definition (6 > 5)",
+    "name": "too-many-arguments",
+    "noqa_row": 248,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/too-many-arguments"
+  },
+  {
+    "cell": null,
+    "code": "PLR0913",
+    "end_location": {
+      "column": 20,
+      "row": 149
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\observability\\trace_repository.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 149
+    },
+    "message": "Too many arguments in function definition (9 > 5)",
+    "name": "too-many-arguments",
+    "noqa_row": 149,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/too-many-arguments"
+  },
+  {
+    "cell": null,
+    "code": "PLR0913",
+    "end_location": {
+      "column": 21,
+      "row": 187
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\observability\\trace_repository.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 187
+    },
+    "message": "Too many arguments in function definition (6 > 5)",
+    "name": "too-many-arguments",
+    "noqa_row": 187,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/too-many-arguments"
+  },
+  {
+    "cell": null,
+    "code": "PLR0913",
+    "end_location": {
+      "column": 20,
+      "row": 209
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\observability\\trace_repository.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 209
+    },
+    "message": "Too many arguments in function definition (6 > 5)",
+    "name": "too-many-arguments",
+    "noqa_row": 209,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/too-many-arguments"
+  },
+  {
+    "cell": null,
+    "code": "C901",
+    "end_location": {
+      "column": 21,
+      "row": 242
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\observability\\trace_repository.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 242
+    },
+    "message": "`_build_query` is too complex (12 > 10)",
+    "name": "complex-structure",
+    "noqa_row": 242,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/complex-structure"
+  },
+  {
+    "cell": null,
+    "code": "PLR0913",
+    "end_location": {
+      "column": 21,
+      "row": 242
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\observability\\trace_repository.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 242
+    },
+    "message": "Too many arguments in function definition (6 > 5)",
+    "name": "too-many-arguments",
+    "noqa_row": 242,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/too-many-arguments"
+  },
+  {
+    "cell": null,
+    "code": "C901",
+    "end_location": {
+      "column": 22,
+      "row": 344
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\observability\\trace_repository.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 344
+    },
+    "message": "`_sanitize_log` is too complex (12 > 10)",
+    "name": "complex-structure",
+    "noqa_row": 344,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/complex-structure"
+  },
+  {
+    "cell": null,
+    "code": "C901",
+    "end_location": {
+      "column": 23,
+      "row": 402
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\observability\\trace_repository.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 402
+    },
+    "message": "`_sanitize_span` is too complex (18 > 10)",
+    "name": "complex-structure",
+    "noqa_row": 402,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/complex-structure"
+  },
+  {
+    "cell": null,
+    "code": "PLR0912",
+    "end_location": {
+      "column": 23,
+      "row": 402
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\observability\\trace_repository.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 402
+    },
+    "message": "Too many branches (18 > 12)",
+    "name": "too-many-branches",
+    "noqa_row": 402,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/too-many-branches"
+  },
+  {
+    "cell": null,
+    "code": "PLR0913",
+    "end_location": {
+      "column": 20,
+      "row": 339
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\observability\\traces.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 339
+    },
+    "message": "Too many arguments in function definition (6 > 5)",
+    "name": "too-many-arguments",
+    "noqa_row": 339,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/too-many-arguments"
+  },
+  {
+    "cell": null,
+    "code": "PLR0913",
+    "end_location": {
+      "column": 21,
+      "row": 386
+    },
+    "filename": "C:\\Users\\enzojoaquim-ieg\\OneDrive - Instituto J&F\\Área de Trabalho\\Diciplinas Tech\\IA\\IA-interdisciplinar\\AI_Multi-Agent\\src\\observability\\traces.py",
+    "fix": null,
+    "location": {
+      "column": 9,
+      "row": 386
+    },
+    "message": "Too many arguments in function definition (6 > 5)",
+    "name": "too-many-arguments",
+    "noqa_row": 386,
+    "severity": "error",
+    "url": "https://docs.astral.sh/ruff/rules/too-many-arguments"
+  }
+]

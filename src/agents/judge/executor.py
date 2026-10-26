@@ -1,17 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Literal, cast
+from typing import cast
 
-from src.graphs.state import Evidence, JudgeResult, ResponseDraft
+from src.graphs.state import Evidence, ResponseDraft
 
+from .contracts import JudgeResponse, JudgeStatus
 from .jev_client import JevJudgeClientPort
-
-JudgeStatus = Literal[
-    "approved",
-    "insufficient_evidence",
-    "invalid",
-]
 
 
 class JudgeExecutor:
@@ -19,41 +14,34 @@ class JudgeExecutor:
         self,
         *,
         jev_client: JevJudgeClientPort,
-        jev_confidence_threshold: float = 0.85,
     ) -> None:
-        if not 0 <= jev_confidence_threshold <= 1:
-            raise ValueError("O limiar de confiança do JEV deve estar entre zero e um")
         self.jev_client = jev_client
-        self.jev_confidence_threshold = jev_confidence_threshold
 
     @staticmethod
     def _result(
         *,
         status: JudgeStatus,
         reason: str,
-        evidence_ids: Sequence[str] = (),
+        evidence_count: int = 0,
         error_code: str | None = None,
         reason_code: str | None = None,
-        confidence: float | None = None,
-        probabilities: dict[str, float] | None = None,
+        noul_probability: float | None = None,
         model: str | None = None,
         input_tokens: int | None = None,
         output_tokens: int | None = None,
-    ) -> JudgeResult:
-        result: JudgeResult = {
+    ) -> JudgeResponse:
+        result: JudgeResponse = {
             "status": status,
             "reason": reason,
-            "evidence_ids": list(evidence_ids),
+            "evidence_count": evidence_count,
         }
 
         if error_code is not None:
             result["error_code"] = error_code
         if reason_code is not None:
             result["reason_code"] = reason_code
-        if confidence is not None:
-            result["confidence"] = confidence
-        if probabilities is not None:
-            result["probabilities"] = probabilities
+        if noul_probability is not None:
+            result["noul_probability"] = noul_probability
         if model is not None:
             result["model"] = model
         if input_tokens is not None:
@@ -66,7 +54,7 @@ class JudgeExecutor:
     def _validate_draft(
         self,
         response_draft: ResponseDraft | None,
-    ) -> JudgeResult | None:
+    ) -> JudgeResponse | None:
         if response_draft is None:
             return self._result(
                 status="invalid",
@@ -114,7 +102,7 @@ class JudgeExecutor:
     def _validated_evidence_ids(
         self,
         evidences: Sequence[Evidence],
-    ) -> tuple[list[str], JudgeResult | None]:
+    ) -> tuple[list[str], JudgeResponse | None]:
         try:
             evidence_ids = [evidence["evidence_id"] for evidence in evidences]
         except KeyError, TypeError:
@@ -145,9 +133,18 @@ class JudgeExecutor:
 
     def _validate_input(
         self,
+        *,
+        user_question: str | None,
         response_draft: ResponseDraft | None,
         evidences: Sequence[Evidence],
-    ) -> JudgeResult | None:
+    ) -> JudgeResponse | None:
+        if not isinstance(user_question, str) or not user_question.strip():
+            return self._result(
+                status="invalid",
+                reason="A pergunta atual do usuário não foi fornecida.",
+                error_code="JUDGE_MISSING_QUESTION",
+            )
+
         draft_failure = self._validate_draft(response_draft)
 
         if draft_failure is not None:
@@ -191,6 +188,8 @@ class JudgeExecutor:
             evidence["source_type"] == "conversation_summary"
             for evidence in cited_evidences
         ):
+            if current_draft.get("origin") == "exact":
+                return None
             return self._result(
                 status="insufficient_evidence",
                 reason="Memória anterior não confirma dados atuais.",
@@ -202,11 +201,15 @@ class JudgeExecutor:
 
     def _invoke_jev(
         self,
+        user_question: str,
         response_draft: ResponseDraft,
         evidences: Sequence[Evidence],
-    ) -> JudgeResult:
+        prior_assistant_message: str | None,
+    ) -> JudgeResponse:
         try:
             evaluation = self.jev_client.evaluate(
+                user_question=user_question,
+                prior_assistant_message=prior_assistant_message,
                 response_draft=response_draft,
                 evidences=evidences,
             )
@@ -218,27 +221,20 @@ class JudgeExecutor:
                 error_code=f"JUDGE_{client_code}",
             )
 
-        evidence_ids = list(response_draft["citations"])
-        if (
-            evaluation.verdict == "approved"
-            and evaluation.reason_code == "none"
-            and evaluation.confidence >= self.jev_confidence_threshold
-        ):
+        evidence_count = len(response_draft["citations"])
+        if evaluation.verdict == "approved" and evaluation.reason_code == "none":
             return self._result(
                 status="approved",
                 reason="Resposta aprovada pelo JEV.",
-                evidence_ids=evidence_ids,
+                evidence_count=evidence_count,
                 reason_code=evaluation.reason_code,
-                confidence=evaluation.confidence,
-                probabilities=evaluation.probabilities,
+                noul_probability=evaluation.noul_probability,
                 model=evaluation.model,
                 input_tokens=evaluation.input_tokens,
                 output_tokens=evaluation.output_tokens,
             )
 
         reason_code = evaluation.reason_code
-        if evaluation.verdict == "approved":
-            reason_code = "low_confidence"
 
         reasons = {
             "missing_evidence": (
@@ -255,20 +251,22 @@ class JudgeExecutor:
             "low_confidence": (
                 "A confiança do julgamento não é suficiente para liberar a resposta."
             ),
+            "does_not_answer_question": (
+                "A resposta não atende à pergunta atual do usuário."
+            ),
             "none": "A resposta não foi aprovada pelo JEV.",
         }
         return self._result(
             status="insufficient_evidence",
             reason=reasons[reason_code],
-            evidence_ids=evidence_ids,
+            evidence_count=evidence_count,
             error_code=(
                 "JUDGE_MISSING_EVIDENCE"
                 if reason_code == "missing_evidence"
                 else "JUDGE_REJECTED"
             ),
             reason_code=reason_code,
-            confidence=evaluation.confidence,
-            probabilities=evaluation.probabilities,
+            noul_probability=evaluation.noul_probability,
             model=evaluation.model,
             input_tokens=evaluation.input_tokens,
             output_tokens=evaluation.output_tokens,
@@ -277,13 +275,16 @@ class JudgeExecutor:
     def invoke(
         self,
         *,
+        user_question: str | None,
         response_draft: ResponseDraft | None,
         evidences: Sequence[Evidence],
-    ) -> JudgeResult:
+        prior_assistant_message: str | None = None,
+    ) -> JudgeResponse:
         try:
             input_failure = self._validate_input(
-                response_draft,
-                evidences,
+                user_question=user_question,
+                response_draft=response_draft,
+                evidences=evidences,
             )
         except KeyError, TypeError, ValueError:
             return self._result(
@@ -296,6 +297,8 @@ class JudgeExecutor:
             return input_failure
 
         return self._invoke_jev(
+            cast(str, user_question),
             cast(ResponseDraft, response_draft),
             evidences,
+            prior_assistant_message,
         )

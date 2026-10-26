@@ -5,8 +5,8 @@ from typing import Any
 import pytest
 from langchain_core.messages import HumanMessage
 
-from src.guardrails.input_guardrail import input_guardrail_node, validate_input
-from src.guardrails.output_guardrail import (
+from src.guardrails.input import input_guardrail_node, validate_input
+from src.guardrails.output import (
     create_output_guardrail_node,
     output_guardrail_node,
 )
@@ -73,7 +73,7 @@ def test_input_guardrail_node_returns_structured_block_marker() -> None:
 def test_faq_output_node_sanitizes_response_before_release() -> None:
     content = "Resposta do FAQ " + chr(0x1F642)
 
-    result = output_guardrail_node(_output_state(content), source="faq")
+    result = output_guardrail_node(_output_state(content))
 
     assert result["output_guardrail"]["status"] == "passed"
     assert result["final_response"]["content"] == "Resposta do FAQ "
@@ -81,7 +81,7 @@ def test_faq_output_node_sanitizes_response_before_release() -> None:
 
 
 def test_compiler_output_node_accepts_judge_approved_response() -> None:
-    node = create_output_guardrail_node(source="compiled")
+    node = create_output_guardrail_node()
 
     result = node(_output_state("Resposta baseada no material do agente."))
 
@@ -98,7 +98,7 @@ def test_compiler_output_node_replaces_nonapproved_judge() -> None:
         "evidence_ids": [],
     }
 
-    result = output_guardrail_node(state, source="compiled")
+    result = output_guardrail_node(state)
 
     assert result["output_guardrail"]["status"] == "passed"
     assert result["output_guardrail"]["reason_code"] == "judge_not_approved"
