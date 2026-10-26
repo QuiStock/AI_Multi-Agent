@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal, cast
 
-from pydantic import Field, model_validator
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from qdrant_client import QdrantClient
 
@@ -52,11 +52,6 @@ class Settings(BaseSettings):
     llm_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     llm_top_p: float = Field(default=0.95, ge=0.0, le=1.0)
     typesafe_jev_timeout_seconds: float = Field(default=5.0, gt=0)
-    typesafe_jev_confidence_threshold: float = Field(
-        default=0.85,
-        ge=0.0,
-        le=1.0,
-    )
 
     # Optional settings already present in the local .env file
     database_url: str | None = None
@@ -64,7 +59,13 @@ class Settings(BaseSettings):
     postgres_dsn: str | None = None
     jwt_issuer: str | None = None
     jwt_jwks_url: str | None = None
-    auth_bypass_local_tests: bool = True
+    auth_bypass_local_tests: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "AUTH_BYPASS_LOCAL_TESTS",
+            "TEMPORARY_MANAGER_ROLE_BYPASS",
+        ),
+    )
     auth_bypass_user_id: int = Field(default=810000208, ge=1)
     auth_bypass_email: str = "finalv1.usuario.08@quistock.test"
     auth_bypass_role_code: Literal["MANAGER", "EMPLOYEE"] = "MANAGER"
@@ -83,7 +84,6 @@ class Settings(BaseSettings):
     memory_conversations_collection: str = "conversations"
     memory_summary_jobs_collection: str = "conversation_summary_jobs"
     memory_summary_locks_collection: str = "conversation_summary_locks"
-
     # FAQ RAG directories
     faq_data_dir: Path = PROJECT_ROOT / "src" / "data"
     faq_docs_dir: Path | None = None
@@ -109,6 +109,11 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def configure_faq_paths(self) -> Settings:
         """Derive FAQ paths from FAQ_DATA_DIR when specific paths are absent."""
+        if self.auth_bypass_local_tests and self.app_environment != "development":
+            raise ValueError(
+                "AUTH_BYPASS_LOCAL_TESTS só pode ser usado em development"
+            )
+
         if self.faq_docs_dir is None:
             self.faq_docs_dir = self.faq_data_dir / "docs"
 

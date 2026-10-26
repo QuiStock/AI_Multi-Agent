@@ -1,0 +1,165 @@
+[
+  {
+    "attempt": 1,
+    "case_id": "SD-01",
+    "tool": "get_suggestion_detail",
+    "description": "Escolha na página 1",
+    "conversation_id": "e2e-pw-sd-01-72fb4221",
+    "passed": false,
+    "turns": [
+      {
+        "message": "Busque o produto Fluxo",
+        "http": 200,
+        "status": "clarification_required",
+        "response": "1. Agua de Coco Fluxo 1L\n2. Arroz Tipo 1 Fluxo 5kg\n3. Biscoito Fluxo 200g\n4. Cafe Torrado Fluxo 500g\n5. Feijao Carioca Fluxo 1kg\n6. Iogurte Fluxo 170g\nPara ver a próxima página, peça a página 2.",
+        "tools": [
+          [
+            "get_suggestion_for_product",
+            "success"
+          ]
+        ],
+        "nodes": [
+          "input_guardrail",
+          "greeting_guardrail",
+          "context_enrichment",
+          "router",
+          "model",
+          "product_workflow",
+          "tools",
+          "product_workflow_ambiguous",
+          "persist_turn"
+        ],
+        "route": "product_workflow",
+        "evidence_count": 1,
+        "failures": [],
+        "warnings": [],
+        "seconds": 11.9
+      },
+      {
+        "message": "2",
+        "http": 200,
+        "status": "clarification_required",
+        "response": "Não encontrei informação documentada suficiente no Quistock para responder a essa pergunta. Posso ajudar com outra dúvida sobre o Quistock?",
+        "tools": [
+          [
+            "get_suggestion_for_product",
+            "success"
+          ],
+          [
+            "get_suggestion_for_product",
+            "success"
+          ],
+          [
+            "get_suggestion_detail",
+            "success"
+          ]
+        ],
+        "nodes": [
+          "input_guardrail",
+          "greeting_guardrail",
+          "context_enrichment",
+          "router",
+          "model",
+          "product_workflow",
+          "tools",
+          "compiler",
+          "judge",
+          "prepare_judge_repair",
+          "judge_blocked",
+          "persist_turn"
+        ],
+        "route": "product_workflow",
+        "evidence_count": 1,
+        "failures": [
+          "status clarification_required not in ('success',)",
+          "faltou: Arroz Tipo 1 Fluxo 5kg",
+          "tools ('get_suggestion_for_product', 'get_suggestion_for_product', 'get_suggestion_detail') != ('get_suggestion_for_product', 'get_suggestion_detail')"
+        ],
+        "warnings": [],
+        "seconds": 18.1
+      }
+    ]
+  },
+  {
+    "attempt": 1,
+    "case_id": "PE-03",
+    "tool": "get_promotion_by_expiration",
+    "description": "Promoções até 27/10/2026",
+    "conversation_id": "e2e-pw-pe-03-fb0c15fb",
+    "passed": false,
+    "turns": [
+      {
+        "message": "Quais promoções vencem até 27/10/2026?",
+        "http": 200,
+        "status": "clarification_required",
+        "response": "1. Agua de Coco Fluxo 1L\n2. Biscoito Fluxo 200g\n3. Iogurte Fluxo 170g\nEscolha o número da opção que você quer consultar.",
+        "tools": [
+          [
+            "get_promotion_by_expiration",
+            "success"
+          ]
+        ],
+        "nodes": [
+          "input_guardrail",
+          "greeting_guardrail",
+          "context_enrichment",
+          "router",
+          "model",
+          "product_workflow",
+          "tools",
+          "product_workflow_ambiguous",
+          "persist_turn"
+        ],
+        "route": "product_workflow",
+        "evidence_count": 1,
+        "failures": [],
+        "warnings": [],
+        "seconds": 9.4
+      },
+      {
+        "message": "2",
+        "http": 200,
+        "status": "clarification_required",
+        "response": "Não encontrei informação documentada suficiente no Quistock para responder a essa pergunta. Posso ajudar com outra dúvida sobre o Quistock?",
+        "tools": [
+          [
+            "get_suggestion_detail",
+            "success"
+          ],
+          [
+            "get_promotion_by_expiration",
+            "success"
+          ],
+          [
+            "get_suggestion_detail",
+            "success"
+          ]
+        ],
+        "nodes": [
+          "input_guardrail",
+          "greeting_guardrail",
+          "context_enrichment",
+          "router",
+          "model",
+          "product_workflow",
+          "tools",
+          "compiler",
+          "judge",
+          "prepare_judge_repair",
+          "judge_blocked",
+          "persist_turn"
+        ],
+        "route": "product_workflow",
+        "evidence_count": 2,
+        "failures": [
+          "status clarification_required not in ('success',)",
+          "faltou: Biscoito Fluxo 200g",
+          "tools ('get_suggestion_detail', 'get_promotion_by_expiration', 'get_suggestion_detail') != ('get_promotion_by_expiration', 'get_suggestion_detail')",
+          "evidence_count 2 != 1"
+        ],
+        "warnings": [],
+        "seconds": 24.6
+      }
+    ]
+  }
+]

@@ -2,7 +2,7 @@
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from qdrant_client import QdrantClient
@@ -18,6 +18,7 @@ from .get_summary_context import (
     get_summary_context,
     get_temporal_summary_context,
 )
+from .qdrant_summary_indexer import ensure_summary_payload_indexes
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,7 +47,6 @@ class SummaryContextService:
         qdrant: QdrantClient,
         embed_query: Callable[[str], list[float]],
         search_config: SummarySearchConfig,
-        clock: Callable[[], datetime] | None = None,
     ) -> None:
         # Kept as a compatibility slot for callers that used to pass Mongo.
         # Search never consults it: Qdrant payloads are the recovery source.
@@ -54,7 +54,7 @@ class SummaryContextService:
         self._qdrant = qdrant
         self._embed_query = embed_query
         self._search_config = search_config
-        self._clock = clock or (lambda: datetime.now(UTC))
+        self._payload_indexes_ready = False
 
     def get_context(
         self,
@@ -74,6 +74,8 @@ class SummaryContextService:
         email: str,
         conversation_id: str,
         query: str,
+        start_date: date | None = None,
+        end_date: date | None = None,
     ) -> SummaryContextSelection:
         """Return temporal, semantic, recent-fallback, or empty context."""
         request = SummarySearchRequest(
@@ -84,14 +86,30 @@ class SummaryContextService:
             limit=self._search_config.top_k,
             score_threshold=self._search_config.min_score,
         )
+        if (start_date is None) != (end_date is None):
+            raise ValueError("start_date e end_date devem ser informados juntos")
+        if (
+            start_date is not None
+            and end_date is not None
+            and start_date > end_date
+        ):
+            raise ValueError("start_date deve ser anterior ou igual a end_date")
         if hasattr(
             self._qdrant, "collection_exists"
         ) and not self._qdrant.collection_exists(self._search_config.collection_name):
             return {"source": "none", "results": []}
+        if not self._payload_indexes_ready:
+            ensure_summary_payload_indexes(
+                self._qdrant,
+                self._search_config.collection_name,
+            )
+            self._payload_indexes_ready = True
 
-        if _mentions_yesterday(query):
-            start, end = _previous_civil_day(
-                self._clock(), self._search_config.timezone_name
+        if start_date is not None and end_date is not None:
+            zone = ZoneInfo(self._search_config.timezone_name)
+            start = datetime.combine(start_date, time.min, tzinfo=zone)
+            end = datetime.combine(
+                end_date + timedelta(days=1), time.min, tzinfo=zone
             )
             candidates = get_temporal_summary_context(
                 request=request,
@@ -147,15 +165,3 @@ def _as_summaries(
         }
         summaries.append(summary)
     return summaries[:MAX_SUMMARY_RESULTS]
-
-
-def _mentions_yesterday(query: str) -> bool:
-    normalized = " ".join(query.casefold().split())
-    return "ontem" in normalized
-
-
-def _previous_civil_day(now: datetime, timezone_name: str) -> tuple[datetime, datetime]:
-    zone = ZoneInfo(timezone_name)
-    local_now = now.astimezone(zone)
-    today = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
-    return today - timedelta(days=1), today

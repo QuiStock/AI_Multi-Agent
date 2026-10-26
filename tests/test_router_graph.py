@@ -5,7 +5,8 @@ from typing import Any
 from langchain_core.messages import HumanMessage
 
 from src.agents.router.executor import RouterExecutor
-from src.graphs.adapters import run_router_node
+from src.agents.router.router_node import run_router_node
+from src.agents.router.router_prompt import ROUTER_SYSTEM_PROMPT
 from src.graphs.contracts import RouteDecision
 
 
@@ -59,9 +60,9 @@ def test_router_dispatches_only_to_active_faq_route() -> None:
 
     assert result["routing_decision"] == {
         "route": "faq",
-        "target_agent": "faq",
         "outcome": "dispatch",
         "reason": "Pergunta documental.",
+        "status": "success",
     }
     assert "memory" not in result
 
@@ -78,8 +79,9 @@ def test_router_keeps_clarification_as_controlled_route() -> None:
 
     result = run_router_node(_state("Pode me ajudar?"), router=executor)
 
+    assert result["routing_decision"]["route"] == "clarification_required"
     assert result["routing_decision"]["outcome"] == "clarification_required"
-    assert result["routing_decision"]["target_agent"] is None
+    assert result["routing_decision"]["status"] == "success"
 
 
 def test_router_keeps_out_of_scope_as_controlled_route() -> None:
@@ -98,7 +100,6 @@ def test_router_keeps_out_of_scope_as_controlled_route() -> None:
     )
 
     assert result["routing_decision"]["outcome"] == "out_of_scope"
-    assert result["routing_decision"]["target_agent"] is None
 
 
 def test_invalid_router_output_falls_back_to_clarification() -> None:
@@ -113,7 +114,9 @@ def test_invalid_router_output_falls_back_to_clarification() -> None:
         router=executor,
     )
 
-    assert result["routing_decision"]["outcome"] == "clarification_required"
+    assert result["routing_decision"]["route"] == "clarification_required"
+    assert result["routing_decision"]["outcome"] == "direct_response"
+    assert result["routing_decision"]["status"] == "error"
 
 
 def test_router_exposes_only_safe_product_identity_to_model() -> None:
@@ -242,7 +245,6 @@ def test_router_can_call_summary_search_tool_from_authenticated_request_context(
             RouteDecision(route="out_of_scope", reason="Fallback não usado.")
         ),
         summary_search_service=service,  # type: ignore[arg-type]
-        tool_calling_model=object(),
         agent_factory=fake_agent_factory,
     )
 
@@ -292,15 +294,13 @@ def test_router_pure_recall_captures_memory_and_answers_without_specialist() -> 
             self.tool.invoke({})
             return {
                 "structured_response": RouteDecision(
-                    route="clarification_required",
+                    route="memory_recall",
                     reason="A pessoa quer relembrar a conversa.",
-                    memory_action="pure_recall",
                 )
             }
 
     executor = RouterExecutor(
         summary_search_service=FakeSummaryService(),  # type: ignore[arg-type]
-        tool_calling_model=object(),
         agent_factory=lambda **kwargs: FakeToolCallingAgent(kwargs["tools"][0]),
     )
     result = run_router_node(
@@ -311,14 +311,97 @@ def test_router_pure_recall_captures_memory_and_answers_without_specialist() -> 
                 "conversation_id": "current-conversation",
             },
             "messages": [HumanMessage(content="O que falamos ontem?")],
-            "pii_map": {},
         },
         router=executor,
     )
 
-    assert result["memory_retrieval"]["source"] == "temporal"
+    assert result["evidences"][0]["metadata"]["retrieval_source"] == "temporal"
+    assert result["evidences"][0]["metadata"]["status"] == "temporal"
     assert result["routing_decision"]["outcome"] == "direct_response"
-    assert result["routing_decision"]["target_agent"] is None
-    assert result["router_answered"] is True
-    assert result["final_response"]["status"] == "success"
-    assert "Leite integral" in result["final_response"]["content"]
+    draft = result["response_draft"]
+    assert draft["origin"] == "exact"
+    assert draft["public_status"] == "success"
+    assert draft["citations"] == [result["evidences"][0]["evidence_id"]]
+    assert "leite integral" in draft["content"]
+    assert "final_response" not in result
+
+
+def test_memory_recall_keeps_recent_fallback_distinct_from_not_found() -> None:
+    class StubRouter:
+        def __init__(self, response: dict[str, Any]) -> None:
+            self.response = response
+
+        def invoke(
+            self,
+            _: list[Any],
+            *,
+            request_context: dict[str, Any] | None = None,
+        ) -> dict[str, Any]:
+            return self.response
+
+    def response(metadata: dict[str, str], content: str) -> dict[str, Any]:
+        return {
+            "route": "memory_recall",
+            "reason": "A pessoa quer relembrar a conversa.",
+            "status": "success",
+            "tool_called": {
+                "tool_name": "search_conversation_summaries",
+                "status": "success",
+                "toolResult": {
+                    "status": "success",
+                    "data": {"results": []},
+                    "evidence": [
+                        {
+                            "evidence_id": "summary-1",
+                            "source_type": "conversation_summary",
+                            "source_id": "past-1",
+                            "content": content,
+                            "metadata": metadata,
+                        }
+                    ],
+                },
+            },
+        }
+
+    fallback = run_router_node(
+        _state("O que falamos sobre leite?"),
+        router=StubRouter(
+            response(
+                {"retrieval_source": "recent_fallback", "status": "recent_fallback"},
+                "Conversamos sobre outro assunto.",
+            )
+        ),
+    )
+    missing = run_router_node(
+        _state("O que falamos sobre leite?"),
+        router=StubRouter(
+            response(
+                {
+                    "outcome": "not_found",
+                    "status": "not_found",
+                    "retrieval_source": "none",
+                },
+                "A busca não encontrou uma referência correspondente.",
+            )
+        ),
+    )
+
+    assert fallback["evidences"][0]["metadata"]["status"] == "recent_fallback"
+    assert "Encontrei apenas" in fallback["response_draft"]["content"]
+    assert "Conversamos sobre:" not in fallback["response_draft"]["content"]
+    assert fallback["response_draft"]["public_status"] == "clarification_required"
+    assert missing["evidences"][0]["metadata"]["status"] == "not_found"
+    assert "Não encontrei a referência" in missing["response_draft"]["content"]
+    assert missing["response_draft"]["public_status"] == "clarification_required"
+    assert fallback["response_draft"]["origin"] == "exact"
+    assert missing["response_draft"]["origin"] == "exact"
+    assert fallback["response_draft"]["content"] != missing["response_draft"]["content"]
+
+
+def test_router_prompt_routes_lists_and_promotion_validity() -> None:
+    prompt = " ".join(ROUTER_SYSTEM_PROMPT.casefold().split())
+
+    assert "listar pedidos, promoções ou sugestões da loja" in prompt
+    assert "vence primeiro" in prompt
+    assert "vencem até uma data" in prompt
+    assert 'seguida de "2"' in prompt

@@ -8,6 +8,29 @@ from qdrant_client import QdrantClient, models
 from .contracts import ConversationSummarySnapshot
 
 
+def ensure_summary_payload_indexes(
+    client: QdrantClient,
+    collection_name: str,
+) -> None:
+    """Ensure indexes used by summary filters and date sorting exist."""
+    create_payload_index = getattr(client, "create_payload_index", None)
+    if not callable(create_payload_index):
+        return
+
+    for field_name, field_schema in (
+        ("email", models.PayloadSchemaType.KEYWORD),
+        ("status", models.PayloadSchemaType.KEYWORD),
+        ("conversation_id", models.PayloadSchemaType.KEYWORD),
+        ("updated_at", models.PayloadSchemaType.DATETIME),
+    ):
+        create_payload_index(
+            collection_name=collection_name,
+            field_name=field_name,
+            field_schema=field_schema,
+            wait=True,
+        )
+
+
 class QdrantSummaryIndexer:
     def __init__(
         self,
@@ -23,6 +46,7 @@ class QdrantSummaryIndexer:
         self._embed_text = embed_text
         self._embed_text_with_context = embed_text_with_context
         self._collection_name = collection_name
+        self._payload_indexes_ready = False
 
     def _embed_summary(
         self,
@@ -144,15 +168,12 @@ class QdrantSummaryIndexer:
     def get_latest_ended(
         self, *, email: str, exclude_conversation_id: str, limit: int
     ) -> list[dict[str, object]]:
-        """Return recent summary payloads; updated_at must have a payload index."""
+        """Return recent summary payloads in update order."""
         if not self._client.collection_exists(self._collection_name):
             return []
-        self._client.create_payload_index(
-            collection_name=self._collection_name,
-            field_name="updated_at",
-            field_schema=models.PayloadSchemaType.DATETIME,
-            wait=True,
-        )
+        if not self._payload_indexes_ready:
+            ensure_summary_payload_indexes(self._client, self._collection_name)
+            self._payload_indexes_ready = True
         result, _ = self._client.scroll(
             collection_name=self._collection_name,
             scroll_filter=models.Filter(
@@ -217,15 +238,17 @@ class QdrantSummaryIndexer:
         return True
 
     def _ensure_collection(self, *, vector_size: int) -> None:
-        if self._client.collection_exists(self._collection_name):
-            return
-        self._client.create_collection(
-            collection_name=self._collection_name,
-            vectors_config=models.VectorParams(
-                size=vector_size,
-                distance=models.Distance.COSINE,
-            ),
-        )
+        if not self._client.collection_exists(self._collection_name):
+            self._client.create_collection(
+                collection_name=self._collection_name,
+                vectors_config=models.VectorParams(
+                    size=vector_size,
+                    distance=models.Distance.COSINE,
+                ),
+            )
+        if not self._payload_indexes_ready:
+            ensure_summary_payload_indexes(self._client, self._collection_name)
+            self._payload_indexes_ready = True
 
     def _point_id(self, conversation_id: str) -> str:
         value = f"{self._collection_name}:{conversation_id}"

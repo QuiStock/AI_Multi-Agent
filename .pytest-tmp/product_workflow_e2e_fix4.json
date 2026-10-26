@@ -1,0 +1,148 @@
+[
+  {
+    "attempt": 1,
+    "case_id": "SD-01",
+    "tool": "get_suggestion_detail",
+    "description": "Escolha na página 1",
+    "conversation_id": "e2e-pw-sd-01-f002b3e7",
+    "passed": false,
+    "turns": [
+      {
+        "message": "Busque o produto Fluxo",
+        "http": 200,
+        "status": "clarification_required",
+        "response": "1. Agua de Coco Fluxo 1L\n2. Arroz Tipo 1 Fluxo 5kg\n3. Biscoito Fluxo 200g\n4. Cafe Torrado Fluxo 500g\n5. Feijao Carioca Fluxo 1kg\n6. Iogurte Fluxo 170g\nPara ver a próxima página, peça a página 2.",
+        "tools": [
+          [
+            "get_suggestion_for_product",
+            "success"
+          ]
+        ],
+        "nodes": [
+          "input_guardrail",
+          "greeting_guardrail",
+          "context_enrichment",
+          "router",
+          "model",
+          "product_workflow",
+          "tools",
+          "product_workflow_ambiguous",
+          "persist_turn"
+        ],
+        "route": "product_workflow",
+        "evidence_count": 1,
+        "failures": [],
+        "warnings": [],
+        "seconds": 9.6
+      },
+      {
+        "message": "2",
+        "http": 200,
+        "status": "success",
+        "response": "O número 2 é o produto **Café Torrado Fluxo 500g**.\n\n- SKU: PWF-FLOW-002\n- Tipo de sugestão: pedido (ORDER)\n- Lotes ML: 15\n- Lotes atuais: 11\n- Validade física: 22/12/2026",
+        "tools": [
+          [
+            "get_suggestion_for_product",
+            "success"
+          ],
+          [
+            "get_suggestion_detail",
+            "success"
+          ]
+        ],
+        "nodes": [
+          "input_guardrail",
+          "greeting_guardrail",
+          "context_enrichment",
+          "router",
+          "model",
+          "product_workflow",
+          "tools",
+          "compiler",
+          "judge",
+          "output_guardrail",
+          "persist_turn"
+        ],
+        "route": "product_workflow",
+        "evidence_count": 1,
+        "failures": [
+          "faltou: Arroz Tipo 1 Fluxo 5kg"
+        ],
+        "warnings": [],
+        "seconds": 11.7
+      }
+    ]
+  },
+  {
+    "attempt": 1,
+    "case_id": "PE-03",
+    "tool": "get_promotion_by_expiration",
+    "description": "Promoções até 27/10/2026",
+    "conversation_id": "e2e-pw-pe-03-a9fbc9f1",
+    "passed": true,
+    "turns": [
+      {
+        "message": "Quais promoções vencem até 27/10/2026?",
+        "http": 200,
+        "status": "clarification_required",
+        "response": "1. Agua de Coco Fluxo 1L\n2. Biscoito Fluxo 200g\n3. Iogurte Fluxo 170g\nEscolha o número da opção que você quer consultar.",
+        "tools": [
+          [
+            "get_promotion_by_expiration",
+            "success"
+          ]
+        ],
+        "nodes": [
+          "input_guardrail",
+          "greeting_guardrail",
+          "context_enrichment",
+          "router",
+          "model",
+          "product_workflow",
+          "tools",
+          "product_workflow_ambiguous",
+          "persist_turn"
+        ],
+        "route": "product_workflow",
+        "evidence_count": 1,
+        "failures": [],
+        "warnings": [],
+        "seconds": 7.1
+      },
+      {
+        "message": "2",
+        "http": 200,
+        "status": "success",
+        "response": "O número 2 corresponde ao produto **Biscoito Fluxo 200g**.\n\n- **SKU:** PWF-FLOW-008\n- **Tipo:** promoção\n- **Validade:** de 23/10/2026 a 26/10/2026\n- **Desconto sugerido:** 10% (atualmente, 8%)\n- **Preço promocional:** R$ 3,78\n- **Validade física:** 22/12/2026",
+        "tools": [
+          [
+            "get_promotion_by_expiration",
+            "success"
+          ],
+          [
+            "get_suggestion_detail",
+            "success"
+          ]
+        ],
+        "nodes": [
+          "input_guardrail",
+          "greeting_guardrail",
+          "context_enrichment",
+          "router",
+          "model",
+          "product_workflow",
+          "tools",
+          "compiler",
+          "judge",
+          "output_guardrail",
+          "persist_turn"
+        ],
+        "route": "product_workflow",
+        "evidence_count": 1,
+        "failures": [],
+        "warnings": [],
+        "seconds": 39.2
+      }
+    ]
+  }
+]

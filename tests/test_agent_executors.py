@@ -51,9 +51,8 @@ def test_router_executor_normalizes_faq_route() -> None:
 
     assert result == {
         "route": "faq",
-        "target_agent": "faq",
-        "outcome": "dispatch",
         "reason": "Pergunta documental.",
+        "status": "success",
     }
     assert model.messages is not None
 
@@ -66,7 +65,8 @@ def test_router_executor_fails_closed_on_model_error() -> None:
     result = RouterExecutor(model=FailingModel()).invoke([])
 
     assert result["route"] == "clarification_required"
-    assert result["outcome"] == "clarification_required"
+    assert result["status"] == "error"
+    assert result["error_code"] == "ROUTER_MODEL_UNAVAILABLE"
 
 
 def test_compiler_executor_returns_structured_response() -> None:
@@ -82,31 +82,28 @@ def test_compiler_executor_returns_structured_response() -> None:
         model=object(),
         agent_factory=factory,
     ).invoke(
-        {
-            "messages": [HumanMessage(content="Faça um resumo.")],
-            "agent_results": {
-                "faq": {
-                    "status": "success",
-                    "answer": "Resultado do FAQ.",
-                    "citation_ids": ["faq-1"],
-                },
+        messages=[HumanMessage(content="Faça um resumo.")],
+        agent_results={
+            "faq": {
+                "status": "success",
+                "answer": "Resultado do FAQ.",
             },
-            "evidences": [
-                {
-                    "evidence_id": "faq-1",
-                    "source_type": "faq_document",
-                    "source_id": "manual.md",
-                    "content": "Resultado do FAQ.",
-                    "metadata": {},
-                }
-            ],
-        }
+        },
+        evidences=[
+            {
+                "evidence_id": "faq-1",
+                "source_type": "faq_document",
+                "source_id": "manual.md",
+                "content": "Resultado do FAQ.",
+                "metadata": {},
+            }
+        ],
     )
 
     assert result == {
         "content": "Resposta consolidada.",
         "citations": ["faq-1"],
-        "status": "draft",
+        "status": "success",
     }
     assert factory.agent.input is not None
     messages = factory.agent.input["messages"]
@@ -125,12 +122,17 @@ def test_compiler_executor_blocks_missing_outputs() -> None:
     result = CompilerExecutor(
         model=object(),
         agent_factory=factory,
-    ).invoke({"messages": [HumanMessage(content="Faça um resumo.")]})
+    ).invoke(
+        messages=[HumanMessage(content="Faça um resumo.")],
+        agent_results={},
+        evidences=[],
+    )
 
     assert result == {
         "content": "Não foi possível gerar uma resposta.",
         "citations": [],
         "status": "blocked",
+        "error_code": "COMPILER_NO_AGENT_RESULTS",
     }
     assert factory.agent.input is None
 
@@ -140,16 +142,15 @@ def test_compiler_executor_blocks_invalid_output() -> None:
         model=object(),
         agent_factory=FakeCompilerAgentFactory({"content": "sem status"}),
     ).invoke(
-        {
-            "messages": [HumanMessage(content="Faça um resumo.")],
-            "agent_results": {
-                "faq": {
-                    "status": "success",
-                    "answer": "Resultado do FAQ.",
-                    "citation_ids": [],
-                }
-            },
-        }
+        messages=[HumanMessage(content="Faça um resumo.")],
+        agent_results={
+            "faq": {
+                "status": "success",
+                "answer": "Resultado do FAQ.",
+            }
+        },
+        evidences=[],
     )
 
     assert result["status"] == "blocked"
+    assert result["error_code"] == "COMPILER_EXECUTION_FAILED"

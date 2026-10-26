@@ -9,11 +9,11 @@ from langchain_core.messages import AnyMessage, HumanMessage
 from src.agents.judge.executor import JudgeExecutor
 from src.agents.judge.jev_client import JevEvaluation
 from src.graphs.agent_graph import create_agent_graph
+from src.graphs.contracts import RouteResponse
 from src.graphs.state import (
     Evidence,
     GraphState,
     ResponseDraft,
-    RoutingDecision,
 )
 
 pytestmark = pytest.mark.integration
@@ -36,21 +36,20 @@ class FakeRouter:
         _: list[AnyMessage],
         *,
         request_context: dict[str, Any] | None = None,
-    ) -> RoutingDecision:
+    ) -> RouteResponse:
         return {
             "route": "faq",
-            "target_agent": "faq",
-            "outcome": "dispatch",
             "reason": "Pergunta documental.",
+            "status": "success",
         }
 
 
 class FakeCompiler:
-    def invoke(self, _: GraphState) -> ResponseDraft:
+    def invoke(self, **_: Any) -> ResponseDraft:
         return {
             "content": "A operação é apenas uma sugestão.",
             "citations": ["faq-1"],
-            "status": "draft",
+            "status": "success",
         }
 
 
@@ -62,17 +61,18 @@ class FakeJevClient:
     def evaluate(
         self,
         *,
+        user_question: str,
         response_draft: ResponseDraft,
         evidences: Sequence[Evidence],
+        prior_assistant_message: str | None = None,
     ) -> JevEvaluation:
         self.calls += 1
         self.response_draft = response_draft
         return JevEvaluation(
             verdict="approved",
             reason_code="none",
-            confidence=0.98,
-            probabilities={"approved": 0.98, "rejected": 0.02},
             model="jev-test",
+            noul_probability=0.98,
         )
 
 
@@ -131,11 +131,18 @@ def test_real_judge_executor_validates_compiler_draft_inside_graph() -> None:
 
     result = graph.invoke(
         {
-            "messages": [HumanMessage(content="Qual é a regra?")],
+            "request": {
+                "request_id": "request-1",
+                "email": "user-1",
+                "conversation_id": "conversation-1",
+                "role_code": "EMPLOYEE",
+            },
+            "messages": [HumanMessage(content="Qual é a regra?", id="request-1:user")],
         }
     )
 
-    assert result["agent_results"]["judge"]["status"] == "approved"
+    assert result["judge"] is not None
+    assert result["judge"]["status"] == "approved"
     assert result["final_response"] == {
         "content": "A operação é apenas uma sugestão.",
         "status": "success",

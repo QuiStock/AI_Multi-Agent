@@ -109,7 +109,7 @@ def _output_guardrail(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def test_graph_answers_greeting_without_invoking_router() -> None:
+def test_graph_answers_greeting_from_guardrail_without_invoking_router() -> None:
     message_service = RecordingMessageService()
     graph = create_agent_graph(
         input_guardrail=_passed_input,
@@ -139,5 +139,6 @@ def test_graph_answers_greeting_without_invoking_router() -> None:
         "content": GREETING_RESPONSE,
         "status": "success",
     }
+    assert "output_guardrail" not in result
     assert message_service.turns[0]["sanitized_user_content"] == "Olá"
     assert message_service.turns[0]["consulted_agents"] == []

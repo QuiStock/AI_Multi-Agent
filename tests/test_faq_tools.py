@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+from langchain.messages import AIMessage
+
 from src.agents.faq.executor import FAQExecutor
 from src.agents.faq.tools.faq_tool import create_faq_search_tool
 
@@ -23,6 +25,18 @@ class FakeRetriever:
         return self.evidences
 
 
+def test_faq_extract_answer_reads_text_blocks() -> None:
+    blocks = FAQExecutor.extract_answer(
+        [AIMessage(content=[{"type": "text", "text": "Resposta documental."}])]
+    )
+    dumped = FAQExecutor.extract_answer(
+        [AIMessage(content="[{'type': 'text', 'text': 'bloco'}]")]
+    )
+
+    assert blocks == "Resposta documental."
+    assert dumped == ""
+
+
 def test_faq_search_rejects_empty_query() -> None:
     search_tool = create_faq_search_tool(
         FakeRetriever([]),
@@ -35,7 +49,6 @@ def test_faq_search_rejects_empty_query() -> None:
     result = json.loads(search_tool.invoke({"query": "   "}))
 
     assert result["status"] == "error"
-    assert result["next_step"] == "controlled_error"
     assert result["error"]["code"] == "FAQ_INVALID_QUERY"
 
 
@@ -51,14 +64,16 @@ def test_faq_search_reports_missing_evidence() -> None:
     result = json.loads(search_tool.invoke({"query": "qual é a regra?"}))
 
     assert result["status"] == "success"
-    assert result["next_step"] == "direct_response"
     assert result["data"] == {
         "query": "qual é a regra?",
         "outcome": "not_found",
         "result_count": 0,
         "results": [],
     }
-    assert result["warnings"][0]["code"] == "NO_RELEVANT_EVIDENCE"
+    evidence = result["evidence"][0]
+    assert evidence["source_type"] == "faq_document"
+    assert evidence["metadata"]["outcome"] == "not_found"
+    assert evidence["metadata"]["result_count"] == 0
 
 
 def test_faq_search_serializes_retrieved_evidence() -> None:
@@ -81,7 +96,6 @@ def test_faq_search_serializes_retrieved_evidence() -> None:
     result = json.loads(search_tool.invoke({"query": "qual é a regra?"}))
 
     assert result["status"] == "success"
-    assert result["next_step"] == "continue"
     assert result["data"]["outcome"] == "found"
     assert result["data"]["result_count"] == 1
     assert result["data"]["results"][0]["file_name"] == "manual.md"

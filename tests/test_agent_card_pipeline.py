@@ -3,7 +3,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage
 from langchain_core.tools import StructuredTool
 
-from src.agents import factory, tool_registry
+from src.agents import factory
 from src.agents.faq.card import FAQ_CARD
 from src.agents.faq.executor import FAQExecutor
 from src.agents.registry import get_agent_card
@@ -31,39 +31,6 @@ def test_registry_returns_the_faq_card() -> None:
     assert get_agent_card("faq_rag") is FAQ_CARD
 
 
-def test_factory_resolves_card_tools_and_builds_agent(
-    monkeypatch,
-) -> None:
-    fake_tool = StructuredTool.from_function(_fake_search)
-    monkeypatch.setitem(
-        tool_registry.TOOL_REGISTRY,
-        "faq_search",
-        fake_tool,
-    )
-
-    captured: dict[str, Any] = {}
-
-    def fake_create_agent(*, model, tools, system_prompt):
-        captured.update(
-            model=model,
-            tools=tools,
-            system_prompt=system_prompt,
-        )
-        return "compiled-agent"
-
-    monkeypatch.setattr(factory, "create_agent", fake_create_agent)
-
-    result = factory.create_agent_from_card(
-        card=FAQ_CARD.model_copy(update={"tools": FAQ_CARD.tools[:1]}),
-        model="fake-model",
-    )
-
-    assert result == "compiled-agent"
-    assert captured["model"] == "fake-model"
-    assert captured["tools"] == [fake_tool]
-    assert captured["system_prompt"] == FAQ_CARD.system_prompt_template
-
-
 def test_executor_forwards_agent_input_to_compiled_agent(
     monkeypatch,
 ) -> None:
@@ -79,26 +46,23 @@ def test_executor_forwards_agent_input_to_compiled_agent(
         lambda **kwargs: FakeAgent(),
     )
 
-    agent_input = {
-        "messages": [HumanMessage(content="Pergunta de teste")],
-        "request": {
-            "request_id": "request-1",
-            "trace_id": "trace-1",
-            "role_code": "EMPLOYEE",
-        },
-    }
+    message = HumanMessage(content="Pergunta de teste")
     result = FAQExecutor(
         retriever=EmptyRetriever(),
         model="fake-model",
-    ).invoke(agent_input)
+    ).invoke(
+        messages=[message],
+        allowed_audiences=("employee",),
+        request_id="request-1",
+        trace_id="trace-1",
+    )
 
+    assert captured["agent_input"] == {"messages": [message]}
     assert result == {
+        "status": "error",
         "answer": "",
-        "evidences": [],
-        "tool_status": "success",
-        "next_step": "continue",
+        "error_code": "FAQ_TOOL_NOT_CALLED",
     }
-    assert captured["agent_input"] == {"messages": agent_input["messages"]}
 
 
 def test_factory_accepts_per_request_router_tools_and_response_schema(

@@ -16,7 +16,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-install-project
 
 COPY src ./src
-COPY scripts ./scripts
 
 USER 65532:65532
 

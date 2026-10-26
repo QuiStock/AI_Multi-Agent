@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from typing import Any
 
-from langchain_core.messages import (
-    AnyMessage,
-    HumanMessage,
-)
+from langchain_core.messages import AnyMessage, HumanMessage
 
 from src.agents.compiler.card import COMPILER_CARD
+from src.agents.compiler.contracts import CompilerResponse
 from src.agents.factory import create_agent_from_card
 from src.graphs.contracts import CompilerResult
-from src.graphs.state import GraphState, ResponseDraft
+from src.graphs.state import (
+    AgentResults,
+    Evidence,
+    JudgeFeedback,
+)
 from src.llm_factory import llm_openai
 
 
@@ -36,50 +39,62 @@ class CompilerExecutor:
 
     def _compiler_messages(
         self,
-        state: GraphState,
+        *,
+        messages: Sequence[AnyMessage],
+        agent_results: AgentResults,
+        evidences: Sequence[Evidence],
+        judge_feedback: JudgeFeedback | None,
     ) -> list[AnyMessage]:
         payload_data: dict[str, object] = {
-            "agent_results": state.get("agent_results", {}),
-            "evidences": state.get("evidences", []),
+            "agent_results": agent_results,
+            "evidences": list(evidences),
         }
-        judge_feedback = state.get("judge_feedback")
         if judge_feedback is not None:
             payload_data["judge_feedback"] = judge_feedback
 
         payload = json.dumps(payload_data, ensure_ascii=False)
 
-        context = HumanMessage(
-            content=(
-                "Resultados dos agentes especializados e evidências "
-                f"disponíveis:\n{payload}"
-            )
+        context = (
+            "Resultados dos agentes especializados e evidências "
+            f"disponíveis:\n{payload}"
         )
         if judge_feedback is not None:
-            context = HumanMessage(
-                content=(
-                    f"{context.content}\n\n"
-                    "A resposta candidata anterior foi rejeitada. Faça uma única "
-                    "reformulação usando somente as evidências disponíveis e "
-                    "corrija o problema indicado em judge_feedback. Não invente "
-                    "evidências nem fatos."
-                )
+            context += (
+                "\n\nA resposta candidata anterior foi rejeitada. Faça uma única "
+                "reformulação usando somente as evidências disponíveis e "
+                "corrija o problema indicado em judge_feedback. Não invente "
+                "evidências nem fatos."
             )
 
-        return [*state.get("messages", []), context]
+        return [*messages, HumanMessage(content=context)]
 
     def invoke(
         self,
-        state: GraphState,
-    ) -> ResponseDraft:
-        if not state.get("agent_results"):
+        *,
+        messages: Sequence[AnyMessage],
+        agent_results: AgentResults,
+        evidences: Sequence[Evidence],
+        judge_feedback: JudgeFeedback | None = None,
+    ) -> CompilerResponse:
+        if not agent_results:
             return {
                 "content": "Não foi possível gerar uma resposta.",
                 "citations": [],
                 "status": "blocked",
+                "error_code": "COMPILER_NO_AGENT_RESULTS",
             }
 
         try:
-            raw_result = self.agent.invoke({"messages": self._compiler_messages(state)})
+            raw_result = self.agent.invoke(
+                {
+                    "messages": self._compiler_messages(
+                        messages=messages,
+                        agent_results=agent_results,
+                        evidences=evidences,
+                        judge_feedback=judge_feedback,
+                    )
+                }
+            )
             if not isinstance(raw_result, dict):
                 raise TypeError("A saída do compiler agent deve ser um dicionário")
             result = raw_result.get("structured_response")
@@ -91,10 +106,11 @@ class CompilerExecutor:
                 "content": "Não foi possível gerar uma resposta.",
                 "citations": [],
                 "status": "blocked",
+                "error_code": "COMPILER_EXECUTION_FAILED",
             }
 
         return {
             "content": result.content,
             "citations": list(result.citations),
-            "status": ("draft" if result.status == "success" else "blocked"),
+            "status": "success" if result.status == "success" else "blocked",
         }

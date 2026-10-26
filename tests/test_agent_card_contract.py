@@ -38,7 +38,6 @@ def test_faq_card_has_the_expected_contract() -> None:
     assert FAQ_CARD.role is AgentRole.FAQ_RAG
     assert FAQ_CARD.tools[0].id == "faq_search"
     assert FAQ_CARD.tools[0].properties[0].name == "query"
-    assert FAQ_CARD.routing_intents == ["faq", "politicas", "processos"]
 
 
 def test_router_card_declares_only_the_memory_reference_tool() -> None:
@@ -50,10 +49,9 @@ def test_agent_card_does_not_declare_memory_or_evidence_policies() -> None:
     assert "evidence_policy" not in AgentCard.model_fields
 
 
-def test_agent_card_accepts_optional_failure_policy() -> None:
-    card = AgentCard(**_card_payload())
-
-    assert card.failure_policy is None
+def test_agent_card_has_no_unused_policy_or_routing_metadata() -> None:
+    for field in ("failure_policy", "tags", "routing_intents"):
+        assert field not in AgentCard.model_fields
 
 
 def test_agent_card_does_not_require_model_profile_id() -> None:

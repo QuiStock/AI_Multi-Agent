@@ -103,6 +103,54 @@ def test_conversation_endpoint_invokes_graph_and_returns_metadata(app_client) ->
     }
 
 
+def test_conversation_restores_pii_only_after_graph_returns() -> None:
+    class PlaceholderGraph(FakeGraph):
+        def invoke(
+            self,
+            state: dict[str, Any],
+            config: dict[str, Any] | None = None,
+        ) -> dict[str, Any]:
+            self.state = state
+            self.config = config
+            request_id = state["request"]["request_id"]
+            return {
+                "final_response": {
+                    "content": (
+                        f"Seu e-mail é "
+                        f"[DADO_SENSIVEL_EMAIL_{request_id}_1]."
+                    ),
+                    "status": "success",
+                }
+            }
+
+    graph = PlaceholderGraph()
+    app = create_app()
+    app.dependency_overrides[get_graph] = lambda: graph
+    app.dependency_overrides[get_trace_repository] = FakeTraceRepository
+    app.dependency_overrides[get_authenticated_principal] = lambda: (
+        AuthenticatedPrincipal(
+            user_id=42, email="user-1", role_code="MANAGER", store_ids=(4,)
+        )
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/conversations/conversation-1/messages",
+            json=_payload(message="Meu e-mail é pessoa@example.com."),
+        )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 200
+    assert response.json()["response"] == "Seu e-mail é pessoa@example.com."
+    assert graph.state is not None
+    graph_message = graph.state["messages"][0].content
+    request_id = graph.state["request"]["request_id"]
+    marker = f"[DADO_SENSIVEL_EMAIL_{request_id}_1]"
+    assert graph_message == f"Meu e-mail é {marker}."
+    assert "pessoa@example.com" not in repr(graph.state)
+    assert "pii_map" not in graph.state
+
+
 def test_conversation_endpoint_propagates_resume_flag(app_client) -> None:
     client, graph = app_client
 

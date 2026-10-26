@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, cast
 
 from langchain_core.messages import (
     AIMessage,
@@ -10,19 +10,22 @@ from langchain_core.messages import (
     RemoveMessage,
 )
 
-from src.graphs.adapters import (
-    run_compiler_node,
-    run_context_enrichment_node,
-    run_faq_node,
-    run_judge_node,
-    run_router_node,
+from src.agents.compiler.compiler_node import run_compiler_node
+from src.agents.faq.faq_node import faq_node
+from src.agents.judge.jev_node import run_judge_node
+from src.agents.product_workflow.product_workflow_node import (
+    run_product_workflow_node,
 )
+from src.agents.router.executor import RouterExecutor
+from src.agents.router.router_node import run_router_node
+from src.graphs.adapters import (
+    run_context_enrichment_node,
+)
+from src.graphs.contracts import RouteResponse
 from src.graphs.state import (
     Evidence,
     GraphState,
-    JudgeResult,
     ResponseDraft,
-    RoutingDecision,
 )
 
 
@@ -36,14 +39,13 @@ class FakeRouterExecutor:
         messages: Sequence[AnyMessage],
         *,
         request_context: dict[str, Any] | None = None,
-    ) -> RoutingDecision:
+    ) -> RouteResponse:
         self.messages = messages
         self.request_context = request_context
         return {
             "route": "faq",
-            "target_agent": "faq",
-            "outcome": "dispatch",
             "reason": "Pergunta documental.",
+            "status": "success",
         }
 
 
@@ -67,16 +69,61 @@ class FakeFAQExecutor:
         }
 
 
+class FakeProductWorkflowExecutor:
+    def invoke(
+        self,
+        *,
+        messages: list[AnyMessage],
+        request_context: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "status": "success",
+            "answer": "1. Arroz Branco\n2. Arroz Integral",
+            "tools_called": [
+                {
+                    "tool_name": "get_suggestion_for_product",
+                    "status": "success",
+                    "toolResult": {
+                        "status": "success",
+                        "data": {
+                            "status": "ambiguous",
+                            "candidates": [
+                                {"position": 1, "product_name": "Arroz Branco"},
+                                {"position": 2, "product_name": "Arroz Integral"},
+                            ],
+                        },
+                        "evidence": [
+                            {
+                                "evidence_id": "candidate-1",
+                                "source_type": "product_workflow",
+                                "source_id": "postgresql:suggestion:1",
+                                "content": '{"product_name":"Arroz Branco"}',
+                                "metadata": {"suggestion_id": "1"},
+                            },
+                            {
+                                "evidence_id": "candidate-2",
+                                "source_type": "product_workflow",
+                                "source_id": "postgresql:suggestion:2",
+                                "content": '{"product_name":"Arroz Integral"}',
+                                "metadata": {"suggestion_id": "2"},
+                            },
+                        ],
+                    },
+                }
+            ],
+        }
+
+
 class FakeCompilerExecutor:
     def __init__(self) -> None:
-        self.state: GraphState | None = None
+        self.arguments: dict[str, Any] | None = None
 
-    def invoke(self, state: GraphState) -> ResponseDraft:
-        self.state = state
+    def invoke(self, **kwargs: Any) -> ResponseDraft:
+        self.arguments = kwargs
         return {
             "content": "Resposta compilada.",
             "citations": ["faq-1"],
-            "status": "draft",
+            "status": "success",
         }
 
 
@@ -88,15 +135,17 @@ class FakeJudgeExecutor:
     def invoke(
         self,
         *,
+        user_question: str | None,
         response_draft: ResponseDraft | None,
         evidences: Sequence[Evidence],
-    ) -> JudgeResult:
+        prior_assistant_message: str | None = None,
+    ) -> dict[str, Any]:
         self.response_draft = response_draft
         self.evidences = evidences
         return {
             "status": "approved",
             "reason": "Resposta sustentada.",
-            "evidence_ids": ["faq-1"],
+            "evidence_count": 1,
         }
 
 
@@ -109,16 +158,49 @@ def test_router_adapter_forwards_the_sanitized_message_from_shared_state() -> No
             "conversation_id": "conversation-1",
         },
         "messages": [HumanMessage(content="Mensagem sanitizada.")],
-        "pii_map": {"[PII]": "valor original"},
     }
 
-    result = run_router_node(state, router=executor)
+    result = run_router_node(state, router=cast(RouterExecutor, executor))
 
     assert executor.messages is not None
     assert executor.messages[-1].content == "Mensagem sanitizada."
     assert executor.request_context == state["request"]
     assert result["routing_decision"]["route"] == "faq"
     assert result["status"] == "in_progress"
+
+
+def test_product_workflow_adapter_keeps_ambiguous_page_evidence() -> None:
+    evidence = [
+        {
+            "evidence_id": "candidate-1",
+            "source_type": "product_workflow",
+            "source_id": "postgresql:suggestion:1",
+            "content": '{"product_name":"Arroz Branco"}',
+            "metadata": {"suggestion_id": "1"},
+        },
+        {
+            "evidence_id": "candidate-2",
+            "source_type": "product_workflow",
+            "source_id": "postgresql:suggestion:2",
+            "content": '{"product_name":"Arroz Integral"}',
+            "metadata": {"suggestion_id": "2"},
+        },
+    ]
+
+    result = run_product_workflow_node(
+        {
+            "request": {},
+            "messages": [HumanMessage(content="Busque arroz")],
+        },
+        executor=FakeProductWorkflowExecutor(),
+    )
+
+    assert result["agent_results"]["product_workflow"]["lookup_status"] == ("ambiguous")
+    assert result["agent_results"]["product_workflow"]["evidence_ids"] == [
+        "candidate-1",
+        "candidate-2",
+    ]
+    assert result["evidences"] == evidence
 
 
 class FakeConversationEnricher:
@@ -218,7 +300,7 @@ def test_faq_adapter_calls_executor_and_normalizes_answer() -> None:
         "messages": [HumanMessage(content="Qual é a regra?")],
     }
 
-    result = run_faq_node(state, executor=executor)
+    result = faq_node(state, executor=executor)
 
     assert executor.state is not None
     assert executor.state["messages"] == state["messages"]
@@ -226,29 +308,27 @@ def test_faq_adapter_calls_executor_and_normalizes_answer() -> None:
     assert result["agent_results"]["faq"] == {
         "status": "success",
         "answer": "Resposta baseada na documentação.",
-        "citation_ids": ["faq-1"],
         "next_step": "continue",
     }
 
 
-def test_compiler_adapter_does_not_expose_private_pii_map_to_executor() -> None:
+def test_compiler_node_passes_only_compiler_inputs_to_executor() -> None:
     executor = FakeCompilerExecutor()
     state: GraphState = {
-        "pii_map": {"[PII]": "valor original"},
         "agent_results": {
             "faq": {
                 "status": "success",
                 "answer": "Resposta do FAQ.",
-                "citation_ids": ["faq-1"],
             }
         },
     }
 
     result = run_compiler_node(state, compiler=executor)
 
-    assert executor.state is not None
-    assert "pii_map" not in executor.state
-    assert executor.state["agent_results"] == state["agent_results"]
+    assert executor.arguments is not None
+    assert executor.arguments["agent_results"] == state["agent_results"]
+    assert executor.arguments["evidences"] == []
+    assert "state" not in executor.arguments
     assert result["response_draft"] == {
         "content": "Resposta compilada.",
         "citations": ["faq-1"],
@@ -282,10 +362,34 @@ def test_judge_adapter_forwards_draft_and_full_evidence_content() -> None:
     assert executor.response_draft is draft
     assert executor.evidences == [evidence]
     assert executor.evidences[0]["content"] == evidence["content"]
-    assert result["agent_results"]["judge"]["status"] == "approved"
+    assert result["judge"]["status"] == "approved"
+    assert result["judge"]["repair_attempts"] == 0
     assert result["final_response"] == {
         "content": "Resposta compilada.",
         "status": "success",
+    }
+    assert result["response_draft"] is None
+
+
+def test_judge_adapter_keeps_exact_draft_status_on_approval() -> None:
+    executor = FakeJudgeExecutor()
+    result = run_judge_node(
+        {
+            "response_draft": {
+                "content": "1. Arroz Branco",
+                "citations": ["suggestion-list:abc"],
+                "status": "draft",
+                "origin": "exact",
+                "public_status": "clarification_required",
+            },
+            "evidences": [],
+        },
+        judge=executor,
+    )
+
+    assert result["final_response"] == {
+        "content": "1. Arroz Branco",
+        "status": "clarification_required",
     }
     assert result["response_draft"] is None
 
@@ -295,13 +399,15 @@ def test_judge_adapter_preserves_draft_when_approval_is_rejected() -> None:
         def invoke(
             self,
             *,
+            user_question: str | None,
             response_draft: ResponseDraft | None,
             evidences: Sequence[Evidence],
-        ) -> JudgeResult:
+            prior_assistant_message: str | None = None,
+        ) -> dict[str, Any]:
             return {
                 "status": "insufficient_evidence",
                 "reason": "Evidência insuficiente.",
-                "evidence_ids": [],
+                "evidence_count": 0,
             }
 
     draft: ResponseDraft = {
@@ -314,7 +420,7 @@ def test_judge_adapter_preserves_draft_when_approval_is_rejected() -> None:
         judge=RejectingJudgeExecutor(),
     )
 
-    assert result["agent_results"]["judge"]["status"] == "insufficient_evidence"
+    assert result["judge"]["status"] == "insufficient_evidence"
     assert "response_draft" not in result
     assert "final_response" not in result
 
@@ -324,9 +430,11 @@ def test_judge_adapter_fails_closed_on_unexpected_executor_error() -> None:
         def invoke(
             self,
             *,
+            user_question: str | None,
             response_draft: ResponseDraft | None,
             evidences: Sequence[Evidence],
-        ) -> JudgeResult:
+            prior_assistant_message: str | None = None,
+        ) -> dict[str, Any]:
             raise RuntimeError("unexpected failure")
 
     result = run_judge_node(
@@ -341,6 +449,89 @@ def test_judge_adapter_fails_closed_on_unexpected_executor_error() -> None:
         judge=FailingJudgeExecutor(),
     )
 
-    judge_result = result["agent_results"]["judge"]
+    judge_result = result["judge"]
+    assert judge_result is not None
     assert judge_result["status"] == "invalid"
-    assert judge_result["error_code"] == "JUDGE_ADAPTER_FAILURE"
+    assert result["errors"][0]["code"] == "JUDGE_ADAPTER_FAILURE"
+
+
+def test_judge_uses_only_the_user_message_without_a_prior_assistant_reply() -> None:
+    class CapturingJudge:
+        def __init__(self) -> None:
+            self.prior: str | None = "unset"
+            self.question: str | None = None
+
+        def invoke(
+            self,
+            *,
+            user_question: str | None,
+            response_draft: ResponseDraft | None,
+            evidences: Sequence[Evidence],
+            prior_assistant_message: str | None = None,
+        ) -> dict[str, Any]:
+            self.question = user_question
+            self.prior = prior_assistant_message
+            return {
+                "status": "approved",
+                "reason": "Controlado.",
+                "evidence_count": 0,
+            }
+
+    judge = CapturingJudge()
+    run_judge_node(
+        {
+            "request": {"request_id": "request-1"},
+            "messages": [HumanMessage(content="página 2", id="request-1:user")],
+            "response_draft": {
+                "content": "Lista da página.",
+                "citations": [],
+                "status": "draft",
+            },
+        },
+        judge=judge,  # type: ignore[arg-type]
+    )
+
+    assert judge.question == "página 2"
+    assert judge.prior is None
+
+
+def test_judge_sends_the_previous_assistant_message_as_context() -> None:
+    class CapturingJudge:
+        def __init__(self) -> None:
+            self.prior: str | None = None
+
+        def invoke(
+            self,
+            *,
+            user_question: str | None,
+            response_draft: ResponseDraft | None,
+            evidences: Sequence[Evidence],
+            prior_assistant_message: str | None = None,
+        ) -> dict[str, Any]:
+            self.prior = prior_assistant_message
+            return {
+                "status": "approved",
+                "reason": "Controlado.",
+                "evidence_count": 0,
+            }
+
+    judge = CapturingJudge()
+    run_judge_node(
+        {
+            "request": {"request_id": "request-2"},
+            "messages": [
+                HumanMessage(content="Quais promoções vigentes?", id="request-1:user"),
+                AIMessage(content="As promoções vigentes são:\n1. Agua", id="a-1"),
+                HumanMessage(content="página 2", id="request-2:user"),
+                AIMessage(content="Esta resposta ainda não existe.", id="a-2"),
+            ],
+            "response_draft": {
+                "content": "7. Leite",
+                "citations": [],
+                "status": "draft",
+            },
+        },
+        judge=judge,  # type: ignore[arg-type]
+    )
+
+    assert judge.prior == "As promoções vigentes são:\n1. Agua"

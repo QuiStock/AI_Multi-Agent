@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from typing import Any
 
@@ -260,7 +260,7 @@ def test_service_returns_recent_fallback_without_relevant_match() -> None:
     assert qdrant.scroll_query is not None
 
 
-def test_temporal_recovery_uses_previous_civil_day_without_embedding() -> None:
+def test_temporal_recovery_uses_inclusive_date_range_without_embedding() -> None:
     qdrant = FakeQdrant(
         [
             SimpleNamespace(
@@ -275,13 +275,14 @@ def test_temporal_recovery_uses_previous_civil_day_without_embedding() -> None:
         qdrant,  # type: ignore[arg-type]
         lambda query: embedded.append(query) or [0.1, 0.2],
         SummarySearchConfig(collection_name="conversation_summaries"),
-        clock=lambda: datetime(2026, 10, 14, 12, tzinfo=timezone.utc),
     )
 
     selection = service.search_context(
         email="user-1",
         conversation_id="current-1",
-        query="O que falamos ontem?",
+        query="O que falamos nesse dia?",
+        start_date=date(2026, 10, 13),
+        end_date=date(2026, 10, 14),
     )
 
     assert selection["source"] == "temporal"

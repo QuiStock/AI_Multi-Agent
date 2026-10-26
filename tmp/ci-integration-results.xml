@@ -1,0 +1,1072 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="9" failures="2" skipped="1" tests="30" time="38.251" timestamp="2026-09-22T00:42:47.866041-03:00" hostname="IEGNTBALU1774"><testcase classname="tests.integration.test_faq_ingestion_pipeline" name="test_ingestion_pipeline_indexes_updates_and_deletes_documents" time="0.333" /><testcase classname="tests.integration.test_faq_ingestion_pipeline" name="test_ingestion_components_cover_validation_and_persistence_edges" time="0.062" /><testcase classname="tests.integration.test_faq_ingestion_pipeline" name="test_qdrant_store_validates_vectors_and_handles_empty_collection" time="0.016" /><testcase classname="tests.integration.test_faq_ingestion_pipeline" name="test_embedding_provider_wraps_model_failures" time="0.004" /><testcase classname="tests.integration.test_gemini_api_integration" name="test_real_embeddings_can_embed_a_query" time="0.003"><skipped type="pytest.skip" message="GEMINI_API_KEY nao configurada">C:\Users\enzojoaquim-ieg\OneDrive - Instituto J&amp;F\Área de Trabalho\Diciplinas Tech\IA\IA-interdisciplinar\AI_Multi-Agent\tests\integration\test_gemini_api_integration.py:15: GEMINI_API_KEY nao configurada</skipped></testcase><testcase classname="tests.integration.test_guardrails_integration" name="test_input_guardrail_node_returns_sanitized_contract" time="0.003" /><testcase classname="tests.integration.test_guardrails_integration" name="test_input_guardrail_node_returns_structured_block_marker" time="0.002" /><testcase classname="tests.integration.test_guardrails_integration" name="test_faq_output_node_sanitizes_response_before_release" time="0.002" /><testcase classname="tests.integration.test_guardrails_integration" name="test_compiler_output_node_accepts_judge_approved_response" time="0.001" /><testcase classname="tests.integration.test_guardrails_integration" name="test_compiler_output_node_replaces_nonapproved_judge" time="0.009"><failure message="AssertionError: assert 'in_progress' == 'completed'&#10;  &#10;  - completed&#10;  + in_progress">def test_compiler_output_node_replaces_nonapproved_judge() -&gt; None:
+        state = _output_state("Resposta com informação sem suporte.")
+        state["agent_results"]["judge"] = {
+            "status": "insufficient_evidence",
+            "reason": "Evidência insuficiente.",
+            "evidence_ids": [],
+        }
+    
+        result = output_guardrail_node(state, source="compiled")
+    
+        assert result["output_guardrail"]["status"] == "passed"
+        assert result["output_guardrail"]["reason_code"] == "judge_not_approved"
+        assert result["response_draft"]["content"].startswith("Não foi possível liberar")
+&gt;       assert result["status"] == "completed"
+E       AssertionError: assert 'in_progress' == 'completed'
+E         
+E         - completed
+E         + in_progress
+
+tests\integration\test_guardrails_integration.py:121: AssertionError</failure></testcase><testcase classname="tests.integration.test_integration_smoke" name="test_integration_smoke" time="0.003" /><testcase classname="tests.integration.test_judge_graph_integration" name="test_real_judge_executor_validates_compiler_draft_inside_graph" time="0.090"><failure message="KeyError: 'final_response'">def test_real_judge_executor_validates_compiler_draft_inside_graph() -&gt; None:
+        model = FakeJudgeModel()
+        graph = create_agent_graph(
+            input_guardrail=_passed_input,
+            router=FakeRouter(),
+            capabilities={"faq": _capability},
+            compiler=FakeCompiler(),
+            judge=JudgeExecutor(model=model),
+            output_guardrail=_passing_output,
+            context_enricher=EmptyContextEnricher(),
+        )
+    
+        result = graph.invoke(
+            {
+                "messages": [HumanMessage(content="Qual é a regra?")],
+            }
+        )
+    
+        assert result["agent_results"]["judge"]["status"] == "approved"
+&gt;       assert result["final_response"] == {
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+            "content": "A operação é apenas uma sugestão.",
+            "status": "success",
+        }
+E       KeyError: 'final_response'
+
+tests\integration\test_judge_graph_integration.py:126: KeyError</failure></testcase><testcase classname="tests.integration.test_memory_mongo_repository" name="test_first_user_message_creates_the_single_conversation_document" time="0.137"><error message="failed on setup with &quot;docker.errors.DockerException: Error while fetching server API version: (5, 'CreateFile', 'Acesso negado.')&quot;">self = &lt;docker.api.client.APIClient object at 0x000001F4E308DE80&gt;
+
+    def _retrieve_server_version(self):
+        try:
+&gt;           return self.version(api_version=False)["ApiVersion"]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.venv\Lib\site-packages\docker\api\client.py:223: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv\Lib\site-packages\docker\api\daemon.py:181: in version
+    return self._result(self._get(url), json=True)
+                        ^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\utils\decorators.py:44: in inner
+    return f(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\api\client.py:246: in _get
+    return self.get(url, **self._set_request_timeout(kwargs))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\sessions.py:671: in get
+    return self.request("GET", url, params=params, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\sessions.py:651: in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\sessions.py:784: in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\adapters.py:696: in send
+    resp = conn.urlopen(
+.venv\Lib\site-packages\urllib3\connectionpool.py:788: in urlopen
+    response = self._make_request(
+.venv\Lib\site-packages\urllib3\connectionpool.py:493: in _make_request
+    conn.request(
+.venv\Lib\site-packages\urllib3\connection.py:500: in request
+    self.endheaders()
+C:\Program Files\Python314\Lib\http\client.py:1353: in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+C:\Program Files\Python314\Lib\http\client.py:1113: in _send_output
+    self.send(msg)
+C:\Program Files\Python314\Lib\http\client.py:1057: in send
+    self.connect()
+.venv\Lib\site-packages\docker\transport\npipeconn.py:25: in connect
+    sock.connect(self.npipe_path)
+.venv\Lib\site-packages\docker\transport\npipesocket.py:25: in wrapped
+    return f(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\transport\npipesocket.py:76: in connect
+    raise e
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;docker.transport.npipesocket.NpipeSocket object at 0x000001F4E308F620&gt;
+address = '//./pipe/docker_engine', retry_count = 0
+
+    @check_closed
+    def connect(self, address, retry_count=0):
+        try:
+&gt;           handle = win32file.CreateFile(
+                address,
+                win32file.GENERIC_READ | win32file.GENERIC_WRITE,
+                0,
+                None,
+                win32file.OPEN_EXISTING,
+                (cSECURITY_ANONYMOUS
+                    | cSECURITY_SQOS_PRESENT
+                    | win32file.FILE_FLAG_OVERLAPPED),
+                0
+            )
+E           pywintypes.error: (5, 'CreateFile', 'Acesso negado.')
+
+.venv\Lib\site-packages\docker\transport\npipesocket.py:54: error
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.fixture(scope="module")
+    def mongo_client() -&gt; Iterator[MongoClient]:
+&gt;       with MongoDbContainer("mongo:7.0.7") as mongo:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\integration\test_memory_mongo_repository.py:23: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv\Lib\site-packages\testcontainers\community\mongodb\__init__.py:60: in __init__
+    super().__init__(
+.venv\Lib\site-packages\testcontainers\core\container.py:129: in __init__
+    self._docker = DockerClient(**(docker_client_kw or {}))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\testcontainers\core\docker_client.py:194: in __init__
+    self.client = docker.from_env(**kwargs)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\client.py:110: in from_env
+    return cls(
+.venv\Lib\site-packages\docker\client.py:48: in __init__
+    self.api = APIClient(*args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\api\client.py:207: in __init__
+    self._version = self._retrieve_server_version()
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;docker.api.client.APIClient object at 0x000001F4E308DE80&gt;
+
+    def _retrieve_server_version(self):
+        try:
+            return self.version(api_version=False)["ApiVersion"]
+        except KeyError as ke:
+            raise DockerException(
+                'Invalid response from docker daemon: key "ApiVersion"'
+                ' is missing.'
+            ) from ke
+        except Exception as e:
+&gt;           raise DockerException(
+                f'Error while fetching server API version: {e}'
+            ) from e
+E           docker.errors.DockerException: Error while fetching server API version: (5, 'CreateFile', 'Acesso negado.')
+
+.venv\Lib\site-packages\docker\api\client.py:230: DockerException</error></testcase><testcase classname="tests.integration.test_memory_mongo_repository" name="test_assistant_reply_appends_and_increments_turns_once" time="0.001"><error message="failed on setup with &quot;docker.errors.DockerException: Error while fetching server API version: (5, 'CreateFile', 'Acesso negado.')&quot;">self = &lt;docker.api.client.APIClient object at 0x000001F4E308DE80&gt;
+
+    def _retrieve_server_version(self):
+        try:
+&gt;           return self.version(api_version=False)["ApiVersion"]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.venv\Lib\site-packages\docker\api\client.py:223: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv\Lib\site-packages\docker\api\daemon.py:181: in version
+    return self._result(self._get(url), json=True)
+                        ^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\utils\decorators.py:44: in inner
+    return f(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\api\client.py:246: in _get
+    return self.get(url, **self._set_request_timeout(kwargs))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\sessions.py:671: in get
+    return self.request("GET", url, params=params, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\sessions.py:651: in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\sessions.py:784: in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\adapters.py:696: in send
+    resp = conn.urlopen(
+.venv\Lib\site-packages\urllib3\connectionpool.py:788: in urlopen
+    response = self._make_request(
+.venv\Lib\site-packages\urllib3\connectionpool.py:493: in _make_request
+    conn.request(
+.venv\Lib\site-packages\urllib3\connection.py:500: in request
+    self.endheaders()
+C:\Program Files\Python314\Lib\http\client.py:1353: in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+C:\Program Files\Python314\Lib\http\client.py:1113: in _send_output
+    self.send(msg)
+C:\Program Files\Python314\Lib\http\client.py:1057: in send
+    self.connect()
+.venv\Lib\site-packages\docker\transport\npipeconn.py:25: in connect
+    sock.connect(self.npipe_path)
+.venv\Lib\site-packages\docker\transport\npipesocket.py:25: in wrapped
+    return f(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\transport\npipesocket.py:76: in connect
+    raise e
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;docker.transport.npipesocket.NpipeSocket object at 0x000001F4E308F620&gt;
+address = '//./pipe/docker_engine', retry_count = 0
+
+    @check_closed
+    def connect(self, address, retry_count=0):
+        try:
+&gt;           handle = win32file.CreateFile(
+                address,
+                win32file.GENERIC_READ | win32file.GENERIC_WRITE,
+                0,
+                None,
+                win32file.OPEN_EXISTING,
+                (cSECURITY_ANONYMOUS
+                    | cSECURITY_SQOS_PRESENT
+                    | win32file.FILE_FLAG_OVERLAPPED),
+                0
+            )
+E           pywintypes.error: (5, 'CreateFile', 'Acesso negado.')
+
+.venv\Lib\site-packages\docker\transport\npipesocket.py:54: error
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.fixture(scope="module")
+    def mongo_client() -&gt; Iterator[MongoClient]:
+&gt;       with MongoDbContainer("mongo:7.0.7") as mongo:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\integration\test_memory_mongo_repository.py:23: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv\Lib\site-packages\testcontainers\community\mongodb\__init__.py:60: in __init__
+    super().__init__(
+.venv\Lib\site-packages\testcontainers\core\container.py:129: in __init__
+    self._docker = DockerClient(**(docker_client_kw or {}))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\testcontainers\core\docker_client.py:194: in __init__
+    self.client = docker.from_env(**kwargs)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\client.py:110: in from_env
+    return cls(
+.venv\Lib\site-packages\docker\client.py:48: in __init__
+    self.api = APIClient(*args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\api\client.py:207: in __init__
+    self._version = self._retrieve_server_version()
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;docker.api.client.APIClient object at 0x000001F4E308DE80&gt;
+
+    def _retrieve_server_version(self):
+        try:
+            return self.version(api_version=False)["ApiVersion"]
+        except KeyError as ke:
+            raise DockerException(
+                'Invalid response from docker daemon: key "ApiVersion"'
+                ' is missing.'
+            ) from ke
+        except Exception as e:
+&gt;           raise DockerException(
+                f'Error while fetching server API version: {e}'
+            ) from e
+E           docker.errors.DockerException: Error while fetching server API version: (5, 'CreateFile', 'Acesso negado.')
+
+.venv\Lib\site-packages\docker\api\client.py:230: DockerException</error></testcase><testcase classname="tests.integration.test_memory_mongo_repository" name="test_repeated_user_request_does_not_duplicate_message" time="0.001"><error message="failed on setup with &quot;docker.errors.DockerException: Error while fetching server API version: (5, 'CreateFile', 'Acesso negado.')&quot;">self = &lt;docker.api.client.APIClient object at 0x000001F4E308DE80&gt;
+
+    def _retrieve_server_version(self):
+        try:
+&gt;           return self.version(api_version=False)["ApiVersion"]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.venv\Lib\site-packages\docker\api\client.py:223: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv\Lib\site-packages\docker\api\daemon.py:181: in version
+    return self._result(self._get(url), json=True)
+                        ^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\utils\decorators.py:44: in inner
+    return f(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\api\client.py:246: in _get
+    return self.get(url, **self._set_request_timeout(kwargs))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\sessions.py:671: in get
+    return self.request("GET", url, params=params, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\sessions.py:651: in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\sessions.py:784: in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\adapters.py:696: in send
+    resp = conn.urlopen(
+.venv\Lib\site-packages\urllib3\connectionpool.py:788: in urlopen
+    response = self._make_request(
+.venv\Lib\site-packages\urllib3\connectionpool.py:493: in _make_request
+    conn.request(
+.venv\Lib\site-packages\urllib3\connection.py:500: in request
+    self.endheaders()
+C:\Program Files\Python314\Lib\http\client.py:1353: in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+C:\Program Files\Python314\Lib\http\client.py:1113: in _send_output
+    self.send(msg)
+C:\Program Files\Python314\Lib\http\client.py:1057: in send
+    self.connect()
+.venv\Lib\site-packages\docker\transport\npipeconn.py:25: in connect
+    sock.connect(self.npipe_path)
+.venv\Lib\site-packages\docker\transport\npipesocket.py:25: in wrapped
+    return f(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\transport\npipesocket.py:76: in connect
+    raise e
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;docker.transport.npipesocket.NpipeSocket object at 0x000001F4E308F620&gt;
+address = '//./pipe/docker_engine', retry_count = 0
+
+    @check_closed
+    def connect(self, address, retry_count=0):
+        try:
+&gt;           handle = win32file.CreateFile(
+                address,
+                win32file.GENERIC_READ | win32file.GENERIC_WRITE,
+                0,
+                None,
+                win32file.OPEN_EXISTING,
+                (cSECURITY_ANONYMOUS
+                    | cSECURITY_SQOS_PRESENT
+                    | win32file.FILE_FLAG_OVERLAPPED),
+                0
+            )
+E           pywintypes.error: (5, 'CreateFile', 'Acesso negado.')
+
+.venv\Lib\site-packages\docker\transport\npipesocket.py:54: error
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.fixture(scope="module")
+    def mongo_client() -&gt; Iterator[MongoClient]:
+&gt;       with MongoDbContainer("mongo:7.0.7") as mongo:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\integration\test_memory_mongo_repository.py:23: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv\Lib\site-packages\testcontainers\community\mongodb\__init__.py:60: in __init__
+    super().__init__(
+.venv\Lib\site-packages\testcontainers\core\container.py:129: in __init__
+    self._docker = DockerClient(**(docker_client_kw or {}))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\testcontainers\core\docker_client.py:194: in __init__
+    self.client = docker.from_env(**kwargs)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\client.py:110: in from_env
+    return cls(
+.venv\Lib\site-packages\docker\client.py:48: in __init__
+    self.api = APIClient(*args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\api\client.py:207: in __init__
+    self._version = self._retrieve_server_version()
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;docker.api.client.APIClient object at 0x000001F4E308DE80&gt;
+
+    def _retrieve_server_version(self):
+        try:
+            return self.version(api_version=False)["ApiVersion"]
+        except KeyError as ke:
+            raise DockerException(
+                'Invalid response from docker daemon: key "ApiVersion"'
+                ' is missing.'
+            ) from ke
+        except Exception as e:
+&gt;           raise DockerException(
+                f'Error while fetching server API version: {e}'
+            ) from e
+E           docker.errors.DockerException: Error while fetching server API version: (5, 'CreateFile', 'Acesso negado.')
+
+.venv\Lib\site-packages\docker\api\client.py:230: DockerException</error></testcase><testcase classname="tests.integration.test_memory_mongo_repository" name="test_conversation_is_scoped_to_its_user" time="0.001"><error message="failed on setup with &quot;docker.errors.DockerException: Error while fetching server API version: (5, 'CreateFile', 'Acesso negado.')&quot;">self = &lt;docker.api.client.APIClient object at 0x000001F4E308DE80&gt;
+
+    def _retrieve_server_version(self):
+        try:
+&gt;           return self.version(api_version=False)["ApiVersion"]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.venv\Lib\site-packages\docker\api\client.py:223: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv\Lib\site-packages\docker\api\daemon.py:181: in version
+    return self._result(self._get(url), json=True)
+                        ^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\utils\decorators.py:44: in inner
+    return f(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\api\client.py:246: in _get
+    return self.get(url, **self._set_request_timeout(kwargs))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\sessions.py:671: in get
+    return self.request("GET", url, params=params, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\sessions.py:651: in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\sessions.py:784: in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\adapters.py:696: in send
+    resp = conn.urlopen(
+.venv\Lib\site-packages\urllib3\connectionpool.py:788: in urlopen
+    response = self._make_request(
+.venv\Lib\site-packages\urllib3\connectionpool.py:493: in _make_request
+    conn.request(
+.venv\Lib\site-packages\urllib3\connection.py:500: in request
+    self.endheaders()
+C:\Program Files\Python314\Lib\http\client.py:1353: in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+C:\Program Files\Python314\Lib\http\client.py:1113: in _send_output
+    self.send(msg)
+C:\Program Files\Python314\Lib\http\client.py:1057: in send
+    self.connect()
+.venv\Lib\site-packages\docker\transport\npipeconn.py:25: in connect
+    sock.connect(self.npipe_path)
+.venv\Lib\site-packages\docker\transport\npipesocket.py:25: in wrapped
+    return f(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\transport\npipesocket.py:76: in connect
+    raise e
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;docker.transport.npipesocket.NpipeSocket object at 0x000001F4E308F620&gt;
+address = '//./pipe/docker_engine', retry_count = 0
+
+    @check_closed
+    def connect(self, address, retry_count=0):
+        try:
+&gt;           handle = win32file.CreateFile(
+                address,
+                win32file.GENERIC_READ | win32file.GENERIC_WRITE,
+                0,
+                None,
+                win32file.OPEN_EXISTING,
+                (cSECURITY_ANONYMOUS
+                    | cSECURITY_SQOS_PRESENT
+                    | win32file.FILE_FLAG_OVERLAPPED),
+                0
+            )
+E           pywintypes.error: (5, 'CreateFile', 'Acesso negado.')
+
+.venv\Lib\site-packages\docker\transport\npipesocket.py:54: error
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.fixture(scope="module")
+    def mongo_client() -&gt; Iterator[MongoClient]:
+&gt;       with MongoDbContainer("mongo:7.0.7") as mongo:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\integration\test_memory_mongo_repository.py:23: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv\Lib\site-packages\testcontainers\community\mongodb\__init__.py:60: in __init__
+    super().__init__(
+.venv\Lib\site-packages\testcontainers\core\container.py:129: in __init__
+    self._docker = DockerClient(**(docker_client_kw or {}))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\testcontainers\core\docker_client.py:194: in __init__
+    self.client = docker.from_env(**kwargs)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\client.py:110: in from_env
+    return cls(
+.venv\Lib\site-packages\docker\client.py:48: in __init__
+    self.api = APIClient(*args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\api\client.py:207: in __init__
+    self._version = self._retrieve_server_version()
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;docker.api.client.APIClient object at 0x000001F4E308DE80&gt;
+
+    def _retrieve_server_version(self):
+        try:
+            return self.version(api_version=False)["ApiVersion"]
+        except KeyError as ke:
+            raise DockerException(
+                'Invalid response from docker daemon: key "ApiVersion"'
+                ' is missing.'
+            ) from ke
+        except Exception as e:
+&gt;           raise DockerException(
+                f'Error while fetching server API version: {e}'
+            ) from e
+E           docker.errors.DockerException: Error while fetching server API version: (5, 'CreateFile', 'Acesso negado.')
+
+.venv\Lib\site-packages\docker\api\client.py:230: DockerException</error></testcase><testcase classname="tests.integration.test_memory_mongo_repository" name="test_assistant_cannot_create_a_conversation" time="0.001"><error message="failed on setup with &quot;docker.errors.DockerException: Error while fetching server API version: (5, 'CreateFile', 'Acesso negado.')&quot;">self = &lt;docker.api.client.APIClient object at 0x000001F4E308DE80&gt;
+
+    def _retrieve_server_version(self):
+        try:
+&gt;           return self.version(api_version=False)["ApiVersion"]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.venv\Lib\site-packages\docker\api\client.py:223: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv\Lib\site-packages\docker\api\daemon.py:181: in version
+    return self._result(self._get(url), json=True)
+                        ^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\utils\decorators.py:44: in inner
+    return f(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\api\client.py:246: in _get
+    return self.get(url, **self._set_request_timeout(kwargs))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\sessions.py:671: in get
+    return self.request("GET", url, params=params, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\sessions.py:651: in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\sessions.py:784: in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\adapters.py:696: in send
+    resp = conn.urlopen(
+.venv\Lib\site-packages\urllib3\connectionpool.py:788: in urlopen
+    response = self._make_request(
+.venv\Lib\site-packages\urllib3\connectionpool.py:493: in _make_request
+    conn.request(
+.venv\Lib\site-packages\urllib3\connection.py:500: in request
+    self.endheaders()
+C:\Program Files\Python314\Lib\http\client.py:1353: in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+C:\Program Files\Python314\Lib\http\client.py:1113: in _send_output
+    self.send(msg)
+C:\Program Files\Python314\Lib\http\client.py:1057: in send
+    self.connect()
+.venv\Lib\site-packages\docker\transport\npipeconn.py:25: in connect
+    sock.connect(self.npipe_path)
+.venv\Lib\site-packages\docker\transport\npipesocket.py:25: in wrapped
+    return f(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\transport\npipesocket.py:76: in connect
+    raise e
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;docker.transport.npipesocket.NpipeSocket object at 0x000001F4E308F620&gt;
+address = '//./pipe/docker_engine', retry_count = 0
+
+    @check_closed
+    def connect(self, address, retry_count=0):
+        try:
+&gt;           handle = win32file.CreateFile(
+                address,
+                win32file.GENERIC_READ | win32file.GENERIC_WRITE,
+                0,
+                None,
+                win32file.OPEN_EXISTING,
+                (cSECURITY_ANONYMOUS
+                    | cSECURITY_SQOS_PRESENT
+                    | win32file.FILE_FLAG_OVERLAPPED),
+                0
+            )
+E           pywintypes.error: (5, 'CreateFile', 'Acesso negado.')
+
+.venv\Lib\site-packages\docker\transport\npipesocket.py:54: error
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.fixture(scope="module")
+    def mongo_client() -&gt; Iterator[MongoClient]:
+&gt;       with MongoDbContainer("mongo:7.0.7") as mongo:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\integration\test_memory_mongo_repository.py:23: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv\Lib\site-packages\testcontainers\community\mongodb\__init__.py:60: in __init__
+    super().__init__(
+.venv\Lib\site-packages\testcontainers\core\container.py:129: in __init__
+    self._docker = DockerClient(**(docker_client_kw or {}))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\testcontainers\core\docker_client.py:194: in __init__
+    self.client = docker.from_env(**kwargs)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\client.py:110: in from_env
+    return cls(
+.venv\Lib\site-packages\docker\client.py:48: in __init__
+    self.api = APIClient(*args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\api\client.py:207: in __init__
+    self._version = self._retrieve_server_version()
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;docker.api.client.APIClient object at 0x000001F4E308DE80&gt;
+
+    def _retrieve_server_version(self):
+        try:
+            return self.version(api_version=False)["ApiVersion"]
+        except KeyError as ke:
+            raise DockerException(
+                'Invalid response from docker daemon: key "ApiVersion"'
+                ' is missing.'
+            ) from ke
+        except Exception as e:
+&gt;           raise DockerException(
+                f'Error while fetching server API version: {e}'
+            ) from e
+E           docker.errors.DockerException: Error while fetching server API version: (5, 'CreateFile', 'Acesso negado.')
+
+.venv\Lib\site-packages\docker\api\client.py:230: DockerException</error></testcase><testcase classname="tests.integration.test_memory_mongo_repository" name="test_ended_conversation_rejects_new_messages_but_accepts_retry" time="0.001"><error message="failed on setup with &quot;docker.errors.DockerException: Error while fetching server API version: (5, 'CreateFile', 'Acesso negado.')&quot;">self = &lt;docker.api.client.APIClient object at 0x000001F4E308DE80&gt;
+
+    def _retrieve_server_version(self):
+        try:
+&gt;           return self.version(api_version=False)["ApiVersion"]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.venv\Lib\site-packages\docker\api\client.py:223: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv\Lib\site-packages\docker\api\daemon.py:181: in version
+    return self._result(self._get(url), json=True)
+                        ^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\utils\decorators.py:44: in inner
+    return f(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\api\client.py:246: in _get
+    return self.get(url, **self._set_request_timeout(kwargs))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\sessions.py:671: in get
+    return self.request("GET", url, params=params, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\sessions.py:651: in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\sessions.py:784: in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\adapters.py:696: in send
+    resp = conn.urlopen(
+.venv\Lib\site-packages\urllib3\connectionpool.py:788: in urlopen
+    response = self._make_request(
+.venv\Lib\site-packages\urllib3\connectionpool.py:493: in _make_request
+    conn.request(
+.venv\Lib\site-packages\urllib3\connection.py:500: in request
+    self.endheaders()
+C:\Program Files\Python314\Lib\http\client.py:1353: in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+C:\Program Files\Python314\Lib\http\client.py:1113: in _send_output
+    self.send(msg)
+C:\Program Files\Python314\Lib\http\client.py:1057: in send
+    self.connect()
+.venv\Lib\site-packages\docker\transport\npipeconn.py:25: in connect
+    sock.connect(self.npipe_path)
+.venv\Lib\site-packages\docker\transport\npipesocket.py:25: in wrapped
+    return f(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\transport\npipesocket.py:76: in connect
+    raise e
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;docker.transport.npipesocket.NpipeSocket object at 0x000001F4E308F620&gt;
+address = '//./pipe/docker_engine', retry_count = 0
+
+    @check_closed
+    def connect(self, address, retry_count=0):
+        try:
+&gt;           handle = win32file.CreateFile(
+                address,
+                win32file.GENERIC_READ | win32file.GENERIC_WRITE,
+                0,
+                None,
+                win32file.OPEN_EXISTING,
+                (cSECURITY_ANONYMOUS
+                    | cSECURITY_SQOS_PRESENT
+                    | win32file.FILE_FLAG_OVERLAPPED),
+                0
+            )
+E           pywintypes.error: (5, 'CreateFile', 'Acesso negado.')
+
+.venv\Lib\site-packages\docker\transport\npipesocket.py:54: error
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.fixture(scope="module")
+    def mongo_client() -&gt; Iterator[MongoClient]:
+&gt;       with MongoDbContainer("mongo:7.0.7") as mongo:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\integration\test_memory_mongo_repository.py:23: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv\Lib\site-packages\testcontainers\community\mongodb\__init__.py:60: in __init__
+    super().__init__(
+.venv\Lib\site-packages\testcontainers\core\container.py:129: in __init__
+    self._docker = DockerClient(**(docker_client_kw or {}))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\testcontainers\core\docker_client.py:194: in __init__
+    self.client = docker.from_env(**kwargs)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\client.py:110: in from_env
+    return cls(
+.venv\Lib\site-packages\docker\client.py:48: in __init__
+    self.api = APIClient(*args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\api\client.py:207: in __init__
+    self._version = self._retrieve_server_version()
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;docker.api.client.APIClient object at 0x000001F4E308DE80&gt;
+
+    def _retrieve_server_version(self):
+        try:
+            return self.version(api_version=False)["ApiVersion"]
+        except KeyError as ke:
+            raise DockerException(
+                'Invalid response from docker daemon: key "ApiVersion"'
+                ' is missing.'
+            ) from ke
+        except Exception as e:
+&gt;           raise DockerException(
+                f'Error while fetching server API version: {e}'
+            ) from e
+E           docker.errors.DockerException: Error while fetching server API version: (5, 'CreateFile', 'Acesso negado.')
+
+.venv\Lib\site-packages\docker\api\client.py:230: DockerException</error></testcase><testcase classname="tests.integration.test_memory_mongo_repository" name="test_stored_dates_are_utc_and_updated_at_tracks_latest_message" time="0.001"><error message="failed on setup with &quot;docker.errors.DockerException: Error while fetching server API version: (5, 'CreateFile', 'Acesso negado.')&quot;">self = &lt;docker.api.client.APIClient object at 0x000001F4E308DE80&gt;
+
+    def _retrieve_server_version(self):
+        try:
+&gt;           return self.version(api_version=False)["ApiVersion"]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.venv\Lib\site-packages\docker\api\client.py:223: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv\Lib\site-packages\docker\api\daemon.py:181: in version
+    return self._result(self._get(url), json=True)
+                        ^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\utils\decorators.py:44: in inner
+    return f(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\api\client.py:246: in _get
+    return self.get(url, **self._set_request_timeout(kwargs))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\sessions.py:671: in get
+    return self.request("GET", url, params=params, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\sessions.py:651: in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\sessions.py:784: in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\adapters.py:696: in send
+    resp = conn.urlopen(
+.venv\Lib\site-packages\urllib3\connectionpool.py:788: in urlopen
+    response = self._make_request(
+.venv\Lib\site-packages\urllib3\connectionpool.py:493: in _make_request
+    conn.request(
+.venv\Lib\site-packages\urllib3\connection.py:500: in request
+    self.endheaders()
+C:\Program Files\Python314\Lib\http\client.py:1353: in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+C:\Program Files\Python314\Lib\http\client.py:1113: in _send_output
+    self.send(msg)
+C:\Program Files\Python314\Lib\http\client.py:1057: in send
+    self.connect()
+.venv\Lib\site-packages\docker\transport\npipeconn.py:25: in connect
+    sock.connect(self.npipe_path)
+.venv\Lib\site-packages\docker\transport\npipesocket.py:25: in wrapped
+    return f(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\transport\npipesocket.py:76: in connect
+    raise e
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;docker.transport.npipesocket.NpipeSocket object at 0x000001F4E308F620&gt;
+address = '//./pipe/docker_engine', retry_count = 0
+
+    @check_closed
+    def connect(self, address, retry_count=0):
+        try:
+&gt;           handle = win32file.CreateFile(
+                address,
+                win32file.GENERIC_READ | win32file.GENERIC_WRITE,
+                0,
+                None,
+                win32file.OPEN_EXISTING,
+                (cSECURITY_ANONYMOUS
+                    | cSECURITY_SQOS_PRESENT
+                    | win32file.FILE_FLAG_OVERLAPPED),
+                0
+            )
+E           pywintypes.error: (5, 'CreateFile', 'Acesso negado.')
+
+.venv\Lib\site-packages\docker\transport\npipesocket.py:54: error
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.fixture(scope="module")
+    def mongo_client() -&gt; Iterator[MongoClient]:
+&gt;       with MongoDbContainer("mongo:7.0.7") as mongo:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\integration\test_memory_mongo_repository.py:23: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv\Lib\site-packages\testcontainers\community\mongodb\__init__.py:60: in __init__
+    super().__init__(
+.venv\Lib\site-packages\testcontainers\core\container.py:129: in __init__
+    self._docker = DockerClient(**(docker_client_kw or {}))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\testcontainers\core\docker_client.py:194: in __init__
+    self.client = docker.from_env(**kwargs)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\client.py:110: in from_env
+    return cls(
+.venv\Lib\site-packages\docker\client.py:48: in __init__
+    self.api = APIClient(*args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\api\client.py:207: in __init__
+    self._version = self._retrieve_server_version()
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;docker.api.client.APIClient object at 0x000001F4E308DE80&gt;
+
+    def _retrieve_server_version(self):
+        try:
+            return self.version(api_version=False)["ApiVersion"]
+        except KeyError as ke:
+            raise DockerException(
+                'Invalid response from docker daemon: key "ApiVersion"'
+                ' is missing.'
+            ) from ke
+        except Exception as e:
+&gt;           raise DockerException(
+                f'Error while fetching server API version: {e}'
+            ) from e
+E           docker.errors.DockerException: Error while fetching server API version: (5, 'CreateFile', 'Acesso negado.')
+
+.venv\Lib\site-packages\docker\api\client.py:230: DockerException</error></testcase><testcase classname="tests.integration.test_memory_mongo_repository" name="test_summary_commit_advances_version_and_marker_only_once" time="0.001"><error message="failed on setup with &quot;docker.errors.DockerException: Error while fetching server API version: (5, 'CreateFile', 'Acesso negado.')&quot;">self = &lt;docker.api.client.APIClient object at 0x000001F4E308DE80&gt;
+
+    def _retrieve_server_version(self):
+        try:
+&gt;           return self.version(api_version=False)["ApiVersion"]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.venv\Lib\site-packages\docker\api\client.py:223: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv\Lib\site-packages\docker\api\daemon.py:181: in version
+    return self._result(self._get(url), json=True)
+                        ^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\utils\decorators.py:44: in inner
+    return f(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\api\client.py:246: in _get
+    return self.get(url, **self._set_request_timeout(kwargs))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\sessions.py:671: in get
+    return self.request("GET", url, params=params, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\sessions.py:651: in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\sessions.py:784: in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\adapters.py:696: in send
+    resp = conn.urlopen(
+.venv\Lib\site-packages\urllib3\connectionpool.py:788: in urlopen
+    response = self._make_request(
+.venv\Lib\site-packages\urllib3\connectionpool.py:493: in _make_request
+    conn.request(
+.venv\Lib\site-packages\urllib3\connection.py:500: in request
+    self.endheaders()
+C:\Program Files\Python314\Lib\http\client.py:1353: in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+C:\Program Files\Python314\Lib\http\client.py:1113: in _send_output
+    self.send(msg)
+C:\Program Files\Python314\Lib\http\client.py:1057: in send
+    self.connect()
+.venv\Lib\site-packages\docker\transport\npipeconn.py:25: in connect
+    sock.connect(self.npipe_path)
+.venv\Lib\site-packages\docker\transport\npipesocket.py:25: in wrapped
+    return f(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\transport\npipesocket.py:76: in connect
+    raise e
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;docker.transport.npipesocket.NpipeSocket object at 0x000001F4E308F620&gt;
+address = '//./pipe/docker_engine', retry_count = 0
+
+    @check_closed
+    def connect(self, address, retry_count=0):
+        try:
+&gt;           handle = win32file.CreateFile(
+                address,
+                win32file.GENERIC_READ | win32file.GENERIC_WRITE,
+                0,
+                None,
+                win32file.OPEN_EXISTING,
+                (cSECURITY_ANONYMOUS
+                    | cSECURITY_SQOS_PRESENT
+                    | win32file.FILE_FLAG_OVERLAPPED),
+                0
+            )
+E           pywintypes.error: (5, 'CreateFile', 'Acesso negado.')
+
+.venv\Lib\site-packages\docker\transport\npipesocket.py:54: error
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.fixture(scope="module")
+    def mongo_client() -&gt; Iterator[MongoClient]:
+&gt;       with MongoDbContainer("mongo:7.0.7") as mongo:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\integration\test_memory_mongo_repository.py:23: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv\Lib\site-packages\testcontainers\community\mongodb\__init__.py:60: in __init__
+    super().__init__(
+.venv\Lib\site-packages\testcontainers\core\container.py:129: in __init__
+    self._docker = DockerClient(**(docker_client_kw or {}))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\testcontainers\core\docker_client.py:194: in __init__
+    self.client = docker.from_env(**kwargs)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\client.py:110: in from_env
+    return cls(
+.venv\Lib\site-packages\docker\client.py:48: in __init__
+    self.api = APIClient(*args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\api\client.py:207: in __init__
+    self._version = self._retrieve_server_version()
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;docker.api.client.APIClient object at 0x000001F4E308DE80&gt;
+
+    def _retrieve_server_version(self):
+        try:
+            return self.version(api_version=False)["ApiVersion"]
+        except KeyError as ke:
+            raise DockerException(
+                'Invalid response from docker daemon: key "ApiVersion"'
+                ' is missing.'
+            ) from ke
+        except Exception as e:
+&gt;           raise DockerException(
+                f'Error while fetching server API version: {e}'
+            ) from e
+E           docker.errors.DockerException: Error while fetching server API version: (5, 'CreateFile', 'Acesso negado.')
+
+.venv\Lib\site-packages\docker\api\client.py:230: DockerException</error></testcase><testcase classname="tests.integration.test_memory_mongo_repository" name="test_ended_conversation_is_listed_and_reopened_with_existing_history" time="0.001"><error message="failed on setup with &quot;docker.errors.DockerException: Error while fetching server API version: (5, 'CreateFile', 'Acesso negado.')&quot;">self = &lt;docker.api.client.APIClient object at 0x000001F4E308DE80&gt;
+
+    def _retrieve_server_version(self):
+        try:
+&gt;           return self.version(api_version=False)["ApiVersion"]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.venv\Lib\site-packages\docker\api\client.py:223: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv\Lib\site-packages\docker\api\daemon.py:181: in version
+    return self._result(self._get(url), json=True)
+                        ^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\utils\decorators.py:44: in inner
+    return f(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\api\client.py:246: in _get
+    return self.get(url, **self._set_request_timeout(kwargs))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\sessions.py:671: in get
+    return self.request("GET", url, params=params, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\sessions.py:651: in request
+    resp = self.send(prep, **send_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\sessions.py:784: in send
+    r = adapter.send(request, **kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\requests\adapters.py:696: in send
+    resp = conn.urlopen(
+.venv\Lib\site-packages\urllib3\connectionpool.py:788: in urlopen
+    response = self._make_request(
+.venv\Lib\site-packages\urllib3\connectionpool.py:493: in _make_request
+    conn.request(
+.venv\Lib\site-packages\urllib3\connection.py:500: in request
+    self.endheaders()
+C:\Program Files\Python314\Lib\http\client.py:1353: in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+C:\Program Files\Python314\Lib\http\client.py:1113: in _send_output
+    self.send(msg)
+C:\Program Files\Python314\Lib\http\client.py:1057: in send
+    self.connect()
+.venv\Lib\site-packages\docker\transport\npipeconn.py:25: in connect
+    sock.connect(self.npipe_path)
+.venv\Lib\site-packages\docker\transport\npipesocket.py:25: in wrapped
+    return f(self, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\transport\npipesocket.py:76: in connect
+    raise e
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;docker.transport.npipesocket.NpipeSocket object at 0x000001F4E308F620&gt;
+address = '//./pipe/docker_engine', retry_count = 0
+
+    @check_closed
+    def connect(self, address, retry_count=0):
+        try:
+&gt;           handle = win32file.CreateFile(
+                address,
+                win32file.GENERIC_READ | win32file.GENERIC_WRITE,
+                0,
+                None,
+                win32file.OPEN_EXISTING,
+                (cSECURITY_ANONYMOUS
+                    | cSECURITY_SQOS_PRESENT
+                    | win32file.FILE_FLAG_OVERLAPPED),
+                0
+            )
+E           pywintypes.error: (5, 'CreateFile', 'Acesso negado.')
+
+.venv\Lib\site-packages\docker\transport\npipesocket.py:54: error
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.fixture(scope="module")
+    def mongo_client() -&gt; Iterator[MongoClient]:
+&gt;       with MongoDbContainer("mongo:7.0.7") as mongo:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\integration\test_memory_mongo_repository.py:23: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+.venv\Lib\site-packages\testcontainers\community\mongodb\__init__.py:60: in __init__
+    super().__init__(
+.venv\Lib\site-packages\testcontainers\core\container.py:129: in __init__
+    self._docker = DockerClient(**(docker_client_kw or {}))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\testcontainers\core\docker_client.py:194: in __init__
+    self.client = docker.from_env(**kwargs)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\client.py:110: in from_env
+    return cls(
+.venv\Lib\site-packages\docker\client.py:48: in __init__
+    self.api = APIClient(*args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\docker\api\client.py:207: in __init__
+    self._version = self._retrieve_server_version()
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = &lt;docker.api.client.APIClient object at 0x000001F4E308DE80&gt;
+
+    def _retrieve_server_version(self):
+        try:
+            return self.version(api_version=False)["ApiVersion"]
+        except KeyError as ke:
+            raise DockerException(
+                'Invalid response from docker daemon: key "ApiVersion"'
+                ' is missing.'
+            ) from ke
+        except Exception as e:
+&gt;           raise DockerException(
+                f'Error while fetching server API version: {e}'
+            ) from e
+E           docker.errors.DockerException: Error while fetching server API version: (5, 'CreateFile', 'Acesso negado.')
+
+.venv\Lib\site-packages\docker\api\client.py:230: DockerException</error></testcase><testcase classname="tests.integration.test_models_agent_integration" name="test_chat_model_uses_configured_model" time="0.002" /><testcase classname="tests.integration.test_models_agent_integration" name="test_embeddings_uses_configured_model" time="0.001" /><testcase classname="tests.integration.test_models_agent_integration" name="test_faq_executor_builds_compiled_graph" time="0.014" /><testcase classname="tests.integration.test_models_agent_integration" name="test_structured_model_binds_fast_and_fallback_paths" time="0.001" /><testcase classname="tests.integration.test_models_agent_integration" name="test_agent_registry_rejects_unknown_agent" time="0.001" /><testcase classname="tests.integration.test_rag_pipeline" name="test_faq_tool_connects_retriever_to_serialized_evidence" time="0.007" /><testcase classname="tests.integration.test_router_graph_integration" name="test_router_adapter_calls_executor_for_active_route_contract[faq-dispatch]" time="0.002" /><testcase classname="tests.integration.test_router_graph_integration" name="test_router_adapter_calls_executor_for_active_route_contract[clarification_required-clarification_required]" time="0.002" /><testcase classname="tests.integration.test_router_graph_integration" name="test_router_adapter_calls_executor_for_active_route_contract[out_of_scope-out_of_scope]" time="0.002" /></testsuite></testsuites>

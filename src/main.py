@@ -5,7 +5,6 @@ from fastapi import FastAPI
 from psycopg_pool import ConnectionPool
 
 from src import config
-from src.a2a_integration.inbound import router as a2a_router
 from src.api.errors import register_exception_handlers
 from src.api.routes.conversation import router as conversation_router
 from src.api.routes.conversation_end import router as conversation_end_router
@@ -41,7 +40,6 @@ def create_app() -> FastAPI:
     )
     register_exception_handlers(app)
     app.include_router(health_router)
-    app.include_router(a2a_router)
     app.include_router(conversation_router, prefix="/api/v1")
     app.include_router(conversation_end_router, prefix="/api/v1")
     app.include_router(conversation_history_router, prefix="/api/v1")

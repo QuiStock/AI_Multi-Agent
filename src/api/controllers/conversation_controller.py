@@ -16,9 +16,11 @@ class ConversationController:
         conversation_id: str,
         request: ConversationRequest,
         email: str,
-        role_code: str,
-        user_id: int,
-        store_ids: tuple[int, ...],
+        role_code: str | None = None,
+        user_id: int | None = None,
+        store_ids: tuple[int, ...] = (),
+        role_id: int | None = None,
+        request_id: str | None = None,
     ) -> ConversationResponse:
         return self._service.converse(
             conversation_id=conversation_id,
@@ -27,4 +29,6 @@ class ConversationController:
             role_code=role_code,
             user_id=user_id,
             store_ids=store_ids,
+            role_id=role_id,
+            request_id=request_id,
         )

@@ -1,0 +1,13 @@
+failed to load config from C:\Users\enzojoaquim-ieg\OneDrive - Instituto J&F\Área de Trabalho\Diciplinas Tech\IA\IA-interdisciplinar\AI_Multi-Agent\src\observability\front-observer\vite.config.js
+error when starting dev server:
+Error: spawn EPERM
+    at ChildProcess.spawn (node:internal/child_process:441:11)
+    at Object.spawn (node:child_process:796:9)
+    at ensureServiceIsRunning (C:\Users\enzojoaquim-ieg\OneDrive - Instituto J&F\Área de Trabalho\Diciplinas Tech\IA\IA-interdisciplinar\AI_Multi-Agent\src\observability\front-observer\node_modules\esbuild\lib\main.js:1978:29)
+    at build (C:\Users\enzojoaquim-ieg\OneDrive - Instituto J&F\Área de Trabalho\Diciplinas Tech\IA\IA-interdisciplinar\AI_Multi-Agent\src\observability\front-observer\node_modules\esbuild\lib\main.js:1876:26)
+    at bundleConfigFile (file:///C:/Users/enzojoaquim-ieg/OneDrive%20-%20Instituto%20J&F/%C3%81rea%20de%20Trabalho/Diciplinas%20Tech/IA/IA-interdisciplinar/AI_Multi-Agent/src/observability/front-observer/node_modules/vite/dist/node/chunks/dep-3O3b9SCF.js:49636:24)
+    at async bundleAndLoadConfigFile (file:///C:/Users/enzojoaquim-ieg/OneDrive%20-%20Instituto%20J&F/%C3%81rea%20de%20Trabalho/Diciplinas%20Tech/IA/IA-interdisciplinar/AI_Multi-Agent/src/observability/front-observer/node_modules/vite/dist/node/chunks/dep-3O3b9SCF.js:49620:19)
+    at async loadConfigFromFile (file:///C:/Users/enzojoaquim-ieg/OneDrive%20-%20Instituto%20J&F/%C3%81rea%20de%20Trabalho/Diciplinas%20Tech/IA/IA-interdisciplinar/AI_Multi-Agent/src/observability/front-observer/node_modules/vite/dist/node/chunks/dep-3O3b9SCF.js:49584:44)
+    at async resolveConfig (file:///C:/Users/enzojoaquim-ieg/OneDrive%20-%20Instituto%20J&F/%C3%81rea%20de%20Trabalho/Diciplinas%20Tech/IA/IA-interdisciplinar/AI_Multi-Agent/src/observability/front-observer/node_modules/vite/dist/node/chunks/dep-3O3b9SCF.js:49079:24)
+    at async _createServer (file:///C:/Users/enzojoaquim-ieg/OneDrive%20-%20Instituto%20J&F/%C3%81rea%20de%20Trabalho/Diciplinas%20Tech/IA/IA-interdisciplinar/AI_Multi-Agent/src/observability/front-observer/node_modules/vite/dist/node/chunks/dep-3O3b9SCF.js:38664:66)
+    at async CAC.<anonymous> (file:///C:/Users/enzojoaquim-ieg/OneDrive%20-%20Instituto%20J&F/%C3%81rea%20de%20Trabalho/Diciplinas%20Tech/IA/IA-interdisciplinar/AI_Multi-Agent/src/observability/front-observer/node_modules/vite/dist/node/cli.js:753:20)

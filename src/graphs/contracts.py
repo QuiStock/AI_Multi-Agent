@@ -2,24 +2,36 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal, NotRequired, TypedDict
 
 from pydantic import BaseModel, Field, field_validator
 
-from src.graphs.state import RouteName
+from src.agents.schemas.tool_call import ToolCalled
+
+RouterRoute = Literal[
+    "faq",
+    "product_workflow",
+    "clarification_required",
+    "out_of_scope",
+    "memory_recall",
+]
 
 
 class RouteDecision(BaseModel):
     """Structured classification returned by the router model."""
 
-    route: RouteName
+    route: RouterRoute
     reason: str = Field(min_length=1, max_length=240)
-    memory_action: Literal[
-        "none",
-        "pure_recall",
-        "faq_context",
-        "product_context",
-    ] = "none"
+
+
+class RouteResponse(TypedDict):
+    """Router executor response passed to the graph adapter."""
+
+    route: RouterRoute
+    reason: str
+    status: Literal["success", "error"]
+    tool_called: NotRequired[ToolCalled[dict[str, Any]]]
+    error_code: NotRequired[str]
 
 
 class GreetingDecision(BaseModel):

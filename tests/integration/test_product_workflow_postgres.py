@@ -6,7 +6,7 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from psycopg_pool import ConnectionPool
 from testcontainers.community.postgres import PostgresContainer
 
-from src.agents.product_workflow.models import ProductWorkflowContext
+from src.agents.product_workflow.contracts import ProductWorkflowContext
 from src.agents.product_workflow.repository import (
     PostgresProductWorkflowRepository,
 )

@@ -9,7 +9,6 @@ on:
       - pyproject.toml
       - uv.lock
       - src/**
-      - scripts/**
       - .github/workflows/container-arm64.yaml
       - .github/workflows/publish-image.yaml
   workflow_dispatch:

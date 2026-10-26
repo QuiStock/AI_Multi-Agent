@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 class SummaryText(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    summary: str = Field(min_length=1)
+    summary: str = Field(min_length=1, max_length=250)
 
 
 class SummaryUpdater(Protocol):

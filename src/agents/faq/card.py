@@ -1,5 +1,4 @@
 from src.agents.schemas.agent_card import AgentCard, AgentRole
-from src.agents.schemas.policies import FailurePolicy
 from src.agents.schemas.tool_binding import (
     ToolBinding,
     ToolProperty,
@@ -34,14 +33,4 @@ FAQ_CARD = AgentCard(
             ],
         ),
     ],
-    failure_policy=FailurePolicy(
-        on_timeout="fail",
-        max_retries=0,
-        fallback_message=(
-            "Não foi possível consultar a base de conhecimento agora. "
-            "Tente novamente mais tarde."
-        ),
-    ),
-    tags=["faq", "rag", "documentos"],
-    routing_intents=["faq", "politicas", "processos"],
 )

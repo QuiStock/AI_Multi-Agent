@@ -4,8 +4,9 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage
 
+from src.agents.compiler.compiler_node import run_compiler_node
+from src.agents.compiler.compiler_prompt import COMPILER_SYSTEM_PROMPT
 from src.agents.compiler.executor import CompilerExecutor
-from src.graphs.adapters import run_compiler_node
 from src.graphs.contracts import CompilerResult
 
 
@@ -42,6 +43,22 @@ def _executor(result: Any) -> tuple[CompilerExecutor, FakeCompilerAgentFactory]:
     return executor, factory
 
 
+def test_compiler_prompt_explains_numbered_detail_card() -> None:
+    prompt = " ".join(COMPILER_SYSTEM_PROMPT.split())
+
+    assert "escolha numerada" in prompt
+    assert "Não repita selection_id" in prompt
+    assert "outcome" in prompt and "not_found" in prompt
+
+
+def test_compiler_prompt_only_allows_exact_current_turn_pii_markers() -> None:
+    assert "aparecer literalmente na mensagem atual" in COMPILER_SYSTEM_PROMPT
+    assert "Nunca crie, complete, altere ou reutilize um marcador" in (
+        COMPILER_SYSTEM_PROMPT
+    )
+    assert "copie exatamente o marcador correspondente" in COMPILER_SYSTEM_PROMPT
+
+
 def test_compiler_returns_structured_final_response() -> None:
     executor, factory = _executor(
         CompilerResult(
@@ -58,7 +75,6 @@ def test_compiler_returns_structured_final_response() -> None:
                 "faq": {
                     "status": "success",
                     "answer": "A primeira parte da resposta.",
-                    "citation_ids": ["faq-1"],
                 },
             },
             "evidences": [
@@ -122,7 +138,6 @@ def test_compiler_handles_invalid_structured_output() -> None:
                 "faq": {
                     "status": "success",
                     "answer": "Resultado do agente.",
-                    "citation_ids": [],
                 }
             },
         },
@@ -143,7 +158,6 @@ def test_compiler_fails_closed_when_agent_is_unavailable() -> None:
                 "faq": {
                     "status": "success",
                     "answer": "Resultado do agente.",
-                    "citation_ids": [],
                 }
             },
         },
@@ -174,7 +188,6 @@ def test_compiler_forwards_judge_feedback_for_single_reformulation() -> None:
                 "faq": {
                     "status": "success",
                     "answer": "Resultado do agente.",
-                    "citation_ids": ["faq-1"],
                 }
             },
             "evidences": [
@@ -186,11 +199,18 @@ def test_compiler_forwards_judge_feedback_for_single_reformulation() -> None:
                     "metadata": {},
                 }
             ],
-            "judge_feedback": {
+            "judge": {
                 "status": "insufficient_evidence",
                 "reason": "Alegação sem suporte.",
-                "evidence_ids": ["faq-1"],
+                "evidence_count": 1,
                 "reason_code": "unsupported_claim",
+                "repair_attempts": 1,
+                "judge_feedback": {
+                    "status": "insufficient_evidence",
+                    "reason": "Alegação sem suporte.",
+                    "evidence_count": 1,
+                    "reason_code": "unsupported_claim",
+                },
             },
         },
         compiler=executor,
