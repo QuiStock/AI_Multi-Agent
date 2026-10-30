@@ -8,7 +8,7 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 from src.agents.faq.ingestion.processing.models import Chunk
 from src.llm_factory import embeddings
-from src.observability.ai_usage_repository import (
+from src.observability.usage.ai_usage_repository import (
     MongoAIUsageRepository,
     UsageSource,
     UsageStatus,

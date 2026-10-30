@@ -4,7 +4,7 @@ from typing import Any
 from langchain_core.messages import AIMessage, HumanMessage
 
 from src.memory.contracts import StoredMessage
-from src.memory.enrich_context import ConversationContextEnricher
+from src.memory.conversations.enrich_context import ConversationContextEnricher
 
 
 class FakeConversationRepository:

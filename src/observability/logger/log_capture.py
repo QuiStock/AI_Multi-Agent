@@ -11,7 +11,7 @@ from threading import Lock, RLock
 from typing import Any
 from uuid import uuid4
 
-from src.observability.log_context import bind_trace_context, get_log_context
+from .log_context import bind_trace_context, get_log_context
 
 MAX_CAPTURED_LOGS = 1_000
 MAX_LOG_MESSAGE_LENGTH = 4_000

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from src.observability.audit import record_authentication_denial
+from src.observability.logger.audit import record_authentication_denial
 
 
 def test_authentication_audit_records_reason_without_identity_or_credential(

@@ -1,8 +1,8 @@
 from datetime import UTC, datetime
 
 from src.memory.contracts import ConversationSummarySnapshot, StoredMessage
-from src.memory.summary_job_repository import SummaryJob
-from src.memory.summary_reconciler import SummaryReconciler
+from src.memory.jobs.summary_job_repository import SummaryJob
+from src.memory.jobs.summary_reconciler import SummaryReconciler
 
 NOW = datetime(2026, 10, 3, 12, 0, tzinfo=UTC)
 

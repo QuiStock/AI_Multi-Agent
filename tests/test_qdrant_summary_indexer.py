@@ -4,7 +4,7 @@ from typing import Any
 from qdrant_client import models
 
 from src.memory.contracts import ConversationSummarySnapshot, StoredMessage
-from src.memory.qdrant_summary_indexer import QdrantSummaryIndexer
+from src.memory.summaries.qdrant_summary_indexer import QdrantSummaryIndexer
 
 
 def _messages() -> list[StoredMessage]:

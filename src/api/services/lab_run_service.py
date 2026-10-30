@@ -8,8 +8,8 @@ from langchain_core.runnables import Runnable
 
 from src import config
 from src.api.schemas.observability import LabRunRequest
-from src.observability.ai_usage import invoke_with_usage
-from src.observability.ai_usage_repository import MongoAIUsageRepository
+from src.observability.usage.ai_usage import invoke_with_usage
+from src.observability.usage.ai_usage_repository import MongoAIUsageRepository
 
 
 class UnsupportedLabModelError(ValueError):

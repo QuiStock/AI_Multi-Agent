@@ -12,14 +12,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from src import config
 from src.llm_factory import get_structured_model
-from src.observability.ai_usage import invoke_with_usage
-from src.observability.ai_usage_repository import (
+from src.observability.usage.ai_usage import invoke_with_usage
+from src.observability.usage.ai_usage_repository import (
     MongoAIUsageRepository,
     bind_usage_conversation,
 )
 
 from ..contracts import ConversationSummarySnapshot, StoredMessage
-from ..mongo_repository import MongoConversationRepository
+from ..conversations.mongo_repository import MongoConversationRepository
 from .summary_prompt import SUMMARY_SYSTEM_PROMPT
 from .title_generator import LLMConversationTitleGenerator, TitleGenerator
 

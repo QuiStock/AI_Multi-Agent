@@ -6,7 +6,7 @@ from src.api.schemas.conversation_history import (
     ConversationHistoryMessageResponse,
     ConversationHistoryResponse,
 )
-from src.memory.mongo_repository import MongoConversationRepository
+from src.memory.conversations.mongo_repository import MongoConversationRepository
 
 
 class ConversationHistoryUnavailableError(RuntimeError):

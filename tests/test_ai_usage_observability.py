@@ -7,8 +7,8 @@ from uuid import uuid4
 
 import pytest
 
-from src.observability.ai_usage import AIUsageCallbackHandler, invoke_with_usage
-from src.observability.ai_usage_repository import (
+from src.observability.usage.ai_usage import AIUsageCallbackHandler, invoke_with_usage
+from src.observability.usage.ai_usage_repository import (
     MongoAIUsageRepository,
     bind_usage_conversation,
     current_usage_conversation_id,

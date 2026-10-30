@@ -10,9 +10,9 @@ from src.memory.contracts import (
     SummarySearchRequest,
     VersionedConversationSummary,
 )
-from src.memory.get_summary_context import get_summary_context
-from src.memory.mongo_repository import MongoConversationRepository
-from src.memory.service import SummaryContextService, SummarySearchConfig
+from src.memory.conversations.mongo_repository import MongoConversationRepository
+from src.memory.summaries.get_summary_context import get_summary_context
+from src.memory.summaries.service import SummaryContextService, SummarySearchConfig
 
 
 class FakeQdrant:

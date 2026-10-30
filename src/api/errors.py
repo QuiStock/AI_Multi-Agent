@@ -11,7 +11,7 @@ from src.api.services.conversation_history_service import (
     ConversationHistoryUnavailableError,
 )
 from src.api.services.conversation_list_service import ConversationListValidationError
-from src.memory.mongo_repository import (
+from src.memory.conversations.mongo_repository import (
     ConversationClosedError,
     ConversationNotEndedError,
     ConversationNotFoundError,

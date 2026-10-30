@@ -16,7 +16,7 @@ from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.outputs import LLMResult
 from pydantic import BaseModel
 
-from src.observability.log_context import LogContext, set_log_context
+from src.observability.logger.log_context import LogContext, set_log_context
 
 SpanKind = Literal["turn", "graph", "node", "chain", "llm", "tool", "retriever"]
 SpanStatus = Literal["running", "completed", "error", "interrupted"]

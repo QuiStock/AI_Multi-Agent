@@ -4,15 +4,15 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 from src import config
-from src.memory.mongo_repository import MongoConversationRepository
-from src.observability.ai_usage_repository import MongoAIUsageRepository
+from src.memory.conversations.mongo_repository import MongoConversationRepository
 from src.observability.metrics import (
     ModelPricing,
     calculate_application_cost,
     calculate_metrics,
     calculate_slo_metrics,
 )
-from src.observability.trace_repository import MongoTraceRepository, TraceStatus
+from src.observability.traces.trace_repository import MongoTraceRepository, TraceStatus
+from src.observability.usage.ai_usage_repository import MongoAIUsageRepository
 
 
 class ObservabilityService:
