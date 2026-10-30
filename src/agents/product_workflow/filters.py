@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-EMPLOYEE_ROLE_ID = 3
-MANAGER_ROLE_ID = 2
+EMPLOYEE_ROLE_CODE = "EMPLOYEE"
+MANAGER_ROLE_CODE = "MANAGER"
 MAX_PRODUCT_QUERY_LENGTH = 200
 PRODUCT_SEARCH_PAGE_SIZE = 6
 MAX_PRODUCT_SEARCH_PAGE = 100
@@ -40,13 +40,13 @@ NOT EXISTS (
 """
 
 
-def visibility_clause(role_id: int) -> str:
+def visibility_clause(role_code: str) -> str:
     """Return the fixed visibility predicate for an authenticated role."""
 
-    if role_id == EMPLOYEE_ROLE_ID:
+    if role_code == EMPLOYEE_ROLE_CODE:
         return (
             "s.available_for_triage IS TRUE AND s.status::text = 'IN_EMPLOYEE_TRIAGE'"
         )
-    if role_id == MANAGER_ROLE_ID:
+    if role_code == MANAGER_ROLE_CODE:
         return "s.status::text = 'SENT_TO_MANAGER'"
     raise PermissionError("Cargo sem acesso ao Product Workflow")

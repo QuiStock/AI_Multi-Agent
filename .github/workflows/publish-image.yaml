@@ -45,12 +45,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and publish ARM64 API image
-        id: api_image
+      - name: Build and publish ARM64 image
+        id: image
         uses: docker/build-push-action@v7
         with:
           context: .
-          file: Dockerfile.api
           platforms: linux/arm64
           push: true
           tags: ghcr.io/quistock/ai-multi-agent:${{ env.IMAGE_TAG }}
@@ -58,29 +57,14 @@ jobs:
             org.opencontainers.image.source=https://github.com/QuiStock/AI_Multi-Agent
             org.opencontainers.image.revision=${{ github.sha }}
 
-      - name: Build and publish ARM64 worker image
-        id: worker_image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: Dockerfile.worker
-          platforms: linux/arm64
-          push: true
-          tags: ghcr.io/quistock/ai-multi-agent-worker:${{ env.IMAGE_TAG }}
-          labels: |
-            org.opencontainers.image.source=https://github.com/QuiStock/AI_Multi-Agent
-            org.opencontainers.image.revision=${{ github.sha }}
-
-      - name: Record immutable image references
+      - name: Record immutable image reference
         env:
-          API_IMAGE_DIGEST: ${{ steps.api_image.outputs.digest }}
-          WORKER_IMAGE_DIGEST: ${{ steps.worker_image.outputs.digest }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
         shell: bash
         run: |
-          printf 'ARM64 API image: %s\n' "ghcr.io/quistock/ai-multi-agent@$API_IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"
-          printf 'ARM64 worker image: %s\n' "ghcr.io/quistock/ai-multi-agent-worker@$WORKER_IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"
+          printf 'ARM64 image: %s\n' "ghcr.io/quistock/ai-multi-agent@$IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"
           if [ -z "$INFRA_REPO_TOKEN" ]; then
-            printf 'No INFRA_REPO_TOKEN configured: fill both digests in Infra manually.\n' >> "$GITHUB_STEP_SUMMARY"
+            printf 'No INFRA_REPO_TOKEN configured: fill this digest in Infra manually.\n' >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Check out Infra repository
@@ -92,11 +76,10 @@ jobs:
           path: infra
           token: ${{ secrets.INFRA_REPO_TOKEN }}
 
-      - name: Update desired images in Infra
+      - name: Update desired image in Infra
         if: ${{ env.INFRA_REPO_TOKEN != '' }}
         env:
-          API_IMAGE_DIGEST: ${{ steps.api_image.outputs.digest }}
-          WORKER_IMAGE_DIGEST: ${{ steps.worker_image.outputs.digest }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
         shell: bash
         run: |
           python3 - <<'PY'
@@ -104,24 +87,18 @@ jobs:
           import re
           from pathlib import Path
 
+          digest = os.environ["IMAGE_DIGEST"]
+          if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+              raise SystemExit("Expected a SHA-256 image digest")
+
           path = Path("infra/clusters/us-east1/apps/api-chatbot/deployment.yaml")
           manifest = path.read_text(encoding="utf-8")
-          for container, repository, digest in (
-              ("api-chatbot", "ai-multi-agent", os.environ["API_IMAGE_DIGEST"]),
-              ("summary-worker", "ai-multi-agent-worker", os.environ["WORKER_IMAGE_DIGEST"]),
-          ):
-              if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
-                  raise SystemExit(f"Expected a SHA-256 image digest for {container}")
-              image = f"ghcr.io/quistock/{repository}@{digest}"
-              pattern = (
-                  rf"(?m)^([ \t]*- name:[ \t]*{re.escape(container)}[ \t]*\n"
-                  r"[ \t]*image:[ \t]*)(?:ghcr\.io/quistock/ai-multi-agent(?:-worker)?"
-                  r"(?:[:@])[^\s]+|REPLACE_WITH_CHATBOT(?:_WORKER)?_ARM64_IMAGE_DIGEST)[ \t]*$"
-              )
-              manifest, count = re.subn(pattern, lambda match: match.group(1) + image, manifest)
-              if count != 1:
-                  raise SystemExit(f"Expected exactly one {container} image in {path}, found {count}")
-          path.write_text(manifest, encoding="utf-8")
+          image = f"ghcr.io/quistock/ai-multi-agent@{digest}"
+          pattern = r"(?m)^([ \t]*image:[ \t]*)(?:ghcr\.io/quistock/ai-multi-agent(?:[:@])[^\s]+|REPLACE_WITH_CHATBOT_ARM64_IMAGE_DIGEST)$"
+          updated, count = re.subn(pattern, lambda match: match.group(1) + image, manifest)
+          if count != 1:
+              raise SystemExit(f"Expected exactly one api-chatbot image in {path}, found {count}")
+          path.write_text(updated, encoding="utf-8")
           PY
 
       - name: Open deployment PR in Infra
@@ -137,9 +114,8 @@ jobs:
           commit-message: "deploy(api-chatbot): ${{ env.IMAGE_TAG }}"
           title: "deploy(api-chatbot): ${{ env.IMAGE_TAG }}"
           body: |
-            Atualiza api-chatbot com a imagem ARM64 `ghcr.io/quistock/ai-multi-agent@${{ steps.api_image.outputs.digest }}`.
-            Atualiza summary-worker com a imagem ARM64 `ghcr.io/quistock/ai-multi-agent-worker@${{ steps.worker_image.outputs.digest }}`.
+            Atualiza api-chatbot com a imagem ARM64 `ghcr.io/quistock/ai-multi-agent@${{ steps.image.outputs.digest }}`.
             Origem: https://github.com/QuiStock/AI_Multi-Agent/commit/${{ github.sha }}.
 
-            O workflow altera somente as referências das imagens. Secrets e IDs Bitwarden continuam no bootstrap/Infra.
+            O workflow altera somente o digest. Secrets e IDs Bitwarden continuam no bootstrap/Infra.
             Argo CD acompanha main; aplicar depende do merge das PRs de Infra e do preenchimento dos Secrets.

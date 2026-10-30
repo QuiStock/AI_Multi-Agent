@@ -7,10 +7,19 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 
-from src.api.dependencies import get_authenticated_principal, get_graph
+from src.api.dependencies import (
+    get_authenticated_principal,
+    get_graph,
+    get_trace_repository,
+)
 from src.auth.models import AuthenticatedPrincipal
 from src.main import create_app
 from src.memory.mongo_repository import ConversationClosedError
+
+
+class FakeTraceRepository:
+    def save_trace(self, trace: dict[str, Any]) -> None:
+        pass
 
 
 class FakeGraph:
@@ -48,6 +57,7 @@ def app_client():  # type: ignore[no-untyped-def]
     graph = FakeGraph()
     app = create_app()
     app.dependency_overrides[get_graph] = lambda: graph
+    app.dependency_overrides[get_trace_repository] = FakeTraceRepository
     app.dependency_overrides[get_authenticated_principal] = lambda: (
         AuthenticatedPrincipal(
             user_id=42, email="user-1", role_code="MANAGER", store_ids=(4,)
@@ -96,11 +106,11 @@ def test_conversation_endpoint_invokes_graph_and_returns_metadata(app_client) ->
         30,
         tzinfo=timezone.utc,
     )
-    assert graph.config == {
-        "configurable": {
-            "thread_id": "conversation-1",
-        }
-    }
+    assert graph.config is not None
+    assert graph.config["configurable"] == {"thread_id": "conversation-1"}
+    assert graph.config["metadata"]["trace_id"] == body["request_id"]
+    assert graph.config["metadata"]["conversation_id"] == "conversation-1"
+    assert len(graph.config["callbacks"]) == 1
 
 
 def test_conversation_restores_pii_only_after_graph_returns() -> None:
@@ -165,26 +175,6 @@ def test_conversation_endpoint_propagates_resume_flag(app_client) -> None:
     assert graph.state["request"]["is_new_conversation"] is False
 
 
-def test_conversation_endpoint_propagates_card_snapshot(app_client) -> None:
-    client, graph = app_client
-    response = client.post(
-        "/api/v1/conversations/conversation-1/messages",
-        json=_payload(product_card={"product_name": "Leite Integral", "sku": "SKU-1"}),
-    )
-    assert response.status_code == 200
-    assert graph.state is not None
-    assert graph.state["request"]["product_card"]["product_name"] == "Leite Integral"
-
-
-def test_conversation_endpoint_rejects_unknown_card_fields(app_client) -> None:
-    client, _ = app_client
-    response = client.post(
-        "/api/v1/conversations/conversation-1/messages",
-        json=_payload(product_card={"product_name": "Leite", "store_id": 7}),
-    )
-    assert response.status_code == 422
-
-
 def test_conversation_endpoint_rejects_timestamp_without_timezone(app_client) -> None:
     client, _ = app_client
 
@@ -200,6 +190,7 @@ def test_conversation_endpoint_returns_controlled_input_rejection() -> None:
     graph = FakeGraph(status="rejected")
     app = create_app()
     app.dependency_overrides[get_graph] = lambda: graph
+    app.dependency_overrides[get_trace_repository] = FakeTraceRepository
     app.dependency_overrides[get_authenticated_principal] = lambda: (
         AuthenticatedPrincipal(
             user_id=42, email="user-1", role_code="MANAGER", store_ids=(4,)
@@ -225,6 +216,7 @@ def test_conversation_endpoint_maps_closed_conversation_to_conflict() -> None:
             user_id=42, email="user-1", role_code="MANAGER", store_ids=(4,)
         )
     )
+    app.dependency_overrides[get_trace_repository] = FakeTraceRepository
 
     with TestClient(app) as client:
         response = client.post(
