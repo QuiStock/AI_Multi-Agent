@@ -295,7 +295,7 @@ def test_faq_adapter_calls_executor_and_normalizes_answer() -> None:
             "request_id": "request-1",
             "email": "manager@example.com",
             "conversation_id": "conversation-1",
-            "role_id": 2,
+            "role_code": "MANAGER",
         },
         "messages": [HumanMessage(content="Qual é a regra?")],
     }

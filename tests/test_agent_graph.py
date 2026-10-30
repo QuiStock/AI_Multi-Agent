@@ -322,7 +322,7 @@ def _graph_input(content: str) -> dict[str, Any]:
             "request_id": "request-1",
             "email": "user-1",
             "conversation_id": "conversation-1",
-            "role_id": 3,
+            "role_code": "EMPLOYEE",
         },
         "messages": [HumanMessage(content=content, id="request-1:user")],
     }

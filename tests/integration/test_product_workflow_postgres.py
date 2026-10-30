@@ -247,7 +247,9 @@ def test_product_workflow_reads_postgres_with_select_only_grants() -> None:
             suggestions = repository.search_product_suggestions(
                 ProductWorkflowContext(
                     email="reader@example.test",
-                    role_id=2,
+                    user_id=7,
+                    role_code="MANAGER",
+                    store_ids=(30,),
                     request_id="request-1",
                     trace_id="trace-1",
                 ),
@@ -258,7 +260,9 @@ def test_product_workflow_reads_postgres_with_select_only_grants() -> None:
             detail = repository.get_product_suggestion_detail(
                 ProductWorkflowContext(
                     email="reader@example.test",
-                    role_id=2,
+                    user_id=7,
+                    role_code="MANAGER",
+                    store_ids=(30,),
                     request_id="request-2",
                     trace_id="trace-2",
                 ),
