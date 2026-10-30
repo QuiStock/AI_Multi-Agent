@@ -256,7 +256,7 @@ def parse_selection_token(selection_id: str) -> tuple[int, str | None]:
         if len(parts) not in {2, 3}:
             raise ValueError("Referência de seleção inválida")
         normalized_id = parts[1]
-        fingerprint = parts[2] if len(parts) == 3 else None
+        fingerprint = parts[2] if len(parts) == 3 else None  # noqa: PLR2004
         if (
             fingerprint is not None
             and re.fullmatch(r"[0-9a-f]{16}", fingerprint) is None

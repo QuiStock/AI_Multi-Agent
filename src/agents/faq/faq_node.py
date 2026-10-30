@@ -112,10 +112,10 @@ def _evidences(payload: Mapping[str, Any] | None) -> list[Evidence]:
             continue
         evidences.append(
             {
-                "evidence_id": evidence_id,
+                "evidence_id": cast(str, evidence_id),
                 "source_type": "faq_document",
-                "source_id": source_id,
-                "content": content,
+                "source_id": cast(str, source_id),
+                "content": cast(str, content),
                 "metadata": dict(metadata) if isinstance(metadata, Mapping) else {},
             }
         )
@@ -140,7 +140,9 @@ def _controlled_answer(error_code: str | None) -> str:
     return FAQ_CONTROLLED_MESSAGE
 
 
-def faq_node(state: GraphState, *, executor: FAQExecutor) -> GraphState:
+def faq_node(  # noqa: C901, PLR0912, PLR0915
+    state: GraphState, *, executor: FAQExecutor
+) -> GraphState:
     current_state = cast(GraphState, dict(state))
     context = _execution_context(current_state)
     if context is None:
@@ -179,8 +181,8 @@ def faq_node(state: GraphState, *, executor: FAQExecutor) -> GraphState:
         tool_result = None
 
     if tool_result is not None and tool_result.status.value == "error":
-        error = tool_result.error
-        error_code = error.code if error is not None else error_code
+        tool_error = tool_result.error
+        error_code = tool_error.code if tool_error is not None else error_code
         unavailable = error_code == "FAQ_DEPENDENCY_UNAVAILABLE"
         answer = _controlled_answer(error_code)
         result = {

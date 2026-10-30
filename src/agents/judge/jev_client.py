@@ -75,7 +75,7 @@ _JUDGE_RULES = (
     "O título da lista e a frase final, para pedir a próxima página ou para "
     "escolher um número, fazem parte dessa resposta e não são alegação sem "
     "suporte. Essa lista não contradiz a mensagem anterior. O pedido "
-    "\"próxima página\" é o mesmo caso de página_n. Quando o candidate "
+    '"próxima página" é o mesmo caso de página_n. Quando o candidate '
     "tem suggestion_type, o sufixo (pedido) ou (promoção) faz parte da "
     "lista fiel. Aprove essa lista com reason_code none. Se a evidência "
     "for um único card unique de promotion-expiration, explicar esse "
@@ -328,11 +328,11 @@ class TypeSafeJevClient:
             with urlopen(request, timeout=self.timeout_seconds) as response:
                 raw_response = response.read()
         except HTTPError as exc:
-            if exc.code == 401:
+            if exc.code == 401:  # noqa: PLR2004
                 code = "JEV_AUTHENTICATION_FAILED"
-            elif exc.code == 429:
+            elif exc.code == 429:  # noqa: PLR2004
                 code = "JEV_RATE_LIMITED"
-            elif exc.code == 529:
+            elif exc.code == 529:  # noqa: PLR2004
                 code = "JEV_OVERLOADED"
             else:
                 code = "JEV_HTTP_ERROR"

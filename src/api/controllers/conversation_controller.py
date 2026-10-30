@@ -10,7 +10,7 @@ class ConversationController:
     def __init__(self, service: ConversationService) -> None:
         self._service = service
 
-    def converse(
+    def converse(  # noqa: PLR0913
         self,
         *,
         conversation_id: str,

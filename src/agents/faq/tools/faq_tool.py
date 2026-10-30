@@ -184,7 +184,7 @@ def faq_search(query: str, *, context: FAQSearchContext) -> str:
     return serialize_and_capture(result)
 
 
-def create_faq_search_tool(
+def create_faq_search_tool(  # noqa: PLR0913
     retriever: QdrantRetriever,
     *,
     allowed_audiences: Sequence[Audience],

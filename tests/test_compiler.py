@@ -52,11 +52,11 @@ def test_compiler_prompt_explains_numbered_detail_card() -> None:
 
 
 def test_compiler_prompt_only_allows_exact_current_turn_pii_markers() -> None:
-    assert "aparecer literalmente na mensagem atual" in COMPILER_SYSTEM_PROMPT
-    assert "Nunca crie, complete, altere ou reutilize um marcador" in (
-        COMPILER_SYSTEM_PROMPT
-    )
-    assert "copie exatamente o marcador correspondente" in COMPILER_SYSTEM_PROMPT
+    prompt = " ".join(COMPILER_SYSTEM_PROMPT.split())
+
+    assert "Marcadores PII são tokens opacos" in prompt
+    assert "na mensagem atual do usuário" in prompt
+    assert "copie exatamente o marcador correspondente" in prompt
 
 
 def test_compiler_returns_structured_final_response() -> None:

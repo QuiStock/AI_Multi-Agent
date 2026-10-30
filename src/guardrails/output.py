@@ -13,6 +13,7 @@ CONTROLLED_OUTPUT_RESPONSE = (
     "Tente novamente ou entre em contato com o suporte."
 )
 
+
 def _controlled_correction(
     reason_code: str,
     reason: str,

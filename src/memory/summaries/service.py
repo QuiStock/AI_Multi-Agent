@@ -7,12 +7,13 @@ from zoneinfo import ZoneInfo
 
 from qdrant_client import QdrantClient
 
-from .contracts import (
+from src.memory.contracts import (
     MAX_SUMMARY_RESULTS,
     ConversationSummary,
     SummaryContextSelection,
     SummarySearchRequest,
 )
+
 from .get_summary_context import (
     get_recent_summary_context,
     get_summary_context,
@@ -88,11 +89,7 @@ class SummaryContextService:
         )
         if (start_date is None) != (end_date is None):
             raise ValueError("start_date e end_date devem ser informados juntos")
-        if (
-            start_date is not None
-            and end_date is not None
-            and start_date > end_date
-        ):
+        if start_date is not None and end_date is not None and start_date > end_date:
             raise ValueError("start_date deve ser anterior ou igual a end_date")
         if hasattr(
             self._qdrant, "collection_exists"
@@ -108,9 +105,7 @@ class SummaryContextService:
         if start_date is not None and end_date is not None:
             zone = ZoneInfo(self._search_config.timezone_name)
             start = datetime.combine(start_date, time.min, tzinfo=zone)
-            end = datetime.combine(
-                end_date + timedelta(days=1), time.min, tzinfo=zone
-            )
+            end = datetime.combine(end_date + timedelta(days=1), time.min, tzinfo=zone)
             candidates = get_temporal_summary_context(
                 request=request,
                 start=start,

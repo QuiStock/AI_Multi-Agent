@@ -49,7 +49,7 @@ def _is_evidence(value: object) -> bool:
     return isinstance(source, str) and source in _RETRIEVAL_SOURCES
 
 
-def _valid_response(value: object) -> bool:
+def _valid_response(value: object) -> bool:  # noqa: C901, PLR0911, PLR0912
     if not isinstance(value, Mapping):
         return False
     route = value.get("route")
@@ -59,7 +59,7 @@ def _valid_response(value: object) -> bool:
     if status not in ("success", "error"):
         return False
     reason = value.get("reason")
-    if not isinstance(reason, str) or not reason.strip() or len(reason) > 240:
+    if not isinstance(reason, str) or not reason.strip() or len(reason) > 240:  # noqa: PLR2004
         return False
 
     error_code = value.get("error_code")
@@ -128,7 +128,7 @@ def _tool_error(response: RouteResponse) -> tuple[str, bool] | None:
     )
 
 
-def _error_update(
+def _error_update(  # noqa: PLR0913
     *,
     code: str,
     source: Literal["model", "tool", "executor", "validation"],

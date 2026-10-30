@@ -45,7 +45,7 @@ _UNAVAILABLE = {
 }
 
 
-def run_product_workflow_node(
+def run_product_workflow_node(  # noqa: C901, PLR0912
     state: GraphState,
     *,
     executor: ProductWorkflowExecutor,
@@ -292,7 +292,7 @@ def _evidence(item: object) -> Evidence | None:
     if isinstance(metadata, Mapping):
         for key, value in metadata.items():
             if isinstance(key, str) and _json_scalar(value):
-                safe_metadata[key] = value
+                safe_metadata[key] = value  # noqa: PERF403
     return {
         "evidence_id": evidence_id,
         "source_type": "product_workflow",
@@ -341,7 +341,7 @@ def _candidate_line(
     candidate: Mapping[str, object],
 ) -> str:
     requested = data.get("suggestion_types") if isinstance(data, Mapping) else None
-    if not isinstance(requested, list) or len(requested) < 2:
+    if not isinstance(requested, list) or len(requested) < 2:  # noqa: PLR2004
         return f"{position}. {name}"
     kind = candidate.get("suggestion_type")
     if kind == "ORDER":
@@ -389,7 +389,9 @@ def _ambiguous_answer(data: Mapping[str, object] | None) -> str:
     return "\n".join(lines) if lines else PRODUCT_WORKFLOW_AMBIGUOUS_RESPONSE
 
 
-def _not_found_answer(data: Mapping[str, object] | None) -> str:
+def _not_found_answer(  # noqa: PLR0911
+    data: Mapping[str, object] | None,
+) -> str:
     if not isinstance(data, Mapping):
         return PRODUCT_WORKFLOW_NOT_FOUND_RESPONSE
     page = data.get("page")

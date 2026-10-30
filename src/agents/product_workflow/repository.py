@@ -279,7 +279,7 @@ class PostgresProductWorkflowRepository:
                 until=until,
                 offset=offset,
             )
-        if direction != "nearest" and direction != "longest":
+        if direction != "nearest" and direction != "longest":  # noqa: PLR1714
             raise ValueError("Direção de validade inválida")
         return self._promotions_by_extreme(
             context,
@@ -497,7 +497,7 @@ def _listing_record_from_row(
             ],
             str(row[8]),
         ),
-        promotion_valid_until=row[9] if len(row) > 9 else None,
+        promotion_valid_until=row[9] if len(row) > 9 else None,  # noqa: PLR2004
     )
 
 

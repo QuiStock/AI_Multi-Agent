@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from typing import Literal
 
-from .contracts import ConversationRepository, ConversationTurn, StoredMessage
+from src.memory.contracts import ConversationRepository, ConversationTurn, StoredMessage
 
 
 class MemoryMessageService:

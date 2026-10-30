@@ -5,7 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from .contracts import ConversationSummarySnapshot
+from src.memory.contracts import ConversationSummarySnapshot
+
 from .summary_job_repository import SummaryJob
 
 
@@ -91,7 +92,7 @@ class SummaryReconciler:
             if not isinstance(conversation_id, str):
                 continue
             if conversation_id not in ended_ids:
-                if states.get(conversation_id) == "active":
+                if states.get(conversation_id) == "active":  # noqa: SIM102
                     if callable(getattr(self._indexer, "mark_active", None)):
                         self._indexer.mark_active(conversation_id)
                         continue

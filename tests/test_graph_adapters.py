@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import datetime, timezone
 from typing import Any, cast
 
 from langchain_core.messages import (
@@ -12,12 +13,19 @@ from langchain_core.messages import (
 
 from src.agents.compiler.compiler_node import run_compiler_node
 from src.agents.faq.faq_node import faq_node
+from src.agents.faq.tools.schemas import FAQSearchData, FAQSearchItem
 from src.agents.judge.jev_node import run_judge_node
 from src.agents.product_workflow.product_workflow_node import (
     run_product_workflow_node,
 )
 from src.agents.router.executor import RouterExecutor
 from src.agents.router.router_node import run_router_node
+from src.agents.schemas.tool_result import (
+    ToolEvidence,
+    ToolMetadata,
+    ToolResult,
+    ToolStatus,
+)
 from src.graphs.adapters import (
     run_context_enrichment_node,
 )
@@ -51,21 +59,61 @@ class FakeRouterExecutor:
 
 class FakeFAQExecutor:
     def __init__(self) -> None:
-        self.state: dict[str, Any] | None = None
+        self.messages: list[AnyMessage] | None = None
+        self.allowed_audiences: tuple[str, ...] | None = None
+        self.request_id: str | None = None
+        self.trace_id: str | None = None
 
-    def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
-        self.state = state
-        return {
-            "answer": "Resposta baseada na documentação.",
-            "evidences": [
-                {
-                    "evidence_id": "faq-1",
-                    "source_type": "faq_document",
-                    "source_id": "manual.md",
-                    "content": "Conteúdo da documentação.",
-                    "metadata": {},
-                }
+    def invoke(
+        self,
+        *,
+        messages: list[AnyMessage],
+        allowed_audiences: tuple[str, ...],
+        request_id: str,
+        trace_id: str,
+    ) -> dict[str, Any]:
+        self.messages = list(messages)
+        self.allowed_audiences = allowed_audiences
+        self.request_id = request_id
+        self.trace_id = trace_id
+        payload = ToolResult[FAQSearchData](
+            status=ToolStatus.SUCCESS,
+            data=FAQSearchData(
+                query="Qual é a regra?",
+                outcome="found",
+                result_count=1,
+                results=[
+                    FAQSearchItem(
+                        file_name="manual.md",
+                        content="Conteúdo da documentação.",
+                        relevance=0.9,
+                    )
+                ],
+            ),
+            evidence=[
+                ToolEvidence(
+                    evidence_id="faq-1",
+                    source_type="faq_document",
+                    source_id="manual.md",
+                    content="Conteúdo da documentação.",
+                )
             ],
+            meta=ToolMetadata(
+                tool_name="faq_search",
+                tool_version="1.0.0",
+                tool_call_id="call-1",
+                trace_id=trace_id,
+                timestamp=datetime(2026, 10, 30, tzinfo=timezone.utc),
+            ),
+        )
+        return {
+            "status": "success",
+            "answer": "Resposta baseada na documentação.",
+            "tool_called": {
+                "tool_name": "faq_search",
+                "status": "success",
+                "toolResult": payload.model_dump(mode="json"),
+            },
         }
 
 
@@ -302,9 +350,10 @@ def test_faq_adapter_calls_executor_and_normalizes_answer() -> None:
 
     result = faq_node(state, executor=executor)
 
-    assert executor.state is not None
-    assert executor.state["messages"] == state["messages"]
-    assert executor.state["request"] == state["request"]
+    assert executor.messages == state["messages"]
+    assert executor.allowed_audiences == ("shared", "manager")
+    assert executor.request_id == "request-1"
+    assert executor.trace_id == "request-1"
     assert result["agent_results"]["faq"] == {
         "status": "success",
         "answer": "Resposta baseada na documentação.",

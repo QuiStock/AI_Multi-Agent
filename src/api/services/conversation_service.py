@@ -49,7 +49,7 @@ class ConversationService:
         self._trace_repository = trace_repository
         self._guardrail_config = GuardrailConfig()
 
-    def converse(  # noqa: C901, PLR0912, PLR0915
+    def converse(  # noqa: C901, PLR0912, PLR0913, PLR0915
         self,
         *,
         conversation_id: str,

@@ -5,7 +5,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from qdrant_client import QdrantClient, models
 
-from .contracts import ConversationSummarySnapshot
+from src.memory.contracts import ConversationSummarySnapshot
 
 
 def ensure_summary_payload_indexes(

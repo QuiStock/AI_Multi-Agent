@@ -110,9 +110,7 @@ class Settings(BaseSettings):
     def configure_faq_paths(self) -> Settings:
         """Derive FAQ paths from FAQ_DATA_DIR when specific paths are absent."""
         if self.auth_bypass_local_tests and self.app_environment != "development":
-            raise ValueError(
-                "AUTH_BYPASS_LOCAL_TESTS só pode ser usado em development"
-            )
+            raise ValueError("AUTH_BYPASS_LOCAL_TESTS só pode ser usado em development")
 
         if self.faq_docs_dir is None:
             self.faq_docs_dir = self.faq_data_dir / "docs"

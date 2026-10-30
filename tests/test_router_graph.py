@@ -10,22 +10,21 @@ from src.agents.router.router_prompt import ROUTER_SYSTEM_PROMPT
 from src.graphs.contracts import RouteDecision
 
 
-class FakeRouterModel:
+class ScriptedRouterAgent:
     def __init__(self, decision: RouteDecision) -> None:
         self.decision = decision
-
-    def invoke(self, messages: list[Any]) -> RouteDecision:
-        return self.decision
-
-
-class CapturingRouterModel(FakeRouterModel):
-    def __init__(self, decision: RouteDecision) -> None:
-        super().__init__(decision)
         self.messages: list[Any] = []
 
-    def invoke(self, messages: list[Any]) -> RouteDecision:
-        self.messages = messages
-        return super().invoke(messages)
+    def invoke(self, agent_input: dict[str, Any]) -> dict[str, Any]:
+        self.messages = list(agent_input.get("messages", []))
+        return {"structured_response": self.decision}
+
+
+def _scripted_executor(
+    decision: RouteDecision,
+) -> tuple[RouterExecutor, ScriptedRouterAgent]:
+    agent = ScriptedRouterAgent(decision)
+    return RouterExecutor(agent_factory=lambda **_: agent), agent
 
 
 def _state(message: str) -> dict[str, Any]:
@@ -49,8 +48,8 @@ def _state_with_product_card(message: str) -> dict[str, Any]:
 
 
 def test_router_dispatches_only_to_active_faq_route() -> None:
-    executor = RouterExecutor(
-        model=FakeRouterModel(RouteDecision(route="faq", reason="Pergunta documental."))
+    executor, _agent = _scripted_executor(
+        RouteDecision(route="faq", reason="Pergunta documental.")
     )
 
     result = run_router_node(
@@ -68,12 +67,10 @@ def test_router_dispatches_only_to_active_faq_route() -> None:
 
 
 def test_router_keeps_clarification_as_controlled_route() -> None:
-    executor = RouterExecutor(
-        model=FakeRouterModel(
-            RouteDecision(
-                route="clarification_required",
-                reason="Falta especificar a informação desejada.",
-            )
+    executor, _agent = _scripted_executor(
+        RouteDecision(
+            route="clarification_required",
+            reason="Falta especificar a informação desejada.",
         )
     )
 
@@ -85,12 +82,10 @@ def test_router_keeps_clarification_as_controlled_route() -> None:
 
 
 def test_router_keeps_out_of_scope_as_controlled_route() -> None:
-    executor = RouterExecutor(
-        model=FakeRouterModel(
-            RouteDecision(
-                route="out_of_scope",
-                reason="A solicitação não pertence à capacidade ativa.",
-            )
+    executor, _agent = _scripted_executor(
+        RouteDecision(
+            route="out_of_scope",
+            reason="A solicitação não pertence à capacidade ativa.",
         )
     )
 
@@ -120,13 +115,12 @@ def test_invalid_router_output_falls_back_to_clarification() -> None:
 
 
 def test_router_exposes_only_safe_product_identity_to_model() -> None:
-    model = CapturingRouterModel(
+    executor, model = _scripted_executor(
         RouteDecision(
             route="product_workflow",
             reason="A pergunta se refere ao produto apresentado no card.",
         )
     )
-    executor = RouterExecutor(model=model)
 
     result = run_router_node(
         _state_with_product_card("Me explique este produto."),
@@ -150,10 +144,9 @@ def test_router_exposes_only_safe_product_identity_to_model() -> None:
 
 
 def test_router_preserves_faq_for_general_policy_with_product_card() -> None:
-    model = CapturingRouterModel(
+    executor, model = _scripted_executor(
         RouteDecision(route="faq", reason="A pergunta é uma política geral.")
     )
-    executor = RouterExecutor(model=model)
 
     result = run_router_node(
         _state_with_product_card("Qual é a política de promoções do aplicativo?"),
@@ -164,13 +157,12 @@ def test_router_preserves_faq_for_general_policy_with_product_card() -> None:
 
 
 def test_router_requires_clarification_for_product_reference_without_card() -> None:
-    model = CapturingRouterModel(
+    executor, model = _scripted_executor(
         RouteDecision(
             route="clarification_required",
             reason="Não há um produto identificado para a consulta.",
         )
     )
-    executor = RouterExecutor(model=model)
 
     result = run_router_node(
         _state("Me explique este produto."),
@@ -186,13 +178,12 @@ def test_router_requires_clarification_for_product_reference_without_card() -> N
 
 
 def test_router_keeps_ambiguous_card_question_in_clarification() -> None:
-    model = CapturingRouterModel(
+    executor, model = _scripted_executor(
         RouteDecision(
             route="clarification_required",
             reason="A pergunta não identifica a informação desejada.",
         )
     )
-    executor = RouterExecutor(model=model)
 
     result = run_router_node(
         _state_with_product_card("Pode me ajudar?"),
@@ -214,11 +205,15 @@ def test_router_can_call_summary_search_tool_from_authenticated_request_context(
             email: str,
             conversation_id: str,
             query: str,
+            start_date: object = None,
+            end_date: object = None,
         ) -> dict[str, Any]:
             self.arguments = {
                 "email": email,
                 "conversation_id": conversation_id,
                 "query": query,
+                "start_date": start_date,
+                "end_date": end_date,
             }
             return {"source": "none", "results": []}
 
@@ -241,9 +236,6 @@ def test_router_can_call_summary_search_tool_from_authenticated_request_context(
         return FakeToolCallingAgent()
 
     executor = RouterExecutor(
-        model=FakeRouterModel(
-            RouteDecision(route="out_of_scope", reason="Fallback não usado.")
-        ),
         summary_search_service=service,  # type: ignore[arg-type]
         agent_factory=fake_agent_factory,
     )
@@ -264,10 +256,16 @@ def test_router_can_call_summary_search_tool_from_authenticated_request_context(
         "email": "authenticated-user",
         "conversation_id": "current-conversation",
         "query": "O que combinamos antes?",
+        "start_date": None,
+        "end_date": None,
     }
     assert captured["tools"][0].name == "search_conversation_summaries"
     assert captured["response_format"] is RouteDecision
-    assert result["routing_decision"]["route"] == "faq"
+    assert result["routing_decision"]["route"] == "clarification_required"
+    assert (
+        result["routing_decision"]["reason"]
+        == "A busca de memória não encontrou resultados."
+    )
     assert "memory" not in result
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 from langchain_core.messages import (
     AIMessage,
@@ -159,7 +159,7 @@ def run_persist_turn_node(
 
     routing_decision = state.get("routing_decision", {})
     route = routing_decision.get("route")
-    consulted_agents = (
+    consulted_agents: list[str] = (
         [route]
         if routing_decision.get("outcome") == "dispatch"
         and route in {"faq", "product_workflow"}
@@ -196,5 +196,3 @@ def run_persist_turn_node(
         ],
         "status": "completed",
     }
-
-

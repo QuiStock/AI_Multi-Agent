@@ -1,6 +1,6 @@
 """Shared contract for a tool call captured by an agent executor."""
 
-from typing import Generic, Literal, TypeVar, TypedDict
+from typing import Generic, Literal, TypedDict, TypeVar
 
 ToolOutput = TypeVar("ToolOutput")
 

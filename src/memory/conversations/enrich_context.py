@@ -5,11 +5,12 @@ from typing import Protocol
 
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
 
-from .mongo_repository import MongoConversationRepository
-from .summary_lock_repository import (
+from src.memory.jobs.summary_lock_repository import (
     ConversationSummaryLease,
     MongoConversationSummaryLockRepository,
 )
+
+from .mongo_repository import MongoConversationRepository
 
 
 class ResumableSummaryIndexer(Protocol):
@@ -36,7 +37,7 @@ class ConversationContextEnricher:
         self._owner = owner
         self._lease_seconds = lease_seconds
 
-    def restore_messages(
+    def restore_messages(  # noqa: C901
         self,
         *,
         email: str,
@@ -70,7 +71,7 @@ class ConversationContextEnricher:
             )
         except Exception:
             if previous_point is not None and previous_point.get("status") == "ended":
-                try:
+                try:  # noqa: SIM105
                     self._summary_indexer.restore_ended(conversation_id)  # type: ignore[union-attr]
                 except Exception:
                     # Reconciliation will repair the cross-store state.
