@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from datetime import date
+
 import psycopg
 import pytest
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
@@ -14,7 +17,19 @@ from src.agents.product_workflow.repository import (
 pytestmark = pytest.mark.integration
 
 
-def test_product_workflow_reads_postgres_with_select_only_grants() -> None:
+def _manager_context(request_id: str) -> ProductWorkflowContext:
+    return ProductWorkflowContext(
+        email="reader@example.test",
+        user_id=7,
+        role_code="MANAGER",
+        store_ids=(30,),
+        request_id=request_id,
+        trace_id=request_id,
+    )
+
+
+@pytest.fixture(scope="module")
+def product_reader_pool() -> Iterator[ConnectionPool]:
     with PostgresContainer("postgres:16-alpine") as postgres:
         admin_dsn = (
             postgres.get_connection_url()
@@ -172,7 +187,8 @@ def test_product_workflow_reads_postgres_with_select_only_grants() -> None:
             connection.execute(
                 """
                 INSERT INTO product(id, category_id, sku, name, active)
-                VALUES (40, 50, 'SKU-40', 'Leite Integral UHT 1L', TRUE)
+                VALUES (40, 50, 'SKU-40', 'Leite Integral UHT 1L', TRUE),
+                       (41, 50, 'SKU-41', 'Queijo Minas', TRUE)
                 """
             )
             connection.execute(
@@ -196,7 +212,15 @@ def test_product_workflow_reads_postgres_with_select_only_grants() -> None:
                      '2026-10-03T12:00:00Z', '2026-10-03T12:00:00Z'),
                     (13, 103, 30, 40, 'MONITOR', 'ML', 'GENERATED', NULL, NULL,
                      NULL, NULL, NULL, NULL, NULL, NULL, FALSE, NULL,
-                     '2026-10-04T12:00:00Z', '2026-10-04T12:00:00Z')
+                     '2026-10-04T12:00:00Z', '2026-10-04T12:00:00Z'),
+                    (20, 200, 30, 41, 'PROMOTION', 'ML', 'SENT_TO_MANAGER',
+                     NULL, NULL, NULL, NULL, '2026-10-01', '2026-11-01',
+                     12.00, 9.00, TRUE, NULL,
+                     '2026-10-05T12:00:00Z', '2026-10-05T12:00:00Z'),
+                    (21, 201, 30, 41, 'PROMOTION', 'ML', 'SENT_TO_MANAGER',
+                     NULL, NULL, NULL, NULL, '2026-10-01', '2026-12-15',
+                     15.00, 11.00, TRUE, NULL,
+                     '2026-10-06T12:00:00Z', '2026-10-06T12:00:00Z')
                 """
             )
             connection.execute(
@@ -206,7 +230,9 @@ def test_product_workflow_reads_postgres_with_select_only_grants() -> None:
                     (1, 10, 'GENERATED'),
                     (2, 11, 'GENERATED'),
                     (3, 12, 'EXPIRED'),
-                    (4, 13, 'GENERATED')
+                    (4, 13, 'GENERATED'),
+                    (5, 20, 'GENERATED'),
+                    (6, 21, 'GENERATED')
                 """
             )
             connection.execute(
@@ -243,39 +269,76 @@ def test_product_workflow_reads_postgres_with_select_only_grants() -> None:
         reader_dsn = make_conninfo(**connection_params)
         pool = ConnectionPool(conninfo=reader_dsn, min_size=1, max_size=2, timeout=3)
         try:
-            repository = PostgresProductWorkflowRepository(pool)
-            suggestions = repository.search_product_suggestions(
-                ProductWorkflowContext(
-                    email="reader@example.test",
-                    user_id=7,
-                    role_code="MANAGER",
-                    store_ids=(30,),
-                    request_id="request-1",
-                    trace_id="trace-1",
-                ),
-                "Leite",
-            )
-
-            assert [item.suggestion_id for item in suggestions] == [11, 10]
-            detail = repository.get_product_suggestion_detail(
-                ProductWorkflowContext(
-                    email="reader@example.test",
-                    user_id=7,
-                    role_code="MANAGER",
-                    store_ids=(30,),
-                    request_id="request-2",
-                    trace_id="trace-2",
-                ),
-                11,
-            )
-            assert detail is not None
-            assert detail.employee_name == "Funcionária Teste"
-            assert detail.last_action == "FORWARD"
-
-            with pytest.raises(psycopg.errors.InsufficientPrivilege):
-                with pool.connection() as connection:
-                    connection.execute(
-                        "UPDATE suggestion SET current_batch_count = 99 WHERE id = 11"
-                    )
+            yield pool
         finally:
             pool.close()
+
+
+def test_product_workflow_reads_postgres_with_select_only_grants(
+    product_reader_pool: ConnectionPool,
+) -> None:
+    repository = PostgresProductWorkflowRepository(product_reader_pool)
+    suggestions = repository.search_product_suggestions(
+        _manager_context("request-1"),
+        "Leite",
+    )
+
+    assert [item.suggestion_id for item in suggestions] == [10, 11]
+    detail = repository.get_product_suggestion_detail(
+        _manager_context("request-2"),
+        11,
+    )
+    assert detail is not None
+    assert detail.employee_name == "Funcionária Teste"
+    assert detail.last_action == "FORWARD"
+
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        with product_reader_pool.connection() as connection:
+            connection.execute(
+                "UPDATE suggestion SET current_batch_count = 99 WHERE id = 11"
+            )
+
+
+def test_product_workflow_lists_orders_and_promotions(
+    product_reader_pool: ConnectionPool,
+) -> None:
+    repository = PostgresProductWorkflowRepository(product_reader_pool)
+
+    orders = repository.list_product_suggestions(
+        _manager_context("request-list-orders"),
+        "ORDER",
+    )
+    promotions = repository.list_product_suggestions(
+        _manager_context("request-list-promotions"),
+        "PROMOTION",
+    )
+
+    assert [item.suggestion_id for item in orders] == [10, 11]
+    assert [item.suggestion_id for item in promotions] == [20, 21]
+
+
+def test_product_workflow_filters_promotions_by_expiration(
+    product_reader_pool: ConnectionPool,
+) -> None:
+    repository = PostgresProductWorkflowRepository(product_reader_pool)
+    floor = date(2026, 10, 30)
+
+    nearest = repository.find_promotions_by_expiration(
+        _manager_context("request-nearest"),
+        "nearest",
+        reference_date=floor,
+    )
+    longest = repository.find_promotions_by_expiration(
+        _manager_context("request-longest"),
+        "longest",
+        reference_date=floor,
+    )
+    until_november = repository.find_promotions_by_expiration(
+        _manager_context("request-until"),
+        reference_date=floor,
+        until=date(2026, 11, 30),
+    )
+
+    assert [item.suggestion_id for item in nearest] == [20]
+    assert [item.suggestion_id for item in longest] == [21]
+    assert [item.suggestion_id for item in until_november] == [20]
