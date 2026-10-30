@@ -3,6 +3,8 @@ import './overrides.css';
 
 const API = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 const OBS = `${API}/observability`;
+const TAB_KEY = 'observability-tab';
+let authState = 'anonymous';
 const state = {
   view: 'overview',
   metrics: null,
@@ -21,9 +23,9 @@ const state = {
   liveByTrace: new Map(),
   cursor: 0,
   pollBusy: false,
-  fetches: [],
+  loadSeq: 0,
   traceStatus: null,
-  filters: { from: null, to: null, consumer: '', conversation: '', environment: '', status: '' },
+  filters: { from: null, to: null, consumer: '', conversation: '', status: '' },
   labModels: [],
   labModelsLoaded: false,
   labLoadedAgent: null,
@@ -38,16 +40,17 @@ const shortId = (value, length = 15) => value && value.length > length ? `${valu
 const number = (value, digits = 0) => value == null || !Number.isFinite(Number(value)) ? '—' : Number(value).toLocaleString('pt-BR', { maximumFractionDigits: digits });
 const duration = (value) => value == null ? '—' : value < 1000 ? `${number(value, 1)} ms` : `${number(value / 1000, 2)} s`;
 const statusText = (status) => ({ completed: 'Concluído', error: 'Erro', running: 'Em andamento', interrupted: 'Interrompido' }[status] || status || '—');
+const attributeLine = (attributes) => {
+  if (!attributes || typeof attributes !== 'object') return '';
+  const hidden = new Set(['langgraph_node', 'agent_id', 'prompt_version']);
+  const parts = Object.entries(attributes)
+    .filter(([key, value]) => !hidden.has(key) && value != null && value !== '')
+    .map(([key, value]) => `${key}: ${value}`);
+  return parts.length ? `<div class="timeline-meta">${escapeHTML(parts.join(' · '))}</div>` : '';
+};
 
-function recordFetch(label, startedAt, elapsedMs, ok, statusTextValue = '') {
-  state.fetches.unshift({ label, startedAt, elapsedMs, ok, statusText: statusTextValue });
-  state.fetches = state.fetches.slice(0, 16);
-  renderFetchHistory();
-}
-
-async function requestJSON(path, { method = 'GET', body, label = `${method} ${path}` } = {}) {
-  const start = performance.now();
-  const startedAt = new Date();
+async function requestJSON(path, { method = 'GET', body } = {}) {
+  const started = authState;
   try {
     const response = await fetch(path, {
       method,
@@ -55,16 +58,27 @@ async function requestJSON(path, { method = 'GET', body, label = `${method} ${pa
       body: body ? JSON.stringify(body) : undefined,
     });
     const payload = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      const detail = typeof payload.detail === 'string' ? payload.detail : 'Sessão de observabilidade ausente.';
+      if (path.endsWith('/login')) showLogin(detail);
+      else if (started === 'active' && authState === 'active') {
+        authState = 'anonymous';
+        sessionStorage.removeItem(TAB_KEY);
+        showLogin();
+      }
+      const error = new Error(detail);
+      error.status = 401;
+      throw error;
+    }
     if (!response.ok) {
       const detail = typeof payload.detail === 'string' ? payload.detail : `HTTP ${response.status}`;
       throw new Error(detail);
     }
-    recordFetch(label, startedAt, performance.now() - start, true, `HTTP ${response.status}`);
     setApiStatus(true);
+    if (started === 'active' && authState === 'active') hideLogin();
     return payload;
   } catch (error) {
-    recordFetch(label, startedAt, performance.now() - start, false, error.message);
-    setApiStatus(false);
+    if (error.status !== 401) setApiStatus(false);
     throw error;
   }
 }
@@ -80,7 +94,6 @@ function queryFromFilters({ conversationId, includePagination = false } = {}) {
   if (state.filters.to) params.set('started_to', state.filters.to);
   if (state.filters.consumer) params.set('consumer_id', state.filters.consumer);
   if (state.filters.conversation) params.set('conversation_id', state.filters.conversation);
-  if (state.filters.environment) params.set('environment', state.filters.environment);
   if (state.filters.status) params.set('status', state.filters.status);
   if (conversationId) params.set('conversation_id', conversationId);
   if (includePagination) {
@@ -101,13 +114,20 @@ function conversationQuery() {
   return params.toString();
 }
 
+function advanceOpenWindow() {
+  if ($('period-filter').value === 'custom') return;
+  const now = new Date();
+  state.filters.to = now.toISOString();
+  $('date-to').value = toLocalDate(now);
+}
+
 async function loadData({ quiet = false } = {}) {
+  const seq = ++state.loadSeq;
   const metricsParams = new URLSearchParams();
   metricsParams.set('started_from', state.filters.from || new Date(Date.now() - 86400000).toISOString());
   metricsParams.set('started_to', state.filters.to || new Date().toISOString());
   if (state.filters.consumer) metricsParams.set('consumer_id', state.filters.consumer);
   if (state.filters.conversation) metricsParams.set('conversation_id', state.filters.conversation);
-  if (state.filters.environment) metricsParams.set('environment', state.filters.environment);
   if (state.filters.status) metricsParams.set('status', state.filters.status);
 
   const traceQuery = queryFromFilters({ includePagination: true });
@@ -116,17 +136,20 @@ async function loadData({ quiet = false } = {}) {
     requestJSON(`${OBS}/traces?${traceQuery}`, { label: 'GET /observability/traces' }),
     requestJSON(`${OBS}/conversations?${conversationQuery()}`, { label: 'GET /observability/conversations' }),
   ]);
-  if (requests[0].status === 'fulfilled') state.metrics = requests[0].value;
-  else if (!quiet) toast(`Métricas: ${requests[0].reason.message}`);
+  if (seq !== state.loadSeq) return false;
+  if (requests[0].status === 'fulfilled') {
+    state.metrics = requests[0].value;
+  } else if (!quiet && requests[0].reason.status !== 401) toast(`Métricas: ${requests[0].reason.message}`);
   if (requests[1].status === 'fulfilled') {
     state.traces = requests[1].value.traces || [];
     state.traceTotal = requests[1].value.total || 0;
-  } else if (!quiet) toast(`Traces: ${requests[1].reason.message}`);
+  } else if (!quiet && requests[1].reason.status !== 401) toast(`Traces: ${requests[1].reason.message}`);
   if (requests[2].status === 'fulfilled') {
     state.conversations = requests[2].value.conversations || [];
     state.conversationTotal = requests[2].value.total || 0;
-  } else if (!quiet) toast(`Conversas: ${requests[2].reason.message}`);
+  } else if (!quiet && requests[2].reason.status !== 401) toast(`Conversas: ${requests[2].reason.message}`);
   renderAll();
+  return requests[0].status === 'fulfilled';
 }
 
 function initDateFilters() {
@@ -173,7 +196,6 @@ function applyFilters() {
     ...dateBounds,
     consumer: $('consumer-filter').value.trim(),
     conversation: $('conversation-filter').value.trim(),
-    environment: $('environment-filter').value,
     status: $('status-filter').value,
   };
   state.traceOffset = 0;
@@ -199,37 +221,182 @@ function renderMetrics() {
   $('metric-p95').textContent = duration(metrics.traces?.latency?.p95_ms);
   $('metric-latency-samples').textContent = `${number(metrics.traces?.latency?.sample_count)} amostras de turno`;
   const errorRate = metrics.traces?.error_rate;
-  $('metric-errors').textContent = errorRate == null ? '—' : `${number(errorRate * 100, 2)}%`;
-  $('metric-error-count').textContent = `${number(metrics.traces?.error_count)} execuções com erro`;
   const traceCount = metrics.traces?.count || 0;
+  $('metric-errors').textContent = errorRate == null ? '—' : `${number(errorRate * 100, 2)}%`;
+  $('metric-error-count').textContent = `${number(metrics.traces?.error_count)} de ${number(traceCount)} turnos com erro`;
   const completedTraceCount = metrics.traces?.completed_count || 0;
   const completedTraceRate = traceCount ? completedTraceCount / traceCount : null;
   $('metric-success').textContent = completedTraceRate == null ? '—' : `${number(completedTraceRate * 100, 2)}%`;
-  $('metric-success-count').textContent = `${number(completedTraceCount)} de ${number(traceCount)} traces concluídos`;
+  $('metric-success-count').textContent = `${number(completedTraceCount)} de ${number(traceCount)} turnos concluídos`;
   const modelGroups = Object.values(metrics.models || {});
   const completedModelCalls = modelGroups.reduce((total, model) => total + (model.completed_count || 0), 0);
   const modelErrors = modelGroups.reduce((total, model) => total + (model.error_count || 0), 0);
   const terminalModelCalls = completedModelCalls + modelErrors;
   const modelSuccessRate = terminalModelCalls ? completedModelCalls / terminalModelCalls : null;
   $('metric-model-success').textContent = modelSuccessRate == null ? '—' : `${number(modelSuccessRate * 100, 2)}%`;
-  $('metric-model-success-count').textContent = `${number(completedModelCalls)} de ${number(terminalModelCalls)} chamadas terminais concluídas`;
+  $('metric-model-success-count').textContent = `${number(completedModelCalls)} de ${number(terminalModelCalls)} chamadas concluídas. Falha de turno não entra aqui.`;
   const tokens = metrics.tokens || {};
   const totalTokens = (tokens.input_tokens || 0) + (tokens.output_tokens || 0);
+  const missingUsage = tokens.calls_without_usage || 0;
+  const missingUsageNote = missingUsage > 0 ? ` · ${number(missingUsage)} sem uso informado` : '';
   $('metric-tokens').textContent = tokens.input_tokens == null && tokens.output_tokens == null ? '—' : number(totalTokens);
-  $('metric-token-calls').textContent = `${number(tokens.llm_calls)} chamadas · ${number(tokens.calls_without_usage)} sem uso informado`;
+  $('metric-token-calls').textContent = `${number(tokens.input_tokens)} entrada + ${number(tokens.output_tokens)} saída${missingUsageNote}`;
   renderComponentChart(metrics.components || {});
   renderModels(metrics.models || {});
   const cost = metrics.cost || {};
   $('metric-cost-per-turn').textContent = cost.cost_per_completed_trace_usd == null
     ? '—'
     : `US$ ${number(cost.cost_per_completed_trace_usd, 6)}`;
-  $('metric-cost-per-turn-note').textContent = cost.completed_trace_count > 0
-    ? `${number(cost.completed_trace_count)} turnos · GPT-6 Luna, entrada sem cache`
-    : 'Sem turnos concluídos com custo estimável';
+  $('metric-cost-per-turn-note').textContent = 'Turno que terminou. Erro do turno fica de fora. Bloqueio e esclarecimento entram.';
   $('cost-note').textContent = cost.estimated_total_usd == null
     ? `Custo do LLM não estimado para o período: ${number(cost.unpriced_calls)} chamadas sem preço/uso completo.`
     : `Custo estimado do LLM: US$ ${number(cost.estimated_total_usd, 6)} · ${number(cost.priced_calls)} chamadas precificadas; entrada sem cache.`;
   renderApplicationCost(metrics.application_cost || {});
+  renderBoard(metrics.board || {}, metrics);
+}
+
+function money(value) {
+  return value == null ? '—' : `US$ ${number(value, 6)}`;
+}
+
+function renderBoard(board, metrics) {
+  const banner = $('slo-banner');
+  if (board.slo_ok == null) {
+    banner.textContent = 'SLO do período: sem turnos suficientes';
+    banner.className = 'slo-banner';
+  } else if (board.slo_ok) {
+    banner.textContent = 'SLO dentro: p95 até 20 s e erro até 5%';
+    banner.className = 'slo-banner ok';
+  } else {
+    banner.textContent = 'SLO estourado: p95 acima de 20 s ou erro acima de 5%';
+    banner.className = 'slo-banner breached';
+  }
+  $('metric-fallbacks').textContent = number(board.fallback_count);
+  $('metric-fallback-note').textContent = 'Chamadas concluídas no Groq';
+  $('metric-model-most-used').textContent = board.most_used_model
+    ? `Mais usado: ${board.most_used_model}`
+    : 'Mais usado: —';
+  const weeklyUsers = $('weekly-users').value === '1000' ? 1000 : 100;
+  const weeklyValue = weeklyUsers === 1000
+    ? board.weekly_cost_1000_users_usd
+    : board.weekly_cost_100_users_usd;
+  $('metric-weekly-cost').textContent = money(weeklyValue);
+  $('metric-cost-resolution').textContent = money(board.cost_per_resolution_usd);
+  $('metric-resolution-note').textContent = `${number(board.resolution_count)} resoluções · sem erro ou bloqueio`;
+  const retornoRaw = $('roi-return').value;
+  const retorno = Number(retornoRaw);
+  const custo = metrics.application_cost?.estimated_total_usd;
+  if (retornoRaw === '' || !Number.isFinite(retorno) || custo == null) {
+    $('metric-roi').textContent = 'sem retorno informado';
+    $('metric-roi-note').textContent = 'Informe o retorno para ver (retorno − gasto de todas as origens) / gasto';
+  } else if (custo === 0) {
+    $('metric-roi').textContent = '0';
+    $('metric-roi-note').textContent = `(${number(retorno, 6)} − 0) / 0`;
+  } else {
+    $('metric-roi').textContent = number((retorno - custo) / custo, 4);
+    $('metric-roi-note').textContent = `(${number(retorno, 6)} − ${number(custo, 6)}) / ${number(custo, 6)}`;
+  }
+  const agents = board.agent_latency || [];
+  $('agent-latency-rows').innerHTML = agents.length
+    ? agents.map((row) => `<tr><td>${escapeHTML(row.name)}</td><td>${duration(row.average_ms)}</td></tr>`).join('')
+    : '<tr><td colspan="2" class="empty-cell">Sem nós no período.</td></tr>';
+  drawSeries($('latency-chart'), (metrics.latency_series || []).map((point) => point.duration_ms), '#7c3aed');
+  drawSeries($('cost-chart'), (metrics.cumulative_cost_series || []).map((point) => point.cumulative_cost_usd), '#0f9f6e');
+}
+
+function drawSeries(canvas, values, color) {
+  if (!canvas) return;
+  const width = Math.max(280, canvas.parentElement.clientWidth - 32);
+  const height = 160;
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, width, height);
+  if (!values.length) {
+    ctx.fillStyle = '#a39baa';
+    ctx.font = '12px sans-serif';
+    ctx.fillText('Sem amostras', 12, 28);
+    return;
+  }
+  const max = Math.max(...values, 0.000001);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  values.forEach((value, index) => {
+    const x = values.length === 1 ? width / 2 : (index / (values.length - 1)) * (width - 16) + 8;
+    const y = height - 16 - (value / max) * (height - 32);
+    if (index === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+}
+
+function showLogin(message) {
+  $('login-screen').hidden = false;
+  if (message && message !== 'Sessão de observabilidade ausente.') $('login-error').textContent = message;
+}
+
+function hideLogin() {
+  $('login-screen').hidden = true;
+  $('login-error').textContent = '';
+}
+
+function startSession() {
+  authState = 'active';
+  sessionStorage.setItem(TAB_KEY, '1');
+  hideLogin();
+  if (state.pollStarted) return;
+  state.pollStarted = true;
+  loadLabModels();
+  pollLiveFeed();
+  setInterval(refreshScreen, 4000);
+}
+
+async function submitLogin(event) {
+  event.preventDefault();
+  $('login-error').textContent = '';
+  authState = 'logging-in';
+  try {
+    await requestJSON(`${OBS}/login`, {
+      method: 'POST',
+      body: { email: $('login-email').value.trim(), password: $('login-password').value },
+    });
+    $('login-password').value = '';
+    const loaded = await loadData({ quiet: true });
+    if (authState === 'anonymous' || !loaded) {
+      authState = 'anonymous';
+      showLogin();
+      $('login-error').textContent = 'Não foi possível carregar os dados.';
+      return;
+    }
+    startSession();
+  } catch (error) {
+    authState = 'anonymous';
+    if (error.status !== 401) $('login-error').textContent = error.message;
+  }
+}
+
+async function logout() {
+  authState = 'anonymous';
+  sessionStorage.removeItem(TAB_KEY);
+  state.loadSeq += 1;
+  try {
+    await fetch(`${OBS}/logout`, { method: 'POST' });
+  } catch { /* a tela de login abre mesmo se a API não responder */ }
+  state.metrics = null;
+  state.traces = [];
+  state.traceTotal = 0;
+  state.conversations = [];
+  state.conversationTotal = 0;
+  state.selectedTraceId = null;
+  state.selectedTrace = null;
+  state.selectedConversationId = null;
+  state.selectedConversation = null;
+  state.activeTraces = [];
+  state.liveEvents = [];
+  state.liveByTrace = new Map();
+  renderAll();
+  showLogin();
 }
 
 function renderApplicationCost(applicationCost) {
@@ -239,13 +406,11 @@ function renderApplicationCost(applicationCost) {
     ? 'Cobertura parcial'
     : total == null ? 'Incompleto' : `US$ ${number(total, 6)}`;
   const tier = applicationCost.embedding_tier === 'paid' ? 'Gemini pago' : 'Gemini gratuito';
-  $('metric-app-cost').textContent = coverageComplete && total != null ? formattedTotal : '—';
-  $('metric-app-cost-note').textContent = `${tier} · ${number(applicationCost.unpriced_calls)} chamadas sem uso/preço`;
   $('application-cost-total').textContent = formattedTotal;
   const coverageStart = applicationCost.coverage_start_at
     ? `medição completa desde ${dateTime(applicationCost.coverage_start_at)}`
     : 'início da medição indisponível';
-  $('application-cost-scope').textContent = `Período selecionado · todos os ambientes · sem filtros de usuário/status · GPT sem cache · ${tier} · ${coverageStart}`;
+  $('application-cost-scope').textContent = `Período selecionado · sem filtros de usuário/status · GPT sem cache · ${tier} · ${coverageStart}`;
 
   const origins = applicationCost.origins || [];
   $('cost-origin-rows').innerHTML = origins.length ? origins.map((origin) => {
@@ -261,9 +426,8 @@ function renderApplicationCost(applicationCost) {
 function renderSLOMetrics(slos) {
   if (!slos) return;
   const window = slos.window || {};
-  const environment = window.environment ? `Ambiente: ${window.environment}` : 'Todos os ambientes';
   $('slo-window-label').textContent = window.started_at && window.ended_at
-    ? `${dateTime(window.started_at)} – ${dateTime(window.ended_at)} · ${environment}`
+    ? `${dateTime(window.started_at)} – ${dateTime(window.ended_at)}`
     : 'Últimos 28 dias';
 
   const completion = slos.turn_completion || {};
@@ -355,22 +519,46 @@ function renderModels(models) {
 }
 
 function activeTraceAsSummary(active) {
-  return { trace_id: active.trace_id, conversation_id: active.conversation_id, environment: active.environment, started_at: active.started_at, status: 'running', duration_ms: null };
+  return { trace_id: active.trace_id, conversation_id: active.conversation_id, started_at: active.started_at, status: 'running', duration_ms: null };
 }
 
 function filteredActiveTraces() {
   const from = state.filters.from ? new Date(state.filters.from).getTime() : null;
   const to = state.filters.to ? new Date(state.filters.to).getTime() : null;
+  const openEnded = $('period-filter').value !== 'custom';
   return state.activeTraces.filter((trace) => {
     const startedAt = new Date(trace.started_at).getTime();
     if (state.filters.consumer) return false;
     if (state.filters.conversation && trace.conversation_id !== state.filters.conversation) return false;
-    if (state.filters.environment && trace.environment !== state.filters.environment) return false;
     if (state.filters.status && state.filters.status !== 'running') return false;
     if (from != null && startedAt < from) return false;
-    if (to != null && startedAt > to) return false;
+    if (!openEnded && to != null && startedAt > to) return false;
     return true;
   });
+}
+
+function runningTracesNotListed() {
+  const listed = new Set(state.traces.map((trace) => trace.trace_id));
+  return filteredActiveTraces().filter((trace) => !listed.has(trace.trace_id));
+}
+
+function traceWindowCount() {
+  return state.traceTotal + runningTracesNotListed().length;
+}
+
+function liveStepNames(traceId) {
+  const names = [];
+  const seen = new Set();
+  for (const event of state.liveByTrace.get(traceId) || []) {
+    if (event.event_type !== 'span') continue;
+    const data = event.data || {};
+    if (data.kind && data.kind !== 'node' && data.kind !== 'tool') continue;
+    const name = data.name;
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    names.push(name);
+  }
+  return names;
 }
 
 function mergedTraces() {
@@ -382,17 +570,18 @@ function mergedTraces() {
 function renderTraceTables() {
   const traces = mergedTraces();
   const rowHtml = traces.map((trace) => {
-    const spanCount = state.liveByTrace.get(trace.trace_id)?.filter((event) => event.event_type === 'span').length;
-    return `<tr class="clickable-row" data-trace="${escapeHTML(trace.trace_id)}"><td class="trace-id">${escapeHTML(shortId(trace.trace_id))}</td><td class="trace-id">${escapeHTML(shortId(trace.conversation_id))}</td><td>${spanCount ? `${spanCount} eventos de span` : 'Abrir detalhe'}</td><td class="duration">${duration(trace.duration_ms)}</td><td><span class="status-pill ${escapeHTML(trace.status)}">${escapeHTML(statusText(trace.status))}</span></td><td>${dateTime(trace.started_at)}</td></tr>`;
+    const steps = liveStepNames(trace.trace_id);
+    const stepsLabel = steps.length ? steps.join(' → ') : 'Abrir detalhe';
+    return `<tr class="clickable-row" data-trace="${escapeHTML(trace.trace_id)}"><td class="trace-id">${escapeHTML(shortId(trace.trace_id))}</td><td class="trace-id">${escapeHTML(shortId(trace.conversation_id))}</td><td>${escapeHTML(stepsLabel)}</td><td class="duration">${duration(trace.duration_ms)}</td><td><span class="status-pill ${escapeHTML(trace.status)}">${escapeHTML(statusText(trace.status))}</span></td><td>${dateTime(trace.started_at)}</td></tr>`;
   });
   const empty = '<tr><td colspan="6" class="empty-cell">Nenhum trace encontrado para os filtros atuais.</td></tr>';
   $('recent-traces').innerHTML = rowHtml.length ? rowHtml.slice(0, 8).join('') : empty;
   $('all-traces').innerHTML = rowHtml.join('') || empty;
-  $('trace-total').textContent = `${number(state.traceTotal + filteredActiveTraces().length)} traces`;
+  $('trace-total').textContent = `${number(traceWindowCount())} traces`;
   $('trace-page-label').textContent = `Página ${Math.floor(state.traceOffset / 50) + 1}`;
   $('trace-prev').disabled = state.traceOffset === 0;
   $('trace-next').disabled = state.traceOffset + state.traces.length >= state.traceTotal;
-  $('nav-live-count').textContent = String(state.activeTraces.length);
+  $('nav-live-count').textContent = String(traceWindowCount());
   document.querySelectorAll('[data-trace]').forEach((row) => row.addEventListener('click', () => openTrace(row.dataset.trace)));
 }
 
@@ -516,11 +705,12 @@ function renderTraceDetail() {
   const logs = events.filter((event) => event.event_type === 'log');
   const startedAt = new Date(trace.started_at).getTime();
   const timeline = events.map((event) => renderTraceEvent(event, startedAt)).join('');
+  const labAgentIds = new Set(['faq_rag', 'product_workflow', 'router', 'compiler']);
   const agentSpans = traceSpans(trace).filter((span) => span.kind === 'node' && span.attributes?.agent_id);
-  const agentIds = [...new Set(agentSpans.map((span) => span.attributes.agent_id))];
+  const agentIds = [...new Set(agentSpans.map((span) => span.attributes.agent_id))].filter((agentId) => labAgentIds.has(agentId));
   const labButtons = agentIds.map((agentId) => `<button class="button button-secondary" data-lab-agent="${escapeHTML(agentId)}">Testar ${escapeHTML(agentId)}</button>`).join('');
   const detail = $('trace-detail');
-  detail.innerHTML = `<div class="detail-head"><h2>${escapeHTML(trace.trace_id)}</h2><p>Conversa ${escapeHTML(trace.conversation_id)} · ${escapeHTML(trace.environment || 'ambiente não informado')}</p><div class="detail-actions"><span class="status-pill ${escapeHTML(trace.status)}">${escapeHTML(statusText(trace.status))}</span><span class="subtle-label">${duration(trace.duration_ms)} · início ${dateTime(trace.started_at)}</span></div>${labButtons ? `<div class="detail-actions">${labButtons}</div>` : ''}</div><div class="detail-section-title">Fluxo do trace <small>${number(spanEvents.length)} eventos de span · ${number(logs.length)} logs</small></div><div class="timeline">${timeline || '<p class="empty-note">Aguardando spans e logs.</p>'}</div>`;
+  detail.innerHTML = `<div class="detail-head"><h2>${escapeHTML(trace.trace_id)}</h2><p>Conversa ${escapeHTML(trace.conversation_id)}</p><div class="detail-actions"><span class="status-pill ${escapeHTML(trace.status)}">${escapeHTML(statusText(trace.status))}</span><span class="subtle-label">${duration(trace.duration_ms)} · início ${dateTime(trace.started_at)}</span></div>${labButtons ? `<div class="detail-actions">${labButtons}</div>` : ''}</div><div class="detail-section-title">Fluxo do trace <small>${number(spanEvents.length)} eventos de span · ${number(logs.length)} logs</small></div><div class="timeline">${timeline || '<p class="empty-note">Aguardando spans e logs.</p>'}</div>`;
   detail.querySelectorAll('[data-lab-agent]').forEach((button) => button.addEventListener('click', () => openLabFromTrace(button.dataset.labAgent)));
 }
 
@@ -528,7 +718,7 @@ function renderTraceEvent(event, traceStartedAt) {
   const data = event.data || {};
   const elapsed = Math.max(0, new Date(event.timestamp).getTime() - traceStartedAt);
   if (event.event_type === 'log') {
-    return `<div class="timeline-item log"><div class="timeline-top"><strong>LOG ${escapeHTML(data.level || 'INFO')} · ${escapeHTML(data.logger || 'src')}</strong><small>+${duration(elapsed)}</small></div><div class="timeline-body">${escapeHTML(data.message || '')}</div><div class="timeline-meta">${escapeHTML(data.agent_id || 'sem agent_id')} · span ${escapeHTML(shortId(data.span_id || '—'))} · ${dateTime(event.timestamp)}</div></div>`;
+    return `<div class="timeline-item log"><div class="timeline-top"><strong>LOG ${escapeHTML(data.level || 'INFO')} · ${escapeHTML(data.logger || 'src')}</strong><small>+${duration(elapsed)}</small></div><div class="timeline-body">${escapeHTML(data.message || '')}</div><div class="timeline-meta">${escapeHTML(data.agent_id || 'sem agent_id')} · span ${escapeHTML(shortId(data.span_id || '—'))} · ${dateTime(event.timestamp)}</div>${attributeLine(data.attributes)}</div>`;
   }
   if (event.event_type === 'trace') {
     return `<div class="timeline-item"><div class="timeline-top"><strong>TRACE ${escapeHTML(statusText(event.phase))}</strong><small>+${duration(elapsed)}</small></div><div class="timeline-meta">${dateTime(event.timestamp)}${data.duration_ms != null ? ` · duração ${duration(data.duration_ms)}` : ''}</div></div>`;
@@ -540,6 +730,10 @@ function renderTraceEvent(event, traceStartedAt) {
     const toolStatusLabels = { success: 'sucesso', partial: 'parcial', error: 'erro' };
     const summaryFields = [
       toolSummary.tool_status && `Status: ${toolStatusLabels[toolSummary.tool_status] || toolSummary.tool_status}`,
+      toolSummary.tool_outcome && `Desfecho: ${toolSummary.tool_outcome}`,
+      toolSummary.tool_suggestion_type && `Tipo: ${toolSummary.tool_suggestion_type}`,
+      toolSummary.tool_direction && `Direção: ${toolSummary.tool_direction}`,
+      toolSummary.tool_has_next_page != null && `Próxima página: ${toolSummary.tool_has_next_page ? 'sim' : 'não'}`,
       toolSummary.tool_results_count != null && `Resultados: ${number(toolSummary.tool_results_count)}`,
       toolSummary.tool_evidence_count != null && `Evidências: ${number(toolSummary.tool_evidence_count)}`,
       toolSummary.tool_error_code && `Código de erro: ${toolSummary.tool_error_code}`,
@@ -550,7 +744,7 @@ function renderTraceEvent(event, traceStartedAt) {
       : '<div class="tool-summary-details"><div class="timeline-meta">Resumo não disponível para este span.</div></div>';
     return `<details class="timeline-item tool-span ${failed ? 'error' : ''}"><summary><div class="timeline-top"><strong>${escapeHTML(data.name || 'tool')} · ${escapeHTML(event.phase)}</strong><small>+${duration(elapsed)}</small></div><div class="timeline-meta">${escapeHTML(identity)} · tool · ${duration(data.duration_ms)} · ${dateTime(event.timestamp)} <span class="tool-disclosure">ver resumo</span></div></summary>${summaryDetails}</details>`;
   }
-  return `<div class="timeline-item ${failed ? 'error' : ''}"><div class="timeline-top"><strong>${escapeHTML(data.name || data.kind || 'span')} · ${escapeHTML(event.phase)}</strong><small>+${duration(elapsed)}</small></div><div class="timeline-meta">${escapeHTML(identity)} · ${escapeHTML(data.kind || 'span')} · ${duration(data.duration_ms)} · ${dateTime(event.timestamp)}</div>${data.error_type ? `<div class="timeline-meta">Erro: ${escapeHTML(data.error_type)}</div>` : ''}${data.input_tokens != null || data.output_tokens != null ? `<div class="timeline-meta">Tokens: ${number(data.input_tokens)} entrada / ${number(data.output_tokens)} saída</div>` : ''}</div>`;
+  return `<div class="timeline-item ${failed ? 'error' : ''}"><div class="timeline-top"><strong>${escapeHTML(data.name || data.kind || 'span')} · ${escapeHTML(event.phase)}</strong><small>+${duration(elapsed)}</small></div><div class="timeline-meta">${escapeHTML(identity)} · ${escapeHTML(data.kind || 'span')} · ${duration(data.duration_ms)} · ${dateTime(event.timestamp)}</div>${attributeLine(data.attributes)}${data.error_type ? `<div class="timeline-meta">Erro: ${escapeHTML(data.error_type)}</div>` : ''}${data.input_tokens != null || data.output_tokens != null ? `<div class="timeline-meta">Tokens: ${number(data.input_tokens)} entrada / ${number(data.output_tokens)} saída</div>` : ''}</div>`;
 }
 
 function renderLiveEvents() {
@@ -563,24 +757,28 @@ function renderLiveEvents() {
   }).join('') : '<p class="empty-note">Aguardando eventos da API.</p>';
 }
 
-function renderFetchHistory() {
-  $('fetch-history').innerHTML = state.fetches.length ? state.fetches.map((fetch) => `<div class="fetch-row"><strong>${escapeHTML(fetch.label)}</strong><span class="${fetch.ok ? 'fetch-ok' : 'fetch-error'}">${number(fetch.elapsedMs, 1)} ms · ${escapeHTML(fetch.statusText)}</span><small>${fetch.startedAt.toLocaleString('pt-BR')}</small></div>`).join('') : '<p class="empty-note">Nenhuma consulta realizada.</p>';
-  const latest = state.fetches[0];
-  if (latest?.label === 'GET /observability/traces/live') {
-    $('poll-label').textContent = `Feed 4s · última ${latest.startedAt.toLocaleTimeString('pt-BR')} · ${number(latest.elapsedMs, 1)} ms`;
+function renderActiveStatus() {
+  $('nav-live-count').textContent = String(traceWindowCount());
+}
+
+async function refreshScreen() {
+  if (authState !== 'active' || state.pollBusy) return;
+  state.pollBusy = true;
+  try {
+    advanceOpenWindow();
+    await loadData({ quiet: true });
+    await pollLiveFeed();
+  } finally {
+    state.pollBusy = false;
   }
 }
 
-function renderActiveStatus() {
-  $('nav-live-count').textContent = String(state.activeTraces.length);
-  $('environment-label').textContent = state.filters.environment || 'Todos os ambientes';
-}
-
 async function pollLiveFeed() {
-  if (state.pollBusy) return;
-  state.pollBusy = true;
+  const startedAt = new Date();
+  const started = performance.now();
   try {
-    const feed = await requestJSON(`${OBS}/traces/live?after=${state.cursor}&limit=500`, { label: 'GET /observability/traces/live' });
+    const feed = await requestJSON(`${OBS}/traces/live?after=${state.cursor}&limit=500`);
+    $('poll-label').textContent = `Feed 4s · última ${startedAt.toLocaleTimeString('pt-BR')} · ${number(performance.now() - started, 1)} ms`;
     if (feed.reset_required) {
       state.liveEvents = [];
       state.liveByTrace.clear();
@@ -604,10 +802,8 @@ async function pollLiveFeed() {
     renderActiveStatus();
     renderLiveEvents();
     if (state.selectedTraceId && state.view === 'traces') renderTraceDetail();
-  } catch {
-    $('poll-label').textContent = 'Feed ao vivo indisponível';
-  } finally {
-    state.pollBusy = false;
+  } catch (error) {
+    $('poll-label').textContent = error.status === 401 ? 'Aguardando login' : 'Feed ao vivo indisponível';
   }
 }
 
@@ -680,14 +876,16 @@ async function loadAgentPrompt(agentId = $('lab-agent-id').value.trim(), { messa
     const config = await requestJSON(`${OBS}/agents/${encodeURIComponent(agentId)}`, { label: 'GET /observability/agents/{id}' });
     $('lab-agent-id').value = config.agent_id;
     $('lab-prompt').value = config.system_prompt;
+    $('lab-tools').textContent = JSON.stringify(config.tools || [], null, 2);
     $('lab-messages').value = formatLabMessages(history);
     updateLabMessageCount();
     $('lab-agent-caption').textContent = `${config.name} · ${config.role} · versão ${config.version}`;
     state.labLoadedAgent = config.agent_id;
-    if (notify) toast('Prompt e histórico carregados como rascunho.');
+    if (notify) toast('Prompt, tools e histórico carregados como rascunho.');
     return true;
   } catch (error) {
     $('lab-agent-caption').textContent = 'O prompt deste agente não pôde ser carregado.';
+    $('lab-tools').textContent = 'As tools deste agente não puderam ser carregadas.';
     if (notify) toast(`Não foi possível carregar o prompt: ${error.message}`);
     return false;
   }
@@ -765,6 +963,7 @@ async function openLabFromConversation() {
 }
 
 async function runLab() {
+  const agentId = $('lab-agent-id').value.trim();
   const modelId = $('lab-model-id').value;
   const prompt = $('lab-prompt').value.trim();
   let messages;
@@ -773,14 +972,15 @@ async function runLab() {
   } catch (error) {
     return toast(error.message);
   }
-  if (!prompt || !modelId || !messages.some((message) => message.role === 'user')) return toast('Preencha o prompt, modelo e ao menos uma mensagem de usuário.');
+  if (!agentId || !prompt || !modelId || !messages.some((message) => message.role === 'user')) return toast('Preencha o agente, o prompt, o modelo e ao menos uma mensagem de usuário.');
   $('lab-result').textContent = 'Executando modelo…';
   $('lab-run-time').textContent = 'Em execução';
   const started = performance.now();
   try {
-    const result = await requestJSON(`${OBS}/lab/run`, { method: 'POST', body: { model_id: modelId, prompt, messages }, label: 'POST /observability/lab/run' });
-    $('lab-result').textContent = result.result;
-    $('lab-run-time').textContent = `${duration(performance.now() - started)} · chamada direta ao modelo`;
+    const result = await requestJSON(`${OBS}/lab/run`, { method: 'POST', body: { agent_id: agentId, model_id: modelId, prompt, messages }, label: 'POST /observability/lab/run' });
+    const calls = result.tool_calls || [];
+    $('lab-result').textContent = calls.length ? JSON.stringify(calls, null, 2) : (result.result || '');
+    $('lab-run-time').textContent = `${duration(performance.now() - started)} · decisão do modelo`;
   } catch (error) {
     $('lab-result').textContent = error.message;
     $('lab-run-time').textContent = 'Falha na execução';
@@ -804,13 +1004,15 @@ document.querySelectorAll('[data-view]').forEach((button) => button.addEventList
   if (view) activateView(view);
 }));
 $('refresh-button').addEventListener('click', () => loadData());
+$('weekly-users').addEventListener('change', () => {
+  if (state.metrics) renderBoard(state.metrics.board || {}, state.metrics);
+});
 $('apply-filters').addEventListener('click', applyFilters);
 $('consumer-filter').addEventListener('keydown', (event) => { if (event.key === 'Enter') applyFilters(); });
 $('conversation-filter').addEventListener('keydown', (event) => { if (event.key === 'Enter') applyFilters(); });
 $('period-filter').addEventListener('change', applyDatePreset);
 $('date-from').addEventListener('change', () => { $('period-filter').value = 'custom'; });
 $('date-to').addEventListener('change', () => { $('period-filter').value = 'custom'; });
-$('environment-filter').addEventListener('change', () => $('environment-label').textContent = $('environment-filter').value || 'Todos os ambientes');
 $('trace-prev').addEventListener('click', () => { state.traceOffset = Math.max(0, state.traceOffset - 50); loadData({ quiet: true }); });
 $('trace-next').addEventListener('click', () => { state.traceOffset += 50; loadData({ quiet: true }); });
 $('conversation-prev').addEventListener('click', () => { state.conversationOffset = Math.max(0, state.conversationOffset - 50); loadData({ quiet: true }); });
@@ -818,11 +1020,25 @@ $('conversation-next').addEventListener('click', () => { state.conversationOffse
 $('load-agent-prompt').addEventListener('click', () => loadAgentPrompt());
 $('run-lab').addEventListener('click', runLab);
 $('lab-messages').addEventListener('input', updateLabMessageCount);
+$('login-screen').addEventListener('submit', submitLogin);
+$('logout-button').addEventListener('click', logout);
+$('roi-return').addEventListener('input', () => { if (state.metrics) renderBoard(state.metrics.board || {}, state.metrics); });
 
-initDateFilters();
-const initialView = location.hash.slice(1);
-if (['overview', 'traces', 'conversations', 'lab'].includes(initialView)) activateView(initialView);
-loadData();
-loadLabModels();
-pollLiveFeed();
-setInterval(pollLiveFeed, 4000);
+async function boot() {
+  initDateFilters();
+  const initialView = location.hash.slice(1);
+  if (['overview', 'traces', 'conversations', 'lab'].includes(initialView)) activateView(initialView);
+  if (!sessionStorage.getItem(TAB_KEY)) {
+    showLogin();
+    try {
+      await fetch(`${OBS}/logout`, { method: 'POST' });
+    } catch { /* sem a marca da aba, a tela fica no login */ }
+    return;
+  }
+  authState = 'active';
+  const loaded = await loadData();
+  if (authState !== 'active' || !loaded) return;
+  startSession();
+}
+
+boot();

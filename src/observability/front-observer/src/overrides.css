@@ -1,4 +1,23 @@
+.login-screen{position:fixed;inset:0;z-index:20;display:grid;place-items:center;background:#11061fe6;padding:24px}
+.login-screen[hidden]{display:none}
+.login-card{width:min(420px,100%);background:#fff;color:#1c1426;border-radius:16px;padding:28px;display:grid;gap:12px}
+.login-card h1{margin:0;font-size:28px}
+.login-card p{margin:0;font-size:13px}
+.login-card label{display:grid;gap:6px;font-size:12px}
+.login-card input{height:40px;border:1px solid #ddd;border-radius:8px;padding:0 12px;font-size:14px}
+.login-error{min-height:18px;color:#9b2335}
+.slo-banner{margin:0 0 16px;padding:12px 16px;border-radius:10px;background:#efeaf6;font-size:14px}
+.slo-banner.ok{background:#e5f6ee;color:#0d6b45}
+.slo-banner.breached{background:#fde8ea;color:#9b2335}
+.line-chart{width:100%;display:block}
+.metric-section{margin:0 0 18px}
+.metric-section h2{margin:0 0 10px;font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:#6d6478}
+.cost-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.roi-formula{margin:8px 0 0;font-size:12px;color:#6d6478}
+.roi-input{display:grid;gap:4px;font-size:11px;margin:8px 0;max-width:280px}
+.roi-input input{height:36px;border:1px solid #ddd;border-radius:8px;padding:0 8px;font-size:14px}
 .service-status i.offline{background:var(--red);box-shadow:0 0 0 3px #cb5c6920}
+.logout-button{width:100%;margin-top:10px;height:32px;border:1px solid #332246;border-radius:8px;background:#211332;color:#f8f2fc;font:600 12px "DM Sans",sans-serif;cursor:pointer}
 .empty-cell{height:84px;text-align:center;color:#a39baa;font-size:8px}
 
 /* Brand alignment and more readable UI typography. */
@@ -15,7 +34,6 @@
 .nav-item b{font-size:10px}
 .service-ports{font-size:10px}
 .breadcrumbs{font-size:12px}
-.env-pill{font-size:11px}
 .filterbar label{font-size:11px}
 .filterbar select,.filterbar input{height:36px;font-size:12px}
 .button{height:36px;font-size:12px}
@@ -25,11 +43,28 @@
 .live-indicator{font-size:12px}
 .subtle-label{font-size:12px}
 .metric-title{font-size:12px}
+.weekly-users{height:22px;max-width:118px;margin-left:8px;font-size:11px;border:1px solid #e4dcea;border-radius:6px;background:#fff;color:#49365c}
 .metric-card>strong{font-size:26px}
 .metric-card>small{font-size:11px}
 .panel-heading h2{font-size:14px}
 .panel-heading p{font-size:11px;line-height:1.45}
+.bar-row{grid-template-columns:minmax(0,1fr) minmax(96px,2fr) auto}
 .bar-row,.bar-row strong{font-size:11px}
+.bar-row>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar-track{min-width:0}
+.slo-panel .slo-card-heading h3,
+.slo-panel .slo-models .panel-heading h3{font-size:14px}
+.slo-panel .slo-value{font-size:32px}
+.slo-panel .slo-target,
+.slo-panel .slo-latency-rate,
+.slo-panel .slo-budget,
+.slo-panel .slo-card>small,
+.slo-panel .slo-models .panel-heading p{font-size:13px;line-height:1.4}
+.slo-panel .slo-latency-rate{margin:0 0 10px}
+.slo-panel .slo-budget{min-height:1.4em}
+.slo-panel .slo-status{font-size:13px;padding:5px 8px}
+.slo-panel th,
+.slo-panel td{font-size:13px}
 .chart-empty,.empty-note{font-size:12px}
 th{font-size:10px}
 td{height:44px;font-size:11px}
@@ -61,9 +96,10 @@ td{height:44px;font-size:11px}
 .history-heading p{font-size:10px}
 .lab-message select,.lab-message textarea{font-size:11px}
 .lab-actions small{font-size:10px}
-.lab-result pre{font-size:11px}
+.lab-result pre,#lab-tools{font-size:11px}
+#lab-tools{max-height:220px;overflow:auto;margin:8px 0 0;white-space:pre-wrap}
 .mono-label{font-size:10px}
-.event-row,.event-row time,.fetch-row,.fetch-row strong,.fetch-row span,.fetch-row small{font-size:10px}
+.event-row,.event-row time{font-size:10px}
 .event-row strong{font-size:11px}
 .event-row small{font-size:10px}
 .cost-note{font-size:11px}
