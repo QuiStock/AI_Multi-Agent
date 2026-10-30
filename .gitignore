@@ -14,7 +14,16 @@
 src/data/vectorstore/
 src/data/faq_manifest.json
 
-# Local planning and ops. Kept on disk, not versioned.
+# Vite install for the observability screen.
+src/observability/front-observer/node_modules/
+
+# Local ops scripts. Kept on disk, not versioned.
 /scripts/
-/specs/
-/docs/
+
+# Local run output.
+/tmp/
+/.pytest-tmp/
+**/.vite/
+htmlcov/
+coverage.xml
+.mypy_cache/
