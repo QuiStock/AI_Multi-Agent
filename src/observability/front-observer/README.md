@@ -27,4 +27,4 @@ O frontend consulta `GET /api/v1/observability/traces/live` a cada quatro segund
 
 O feed ao vivo é um buffer limitado à memória de cada processo FastAPI. A gravação definitiva dos traces e logs correlacionados continua no MongoDB após o turno. Em execução com vários workers, cada processo terá seu próprio feed; Redis pub/sub ou outra camada compartilhada será uma evolução necessária para distribuir eventos entre workers.
 
-O laboratório carrega o prompt cadastrado do agente, mas o endpoint atual executa uma chamada direta ao modelo configurado: não executa o nó do grafo nem suas tools e não salva as alterações no código ou na conversa original.
+O laboratório carrega o prompt e as tools do card. A execução chama o modelo com esse prompt e esse schema, para antes de executar a tool e mostra o `name` e os `args` da chamada. Não altera o código nem a conversa original.
