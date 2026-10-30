@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Hashable, Mapping
 from functools import partial
+from typing import cast
 
 from langchain_core.messages import RemoveMessage
 from langchain_core.runnables import RunnableLambda
@@ -364,7 +365,7 @@ def create_agent_graph(  # noqa: PLR0913 - explicit graph-composition boundary
             decide_after_router,
             active_routes=capabilities.keys(),
         ),
-        router_targets,
+        cast(dict[Hashable, str], router_targets),
     )
 
     for route in capabilities:

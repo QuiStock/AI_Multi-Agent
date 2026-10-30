@@ -9,16 +9,6 @@ from src.agents.router.executor import RouterExecutor
 from src.graphs.contracts import CompilerResult, RouteDecision
 
 
-class FakeRouterModel:
-    def __init__(self, result: Any) -> None:
-        self.result = result
-        self.messages: list[Any] | None = None
-
-    def invoke(self, messages: list[Any]) -> Any:
-        self.messages = messages
-        return self.result
-
-
 class FakeCompilerAgent:
     def __init__(self, result: Any) -> None:
         self.result = result
@@ -38,14 +28,18 @@ class FakeCompilerAgentFactory:
 
 
 def test_router_executor_normalizes_faq_route() -> None:
-    model = FakeRouterModel(
-        RouteDecision(
-            route="faq",
-            reason="Pergunta documental.",
-        )
+    decision = RouteDecision(
+        route="faq",
+        reason="Pergunta documental.",
     )
+    seen: dict[str, Any] = {}
 
-    result = RouterExecutor(model=model).invoke(
+    class RecordingAgent:
+        def invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
+            seen["messages"] = payload["messages"]
+            return {"structured_response": decision}
+
+    result = RouterExecutor(agent_factory=lambda **_: RecordingAgent()).invoke(
         [HumanMessage(content="Qual é a regra?")]
     )
 
@@ -54,7 +48,10 @@ def test_router_executor_normalizes_faq_route() -> None:
         "reason": "Pergunta documental.",
         "status": "success",
     }
-    assert model.messages is not None
+    assert any(
+        isinstance(message, HumanMessage) and message.content == "Qual é a regra?"
+        for message in seen["messages"]
+    )
 
 
 def test_router_executor_fails_closed_on_model_error() -> None:

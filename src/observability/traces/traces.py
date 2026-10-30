@@ -560,7 +560,7 @@ class TraceRecorder(BaseCallbackHandler):
         return None
 
     @classmethod
-    def _tool_result_summary(
+    def _tool_result_summary(  # noqa: C901, PLR0912
         cls,
         output: Any,
     ) -> dict[str, str | int | float | bool]:

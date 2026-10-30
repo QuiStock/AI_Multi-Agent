@@ -1,6 +1,6 @@
 import pytest
 
-from scripts.provision_memory_collections import validate_collection_names
+from src.memory.collection_names import validate_collection_names
 
 
 def test_collection_names_must_be_distinct_and_non_empty() -> None:

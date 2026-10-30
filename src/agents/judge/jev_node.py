@@ -227,7 +227,7 @@ def judge_blocked_node(state: GraphState) -> GraphState:
 
     if isinstance(error_code, str) and error_code.startswith("JUDGE_JEV_"):
         content = JEV_UNAVAILABLE_RESPONSE
-    elif judge_result and judge_result.get("reason_code") == "missing_evidence":
+    elif judge_result and judge_result.get("reason_code") == "missing_evidence":  # noqa: SIM114
         content = JUDGE_BLOCKED_RESPONSE
         response_status = "clarification_required"
     elif judge_result and judge_result["status"] == "insufficient_evidence":

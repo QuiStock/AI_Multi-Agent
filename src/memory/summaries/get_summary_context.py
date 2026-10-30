@@ -6,7 +6,11 @@ from typing import Any, cast
 
 from qdrant_client import QdrantClient, models
 
-from .contracts import MAX_SUMMARY_RESULTS, SummaryCandidate, SummarySearchRequest
+from src.memory.contracts import (
+    MAX_SUMMARY_RESULTS,
+    SummaryCandidate,
+    SummarySearchRequest,
+)
 
 
 def _as_timestamp(value: object) -> str | None:

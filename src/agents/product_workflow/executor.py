@@ -52,7 +52,7 @@ class ProductWorkflowExecutor:
         self.model = llm if model is None else model
         self.agent_factory = agent_factory
 
-    def invoke(
+    def invoke(  # noqa: PLR0911
         self,
         *,
         messages: Sequence[AnyMessage],

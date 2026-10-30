@@ -6,7 +6,8 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from uuid import NAMESPACE_URL, uuid5
 
-from .mongo_repository import MongoConversationRepository
+from src.memory.conversations.mongo_repository import MongoConversationRepository
+
 from .summary_job_repository import MongoSummaryJobRepository, SummaryJob
 from .summary_queue import RedisSummaryQueue
 
@@ -142,7 +143,9 @@ class ConversationDeletionScheduler:
             )
             if existing is not None:
                 return existing
-            from .mongo_repository import ConversationNotFoundError
+            from src.memory.conversations.mongo_repository import (
+                ConversationNotFoundError,
+            )
 
             raise ConversationNotFoundError(conversation_id)
 

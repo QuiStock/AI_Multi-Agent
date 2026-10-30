@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from .mongo_repository import MongoConversationRepository
-from .qdrant_summary_indexer import QdrantSummaryIndexer
+from src.memory.conversations.mongo_repository import MongoConversationRepository
+from src.memory.summaries.qdrant_summary_indexer import QdrantSummaryIndexer
 
 
 class ConversationCleanupProcessor:

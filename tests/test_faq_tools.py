@@ -141,17 +141,14 @@ def test_faq_executor_binds_manager_scope_per_request(monkeypatch) -> None:
     executor = FAQExecutor(retriever=retriever)
 
     result = executor.invoke(
-        {
-            "request": {
-                "request_id": "request-1",
-                "trace_id": "trace-1",
-                "role_code": "MANAGER",
-            },
-            "messages": [],
-        }
+        messages=[],
+        allowed_audiences=("shared", "manager"),
+        request_id="request-1",
+        trace_id="trace-1",
     )
 
-    assert result["evidences"] == []
+    assert result["status"] == "error"
+    assert result["error_code"] == "FAQ_TOOL_NOT_CALLED"
     assert captured["tools"][0].name == "faq_search"  # type: ignore[index]
     captured["tools"][0].invoke({"query": "consulta"})  # type: ignore[index]
     assert retriever.allowed_audiences == ("shared", "manager")

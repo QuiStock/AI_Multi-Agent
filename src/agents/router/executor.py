@@ -179,7 +179,7 @@ class RouterExecutor:
             response["tool_called"] = tool_called
         return response
 
-    def invoke(
+    def invoke(  # noqa: C901
         self,
         messages: Sequence[AnyMessage],
         *,

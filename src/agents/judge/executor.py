@@ -18,7 +18,7 @@ class JudgeExecutor:
         self.jev_client = jev_client
 
     @staticmethod
-    def _result(
+    def _result(  # noqa: PLR0913
         *,
         status: JudgeStatus,
         reason: str,
@@ -131,7 +131,7 @@ class JudgeExecutor:
 
         return evidence_ids, None
 
-    def _validate_input(
+    def _validate_input(  # noqa: PLR0911
         self,
         *,
         user_question: str | None,

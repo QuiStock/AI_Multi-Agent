@@ -64,12 +64,12 @@ class JWTIdentityDecoder:
         if claims.get("aud") != [AUDIENCE]:
             raise InvalidCredentialError
         iat, exp = claims["iat"], claims["exp"]
-        if type(iat) is not int or type(exp) is not int or exp - iat != 300:
+        if type(iat) is not int or type(exp) is not int or exp - iat != 300:  # noqa: PLR2004
             raise InvalidCredentialError
         sub, email, jti = claims["sub"], claims["email"], claims["jti"]
         if (
             not isinstance(sub, str)
-            or len(sub) > 19
+            or len(sub) > 19  # noqa: PLR2004
             or re.fullmatch(r"[0-9]+", sub) is None
         ):
             raise InvalidCredentialError

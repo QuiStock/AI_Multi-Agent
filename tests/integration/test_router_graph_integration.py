@@ -13,12 +13,12 @@ from src.graphs.state import RouteName as Route
 pytestmark = pytest.mark.integration
 
 
-class FakeRouterModel:
+class ScriptedRouterAgent:
     def __init__(self, decision: RouteDecision) -> None:
         self.decision = decision
 
-    def invoke(self, messages: list[Any]) -> RouteDecision:
-        return self.decision
+    def invoke(self, _: dict[str, Any]) -> dict[str, Any]:
+        return {"structured_response": self.decision}
 
 
 @pytest.mark.parametrize(
@@ -32,10 +32,9 @@ class FakeRouterModel:
 def test_router_adapter_calls_executor_for_active_route_contract(
     route: Route, expected_outcome: str
 ) -> None:
+    decision = RouteDecision(route=route, reason="Classificação controlada.")
     executor = RouterExecutor(
-        model=FakeRouterModel(
-            RouteDecision(route=route, reason="Classificação controlada.")
-        )
+        agent_factory=lambda **_: ScriptedRouterAgent(decision),
     )
 
     result = run_router_node(

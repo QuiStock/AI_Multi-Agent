@@ -6,7 +6,7 @@ from typing import Any, Literal
 from pymongo import ASCENDING, DESCENDING, ReturnDocument
 from pymongo.collection import Collection
 
-from .contracts import (
+from src.memory.contracts import (
     ConversationHistory,
     ConversationListItem,
     ConversationMetadata,

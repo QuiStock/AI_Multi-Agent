@@ -54,6 +54,11 @@ class FakeAccountRepository:
         return self.result
 
 
+class _FakeMongo:
+    def __getitem__(self, name: str) -> _FakeMongo:
+        return self
+
+
 def _setup(
     monkeypatch: pytest.MonkeyPatch,
     *,
@@ -71,7 +76,15 @@ def _setup(
         lambda: config.Settings(
             jwt_issuer="https://auth.example.test",
             jwt_jwks_url="https://auth.example.test/jwks",
+            mongodb_uri="mongodb://localhost:27017",
+            mongodb_db="quistock-test",
         ),
+    )
+    api.dependencies.get_trace_repository.cache_clear()
+    monkeypatch.setattr(
+        api.dependencies,
+        "get_mongo_client",
+        lambda: _FakeMongo(),
     )
     FakeDecoder.fail = decoder_error
     FakeDecoder.identity = VerifiedToken(user_id=42, email="person@example.test")

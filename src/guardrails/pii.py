@@ -3,7 +3,6 @@
 import re
 from collections.abc import Mapping
 
-
 _PII_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("CPF", re.compile(r"\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b")),
     ("CNPJ", re.compile(r"\b\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}\b")),

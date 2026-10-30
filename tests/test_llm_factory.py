@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from langchain_core.messages import HumanMessage
+
 from src import config, llm_factory
 from src.agents.compiler import executor as compiler_module
 from src.agents.faq import executor as faq_module
@@ -108,14 +110,10 @@ def test_faq_executor_uses_openai_model_by_default(monkeypatch: Any) -> None:
         retriever=FakeRetriever(),
     )
     executor.invoke(
-        {
-            "request": {
-                "request_id": "request-1",
-                "trace_id": "trace-1",
-                "role_code": "MANAGER",
-            },
-            "messages": [],
-        }
+        messages=[],
+        allowed_audiences=("shared", "manager"),
+        request_id="request-1",
+        trace_id="trace-1",
     )
 
     assert captured["model"] is sentinel_model
@@ -126,16 +124,27 @@ def test_router_uses_default_structured_model(monkeypatch: Any) -> None:
     sentinel_model = object()
     captured: dict[str, Any] = {}
 
-    def fake_structured_model(schema: type[Any]) -> object:
-        captured["schema"] = schema
-        return sentinel_model
+    class FakeAgent:
+        def invoke(self, state: dict[str, Any]) -> dict[str, Any]:
+            return {
+                "structured_response": RouteDecision(
+                    route="faq",
+                    reason="Pergunta documental.",
+                )
+            }
 
-    monkeypatch.setattr(router_module, "get_structured_model", fake_structured_model)
+    def fake_agent_factory(**kwargs: Any) -> FakeAgent:
+        captured.update(kwargs)
+        return FakeAgent()
 
-    executor = router_module.RouterExecutor()
+    monkeypatch.setattr(router_module, "llm", sentinel_model)
+
+    executor = router_module.RouterExecutor(agent_factory=fake_agent_factory)
+    executor.invoke([HumanMessage(content="Qual é a regra?")])
 
     assert executor.model is sentinel_model
-    assert captured["schema"] is RouteDecision
+    assert captured["model"] is sentinel_model
+    assert captured["response_format"] is RouteDecision
 
 
 def test_compiler_uses_openai_create_agent(monkeypatch: Any) -> None:

@@ -125,10 +125,7 @@ def test_conversation_restores_pii_only_after_graph_returns() -> None:
             request_id = state["request"]["request_id"]
             return {
                 "final_response": {
-                    "content": (
-                        f"Seu e-mail é "
-                        f"[DADO_SENSIVEL_EMAIL_{request_id}_1]."
-                    ),
+                    "content": (f"Seu e-mail é [DADO_SENSIVEL_EMAIL_{request_id}_1]."),
                     "status": "success",
                 }
             }

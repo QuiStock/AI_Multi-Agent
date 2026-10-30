@@ -133,7 +133,7 @@ def test_output_guardrail_preserves_evidence_supported_email() -> None:
             "final_response": {
                 "content": "O e-mail é pessoa@example.com.",
                 "status": "success",
-            }
+            },
         },
     )
 
