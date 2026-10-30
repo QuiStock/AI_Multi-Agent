@@ -17,14 +17,16 @@ from src import config
 from src.agents.faq.ingestion.embedding.google_embedding_provider import (
     GoogleEmbeddingProvider,
 )
-from src.memory.conversation_cleanup import ConversationCleanupProcessor
-from src.memory.mongo_repository import MongoConversationRepository
-from src.memory.qdrant_summary_indexer import QdrantSummaryIndexer
-from src.memory.summary_job_repository import MongoSummaryJobRepository
-from src.memory.summary_lock_repository import MongoConversationSummaryLockRepository
-from src.memory.summary_queue import RedisSummaryQueue, SummaryJobOutboxRelay
-from src.memory.summary_reconciler import SummaryReconciler
-from src.memory.summary_scheduler import ConversationSummaryScheduler
+from src.memory.conversations.mongo_repository import MongoConversationRepository
+from src.memory.jobs.conversation_cleanup import ConversationCleanupProcessor
+from src.memory.jobs.summary_job_repository import MongoSummaryJobRepository
+from src.memory.jobs.summary_lock_repository import (
+    MongoConversationSummaryLockRepository,
+)
+from src.memory.jobs.summary_queue import RedisSummaryQueue, SummaryJobOutboxRelay
+from src.memory.jobs.summary_reconciler import SummaryReconciler
+from src.memory.jobs.summary_scheduler import ConversationSummaryScheduler
+from src.memory.summaries.qdrant_summary_indexer import QdrantSummaryIndexer
 from src.memory.worker.summarizer_end_conversation import (
     EndConversationSummaryWorker,
     LLMSummaryUpdater,
@@ -34,7 +36,7 @@ from src.memory.worker.summary_job_worker import (
     SummaryJobWorkerSettings,
 )
 from src.memory.worker.title_generator import LLMConversationTitleGenerator
-from src.observability.ai_usage_repository import (
+from src.observability.usage.ai_usage_repository import (
     AI_USAGE_COLLECTION_NAME,
     MongoAIUsageRepository,
 )

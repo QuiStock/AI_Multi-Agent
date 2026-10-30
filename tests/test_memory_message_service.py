@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import pytest
 
 from src.memory.contracts import ConversationTurn, StoredMessage
-from src.memory.message_service import MemoryMessageService
+from src.memory.conversations.message_service import MemoryMessageService
 
 
 class RecordingRepository:

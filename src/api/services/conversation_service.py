@@ -13,14 +13,14 @@ from src.config import settings
 from src.graphs.state import GraphState, RequestContext
 from src.guardrails.config import GuardrailConfig
 from src.guardrails.pii import redact_sensitive_data, restore_pii_placeholders
-from src.memory.mongo_repository import (
+from src.memory.conversations.mongo_repository import (
     ConversationClosedError,
     ConversationNotEndedError,
     ConversationNotFoundError,
 )
-from src.observability.live_trace_store import live_trace_store
-from src.observability.log_capture import CorrelatedLogCapture
-from src.observability.traces import TraceRecorder
+from src.observability.logger.log_capture import CorrelatedLogCapture
+from src.observability.traces.live_trace_store import live_trace_store
+from src.observability.traces.traces import TraceRecorder
 
 logger = logging.getLogger(__name__)
 

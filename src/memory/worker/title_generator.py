@@ -10,8 +10,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from src import config
 from src.llm_factory import get_title_model
-from src.observability.ai_usage import invoke_with_usage
-from src.observability.ai_usage_repository import MongoAIUsageRepository
+from src.observability.usage.ai_usage import invoke_with_usage
+from src.observability.usage.ai_usage_repository import MongoAIUsageRepository
 
 from .title_prompt import CONVERSATION_TITLE_PROMPT
 

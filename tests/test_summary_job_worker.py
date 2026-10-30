@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta, timezone
 
-from src.memory.mongo_repository import ConversationNotEndedError
-from src.memory.summary_job_repository import SummaryJob
-from src.memory.summary_lock_repository import ConversationSummaryLease
+from src.memory.conversations.mongo_repository import ConversationNotEndedError
+from src.memory.jobs.summary_job_repository import SummaryJob
+from src.memory.jobs.summary_lock_repository import ConversationSummaryLease
 from src.memory.worker.summary_job_worker import (
     SummaryJobWorker,
     SummaryJobWorkerSettings,

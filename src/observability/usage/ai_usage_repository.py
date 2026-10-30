@@ -206,7 +206,7 @@ def record_usage_safely(  # noqa: PLR0913
     if repository is None:
         return
     try:
-        from src.observability.log_context import get_log_context
+        from src.observability.logger.log_context import get_log_context
 
         log_context = get_log_context()
         repository.record_usage(

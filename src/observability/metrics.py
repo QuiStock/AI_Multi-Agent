@@ -9,7 +9,7 @@ from datetime import datetime
 from math import ceil, isfinite
 from typing import Any
 
-from src.observability.ai_usage_repository import USAGE_SOURCE_LABELS
+from src.observability.usage.ai_usage_repository import USAGE_SOURCE_LABELS
 
 _MILLION = 1_000_000
 

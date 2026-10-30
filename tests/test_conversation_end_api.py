@@ -13,8 +13,8 @@ from src.api.dependencies import (
 from src.api.services.conversation_end_service import ConversationEndService
 from src.auth.models import AuthenticatedPrincipal
 from src.main import create_app
-from src.memory.mongo_repository import ConversationNotFoundError
-from src.memory.summary_job_repository import SummaryJob
+from src.memory.conversations.mongo_repository import ConversationNotFoundError
+from src.memory.jobs.summary_job_repository import SummaryJob
 
 NOW = datetime(2026, 9, 22, 17, 30, tzinfo=timezone.utc)
 

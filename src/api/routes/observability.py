@@ -34,7 +34,7 @@ from src.api.services.lab_run_service import (
     UnsupportedLabModelError,
 )
 from src.api.services.observability_service import ObservabilityService
-from src.observability.live_trace_store import live_trace_store
+from src.observability.traces.live_trace_store import live_trace_store
 
 router = APIRouter(prefix="/observability", tags=["observability"])
 EnvironmentFilter = Literal["development", "qa", "production"]

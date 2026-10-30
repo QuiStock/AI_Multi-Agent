@@ -14,7 +14,7 @@ from src.api.dependencies import (
 )
 from src.auth.models import AuthenticatedPrincipal
 from src.main import create_app
-from src.memory.mongo_repository import ConversationClosedError
+from src.memory.conversations.mongo_repository import ConversationClosedError
 
 
 class FakeTraceRepository:

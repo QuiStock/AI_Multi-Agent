@@ -4,7 +4,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from src.memory.mongo_repository import (
+from src.memory.conversations.mongo_repository import (
     ConversationNotEndedError,
     ConversationNotFoundError,
     MongoConversationRepository,

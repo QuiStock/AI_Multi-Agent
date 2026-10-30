@@ -9,17 +9,20 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Protocol
 
-from ..mongo_repository import ConversationNotEndedError, ConversationNotFoundError
-from ..summary_job_repository import (
+from ..conversations.mongo_repository import (
+    ConversationNotEndedError,
+    ConversationNotFoundError,
+)
+from ..jobs.summary_job_repository import (
     MongoSummaryJobRepository,
     SummaryJob,
     retry_delay_seconds,
 )
-from ..summary_lock_repository import (
+from ..jobs.summary_lock_repository import (
     ConversationSummaryLease,
     MongoConversationSummaryLockRepository,
 )
-from ..summary_queue import RedisSummaryQueue
+from ..jobs.summary_queue import RedisSummaryQueue
 
 logger = logging.getLogger(__name__)
 MIN_LEASE_SECONDS = 3

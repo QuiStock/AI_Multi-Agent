@@ -63,25 +63,27 @@ from src.guardrails.input import input_guardrail_node
 from src.guardrails.output import create_output_guardrail_node
 from src.llm_factory import get_configured_chat_model
 from src.memory.checkpointer import create_local_checkpointer
-from src.memory.enrich_context import ConversationContextEnricher
-from src.memory.message_service import MemoryMessageService
-from src.memory.mongo_repository import MongoConversationRepository
-from src.memory.qdrant_summary_indexer import QdrantSummaryIndexer
-from src.memory.service import SummaryContextService, SummarySearchConfig
-from src.memory.summary_job_repository import MongoSummaryJobRepository
-from src.memory.summary_lock_repository import MongoConversationSummaryLockRepository
-from src.memory.summary_queue import RedisSummaryQueue
-from src.memory.summary_scheduler import (
+from src.memory.conversations.enrich_context import ConversationContextEnricher
+from src.memory.conversations.message_service import MemoryMessageService
+from src.memory.conversations.mongo_repository import MongoConversationRepository
+from src.memory.jobs.summary_job_repository import MongoSummaryJobRepository
+from src.memory.jobs.summary_lock_repository import (
+    MongoConversationSummaryLockRepository,
+)
+from src.memory.jobs.summary_queue import RedisSummaryQueue
+from src.memory.jobs.summary_scheduler import (
     ConversationSummaryScheduler,
 )
-from src.observability.ai_usage_repository import (
-    AI_USAGE_COLLECTION_NAME,
-    MongoAIUsageRepository,
-)
-from src.observability.audit import record_authentication_denial
-from src.observability.trace_repository import (
+from src.memory.summaries.qdrant_summary_indexer import QdrantSummaryIndexer
+from src.memory.summaries.service import SummaryContextService, SummarySearchConfig
+from src.observability.logger.audit import record_authentication_denial
+from src.observability.traces.trace_repository import (
     TRACE_COLLECTION_NAME,
     MongoTraceRepository,
+)
+from src.observability.usage.ai_usage_repository import (
+    AI_USAGE_COLLECTION_NAME,
+    MongoAIUsageRepository,
 )
 
 _bearer_scheme = HTTPBearer(auto_error=False)

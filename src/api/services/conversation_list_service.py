@@ -4,7 +4,7 @@ from src.api.schemas.conversation_list import (
     ConversationListItemResponse,
     ConversationListResponse,
 )
-from src.memory.mongo_repository import MongoConversationRepository
+from src.memory.conversations.mongo_repository import MongoConversationRepository
 
 
 class ConversationListValidationError(ValueError):

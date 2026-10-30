@@ -7,8 +7,8 @@ from pymongo import MongoClient
 from pymongo.collection import Collection
 from testcontainers.community.mongodb import MongoDbContainer
 
-from src.memory.message_service import MemoryMessageService
-from src.memory.mongo_repository import (
+from src.memory.conversations.message_service import MemoryMessageService
+from src.memory.conversations.mongo_repository import (
     ConversationClosedError,
     ConversationNotFoundError,
     MongoConversationRepository,

@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from src.observability.trace_repository import (
+from src.observability.traces.trace_repository import (
     MAX_TRACE_PAGE_SIZE,
     MongoTraceRepository,
 )

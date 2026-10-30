@@ -4,7 +4,7 @@ import logging
 from typing import Protocol
 
 from src.api.schemas.conversation_end import ConversationEndResponse
-from src.memory.summary_scheduler import ConversationSummaryScheduler
+from src.memory.jobs.summary_scheduler import ConversationSummaryScheduler
 
 logger = logging.getLogger(__name__)
 

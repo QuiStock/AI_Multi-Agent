@@ -18,7 +18,7 @@ from src.api.services.conversation_history_service import ConversationHistorySer
 from src.auth.models import AuthenticatedPrincipal
 from src.main import create_app
 from src.memory.contracts import ConversationHistory, StoredMessage
-from src.memory.mongo_repository import (
+from src.memory.conversations.mongo_repository import (
     ConversationNotFoundError,
     MongoConversationRepository,
 )

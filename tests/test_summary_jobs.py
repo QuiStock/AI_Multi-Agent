@@ -2,13 +2,13 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
 from uuid import NAMESPACE_URL, uuid5
 
-from src.memory.summary_job_repository import (
+from src.memory.jobs.summary_job_repository import (
     MongoSummaryJobRepository,
     SummaryJob,
     retry_delay_seconds,
 )
-from src.memory.summary_queue import RedisSummaryQueue, SummaryJobOutboxRelay
-from src.memory.summary_scheduler import ConversationSummaryScheduler
+from src.memory.jobs.summary_queue import RedisSummaryQueue, SummaryJobOutboxRelay
+from src.memory.jobs.summary_scheduler import ConversationSummaryScheduler
 
 NOW = datetime(2026, 10, 1, tzinfo=timezone.utc)
 

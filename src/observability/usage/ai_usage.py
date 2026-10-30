@@ -10,7 +10,7 @@ from uuid import UUID
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.outputs import LLMResult
 
-from src.observability.ai_usage_repository import (
+from .ai_usage_repository import (
     MongoAIUsageRepository,
     UsageSource,
     record_usage_safely,
