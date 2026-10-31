@@ -34,9 +34,6 @@ Snapshot atual:
   parametrizado e somente leitura, restrito a `MANAGER`/`EMPLOYEE`, lojas ativas e itens
   sem evento `EXPIRED`. Grants efetivos ainda precisam de validação no ambiente.
 - MCP continua sendo requisito futuro, não uma capacidade ativa.
-- `AUTH_BYPASS_LOCAL_TESTS` é um bypass temporário para testes locais,
-  desativado por padrão e limitado a chamadas loopback em `development`.
-  Fornece email e `role_id` de teste; fora de `development`, a configuração falha.
 - O roadmap em `docs/planejamento-multiagente-fastapi.md`, na seção
   `Atualização de planejamento — 2026-09-23`, registra objetivos confirmados;
   confira o código e os testes para distinguir os itens já implementados dos
@@ -403,12 +400,15 @@ Mensagem:
 Endpoint: `POST /api/v1/conversations/{conversation_id}/messages`, autenticado
 por `Authorization: Bearer <JWT>` RS256. A API valida assinatura, issuer,
 audience e expiração pelo JWKS (`AUTH_JWT_ISSUER`, `AUTH_JWT_AUDIENCE`,
-`AUTH_JWT_JWK_SET_URI`). O email vem da claim assinada e é associado a
-`user_account` por email antes do grafo; o principal leva `email` e `role_id`.
-HS256 só entra em `development` com `AUTH_JWT_ALGORITHM=HS256` e `JWT_SECRET`.
-Token inválido, expirado ou email sem conta recebe 401. `role_id` 1 recebe 403.
-O grafo continua exigindo `role_code` `MANAGER` ou `EMPLOYEE` quando esse campo
-está presente no principal; o login por email não preenche cargo nem loja.
+`AUTH_JWT_JWK_SET_URI`). O email vem da claim assinada e é associado a uma
+`user_account` ativa por email antes do grafo. A consulta lê `role.code` e a
+única loja ativa ligada em `user_store` a uma `store` ativa. O principal e o
+contexto do grafo levam `email`, `user_id`, `role_code` e `store_ids` com esse
+único id. HS256 só entra em `development` com `AUTH_JWT_ALGORITHM=HS256` e
+`JWT_SECRET`. Token inválido, expirado, email sem conta ou conta inativa recebe
+401. `REGIONAL_MANAGER`, código desconhecido, ausência de loja ativa ou mais de
+uma loja recebem 403 antes do grafo. Gerente regional não é resolvido por
+`region_manager_assignment`.
 `ConversationRequest` rejeita campos extras, mensagem vazia e mensagens acima
 de 4.000 caracteres. A resposta contém `conversation_id`, `request_id`,
 `response` e status `success`, `rejected`, `clarification_required`,
