@@ -1,83 +1,101 @@
 from __future__ import annotations
 
-import re
-from typing import Any
+from dataclasses import dataclass
+from functools import lru_cache
+from urllib.parse import urlsplit
 
 import jwt
-from jwt import PyJWKClient
-from jwt.exceptions import (
-    PyJWKClientConnectionError,
-    PyJWKClientError,
-    PyJWKSetError,
-)
 
-from src.auth.errors import (
-    AuthenticationConfigurationError,
-    AuthenticationDependencyError,
-    InvalidCredentialError,
-)
-from src.auth.models import VerifiedToken
-
-AUDIENCE = "quistock-api"
-REQUIRED_CLAIMS = ("sub", "email", "iss", "aud", "iat", "exp", "jti")
-MAX_BIGINT = 2**63 - 1
+from src.auth.errors import AuthenticationConfigurationError, InvalidCredentialError
 
 
-class JWTIdentityDecoder:
-    """Verify an Auth RS256 token with a trusted, configured JWKS."""
+class JWTEmailDecoder:
+    """Validate Auth RS256 tokens; HS256 is an explicit development option."""
 
     def __init__(
         self,
-        issuer: str | None,
-        jwks_url: str | None,
+        secret: str | None = None,
         *,
-        jwks_client: Any | None = None,
+        algorithm: str = "RS256",
+        issuer: str | None = None,
+        audience: str | None = None,
+        jwks_uri: str | None = None,
     ) -> None:
-        if not issuer or not issuer.strip() or not jwks_url or not jwks_url.strip():
-            raise AuthenticationConfigurationError
+        if algorithm not in ("RS256", "HS256"):
+            raise AuthenticationConfigurationError("Unsupported JWT algorithm")
+        self._algorithm = algorithm
         self._issuer = issuer
-        self._jwks = jwks_client or PyJWKClient(jwks_url, timeout=3, lifespan=300)
+        self._audience = audience
+        self._secret = secret
+        self._jwks: jwt.PyJWKClient | None = None
+        if algorithm == "RS256":
+            if not issuer or not audience or not jwks_uri:
+                raise AuthenticationConfigurationError("JWT verifier is not configured")
+            url = urlsplit(jwks_uri)
+            if url.scheme not in ("http", "https") or not url.hostname or url.username:
+                raise AuthenticationConfigurationError("Invalid JWKS URI")
+            self._jwks = jwt.PyJWKClient(jwks_uri, timeout=3, lifespan=300)
+        elif not secret or not secret.strip():
+            raise AuthenticationConfigurationError("JWT secret is not configured")
 
-    def decode_identity(self, compact_jwt: str) -> VerifiedToken:
+    def decode_email(self, compact_jwt: str) -> str:
         try:
-            header = jwt.get_unverified_header(compact_jwt)
-            if (
-                header.get("alg") != "RS256"
-                or not isinstance(header.get("kid"), str)
-                or not header["kid"]
-            ):
+            # Reject algorithm confusion before fetching a key from the fixed URI.
+            if jwt.get_unverified_header(compact_jwt).get("alg") != self._algorithm:
                 raise InvalidCredentialError
-            key = self._jwks.get_signing_key_from_jwt(compact_jwt).key
-            claims = jwt.decode(
-                compact_jwt,
-                key,
-                algorithms=["RS256"],
-                issuer=self._issuer,
-                audience=AUDIENCE,
-                options={"require": list(REQUIRED_CLAIMS)},
-            )
-        except (PyJWKClientConnectionError, PyJWKSetError) as exc:
-            raise AuthenticationDependencyError from exc
-        except (PyJWKClientError, jwt.InvalidTokenError) as exc:
+            if self._jwks is not None:
+                key = self._jwks.get_signing_key_from_jwt(compact_jwt).key
+                claims = jwt.decode(
+                    compact_jwt,
+                    key,
+                    algorithms=["RS256"],
+                    issuer=self._issuer,
+                    audience=self._audience,
+                    options={"require": ["email", "exp", "iss", "aud"]},
+                )
+            else:
+                if self._secret is None:
+                    raise AuthenticationConfigurationError("JWT secret is missing")
+                claims = jwt.decode(
+                    compact_jwt,
+                    self._secret,
+                    algorithms=["HS256"],
+                    options={"require": ["email", "exp"]},
+                )
+        except jwt.PyJWKClientConnectionError as exc:
+            raise AuthenticationConfigurationError("JWKS is unavailable") from exc
+        except jwt.PyJWKClientError as exc:
+            raise InvalidCredentialError from exc
+        except jwt.InvalidTokenError as exc:
             raise InvalidCredentialError from exc
 
-        if claims.get("aud") != [AUDIENCE]:
+        if not isinstance(claims, dict):
             raise InvalidCredentialError
-        iat, exp = claims["iat"], claims["exp"]
-        if type(iat) is not int or type(exp) is not int or exp - iat != 300:  # noqa: PLR2004
-            raise InvalidCredentialError
-        sub, email, jti = claims["sub"], claims["email"], claims["jti"]
-        if (
-            not isinstance(sub, str)
-            or len(sub) > 19  # noqa: PLR2004
-            or re.fullmatch(r"[0-9]+", sub) is None
-        ):
-            raise InvalidCredentialError
-        user_id = int(sub)
-        if not 1 <= user_id <= MAX_BIGINT:
-            raise InvalidCredentialError
+        email = claims.get("email")
         if not isinstance(email, str) or not email.strip():
             raise InvalidCredentialError
-        if not isinstance(jti, str) or not jti.strip():
-            raise InvalidCredentialError
-        return VerifiedToken(user_id=user_id, email=email)
+        return email.strip()
+
+
+@dataclass(frozen=True)
+class JWTVerifierSettings:
+    algorithm: str
+    issuer: str | None
+    audience: str
+    jwks_uri: str | None
+    secret: str | None
+    environment: str
+
+
+@lru_cache(maxsize=8)
+def get_jwt_decoder(settings: JWTVerifierSettings) -> JWTEmailDecoder:
+    """Reuse the bounded JWKS cache instead of fetching per request."""
+    if settings.algorithm == "HS256" and settings.environment != "development":
+        raise AuthenticationConfigurationError("HS256 is development-only")
+    return JWTEmailDecoder(
+        settings.secret,
+        algorithm=settings.algorithm,
+        issuer=settings.issuer,
+        audience=settings.audience,
+        jwks_uri=settings.jwks_uri,
+    )

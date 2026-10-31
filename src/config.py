@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # Legacy .env values are accepted for compatibility but are unused at runtime.
     groq_api_key: str | None = None
     hf_token: str | None = None
+    langsmith_tracing: str | None = None
+    langsmith_api_key: str | None = None
+    langsmith_project: str | None = None
 
     # Models
     openai_model: str = "gpt-6-luna"
@@ -57,8 +60,11 @@ class Settings(BaseSettings):
     database_url: str | None = None
     postgres_password: str | None = None
     postgres_dsn: str | None = None
-    jwt_issuer: str | None = None
-    jwt_jwks_url: str | None = None
+    jwt_secret: str | None = None
+    auth_jwt_algorithm: Literal["RS256", "HS256"] = "RS256"
+    auth_jwt_issuer: str | None = None
+    auth_jwt_audience: str = "quistock-api"
+    auth_jwt_jwk_set_uri: str | None = None
     auth_bypass_local_tests: bool = Field(
         default=False,
         validation_alias=AliasChoices(
@@ -66,8 +72,10 @@ class Settings(BaseSettings):
             "TEMPORARY_MANAGER_ROLE_BYPASS",
         ),
     )
+    auth_bypass_email: str = "jwt-bypass@localhost.invalid"
+    auth_bypass_role_id: int = 2
+    # Present in older local env files. This login does not read them.
     auth_bypass_user_id: int = Field(default=810000208, ge=1)
-    auth_bypass_email: str = "finalv1.usuario.08@quistock.test"
     auth_bypass_role_code: Literal["MANAGER", "EMPLOYEE"] = "MANAGER"
     auth_bypass_store_id: int = Field(default=810000504, ge=1)
     postgres_pool_timeout_seconds: float = Field(default=5.0, gt=0)

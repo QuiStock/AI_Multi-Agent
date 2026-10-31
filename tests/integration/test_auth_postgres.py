@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import docker
 import psycopg
 import pytest
-from docker.errors import DockerException
 from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from psycopg_pool import ConnectionPool
 from testcontainers.community.postgres import PostgresContainer
@@ -14,10 +12,6 @@ pytestmark = pytest.mark.integration
 
 
 def test_read_only_account_lookup_against_postgres_container() -> None:
-    try:
-        docker.from_env().ping()
-    except DockerException:
-        pytest.skip("Docker Desktop is required for PostgreSQL integration")
     with PostgresContainer("postgres:16-alpine") as postgres:
         admin_dsn = (
             postgres.get_connection_url()
@@ -29,34 +23,15 @@ def test_read_only_account_lookup_against_postgres_container() -> None:
                 "CREATE ROLE ai_auth_reader LOGIN PASSWORD 'test-only-password'"
             )
             connection.execute(
-                "CREATE TABLE role (id BIGINT PRIMARY KEY, code TEXT NOT NULL)"
-            )
-            connection.execute(
                 "CREATE TABLE user_account "
-                "(id BIGINT PRIMARY KEY, email TEXT, role_id INTEGER, status TEXT)"
+                "(email TEXT PRIMARY KEY, role_id INTEGER NOT NULL)"
             )
             connection.execute(
-                "CREATE TABLE store (id BIGINT PRIMARY KEY, status TEXT)"
+                "INSERT INTO user_account(email, role_id) "
+                "VALUES ('reader@example.test', 2)"
             )
             connection.execute(
-                "CREATE TABLE user_store "
-                "(user_id BIGINT, store_id BIGINT, active BOOLEAN, "
-                "unassigned_at TIMESTAMPTZ)"
-            )
-            connection.execute("INSERT INTO role VALUES (91, 'MANAGER')")
-            connection.execute(
-                "INSERT INTO user_account VALUES "
-                "(42, 'reader@example.test', 91, 'ACTIVE')"
-            )
-            connection.execute(
-                "INSERT INTO store VALUES (4, 'ACTIVE'), (9, 'INACTIVE')"
-            )
-            connection.execute(
-                "INSERT INTO user_store VALUES (42, 4, TRUE, NULL), (42, 9, TRUE, NULL)"
-            )
-            connection.execute(
-                "GRANT SELECT ON role, user_account, store, user_store "
-                "TO ai_auth_reader"
+                "GRANT SELECT (email, role_id) ON user_account TO ai_auth_reader"
             )
 
         connection_params = conninfo_to_dict(admin_dsn)
@@ -70,17 +45,18 @@ def test_read_only_account_lookup_against_postgres_container() -> None:
             timeout=3,
         )
         try:
-            account = PostgresAccountRepository(pool).find_by_id(42)
+            account = PostgresAccountRepository(pool).find_by_email(
+                "reader@example.test"
+            )
             assert account is not None
-            assert account.user_id == 42
             assert account.email == "reader@example.test"
-            assert account.role_code == "MANAGER"
-            assert account.store_ids == (4,)
+            assert account.role_id == 2
 
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 with pool.connection() as connection:
                     connection.execute(
-                        "UPDATE user_account SET role_id = 0 WHERE id = 42"
+                        "UPDATE user_account SET role_id = 1 "
+                        "WHERE email = 'reader@example.test'"
                     )
             with pytest.raises(psycopg.errors.InsufficientPrivilege):
                 with pool.connection() as connection:
