@@ -6,7 +6,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True, slots=True)
 class AuthenticatedPrincipal:
     email: str
-    role_id: int = 2
+    role_id: int | None = None
     user_id: int | None = None
     role_code: str | None = None
     store_ids: tuple[int, ...] = ()
@@ -14,5 +14,7 @@ class AuthenticatedPrincipal:
 
 @dataclass(frozen=True, slots=True)
 class UserAccount:
+    user_id: int
     email: str
-    role_id: int
+    role_code: str
+    store_ids: tuple[int, ...] = ()

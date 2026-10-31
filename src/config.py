@@ -4,7 +4,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal, cast
 
-from pydantic import AliasChoices, Field, model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from qdrant_client import QdrantClient
 
@@ -65,19 +65,6 @@ class Settings(BaseSettings):
     auth_jwt_issuer: str | None = None
     auth_jwt_audience: str = "quistock-api"
     auth_jwt_jwk_set_uri: str | None = None
-    auth_bypass_local_tests: bool = Field(
-        default=False,
-        validation_alias=AliasChoices(
-            "AUTH_BYPASS_LOCAL_TESTS",
-            "TEMPORARY_MANAGER_ROLE_BYPASS",
-        ),
-    )
-    auth_bypass_email: str = "jwt-bypass@localhost.invalid"
-    auth_bypass_role_id: int = 2
-    # Present in older local env files. This login does not read them.
-    auth_bypass_user_id: int = Field(default=810000208, ge=1)
-    auth_bypass_role_code: Literal["MANAGER", "EMPLOYEE"] = "MANAGER"
-    auth_bypass_store_id: int = Field(default=810000504, ge=1)
     postgres_pool_timeout_seconds: float = Field(default=5.0, gt=0)
     health_probe_timeout_seconds: float = Field(default=5.0, gt=0)
     mongodb_uri: str | None = None
@@ -117,9 +104,6 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def configure_faq_paths(self) -> Settings:
         """Derive FAQ paths from FAQ_DATA_DIR when specific paths are absent."""
-        if self.auth_bypass_local_tests and self.app_environment != "development":
-            raise ValueError("AUTH_BYPASS_LOCAL_TESTS só pode ser usado em development")
-
         if self.faq_docs_dir is None:
             self.faq_docs_dir = self.faq_data_dir / "docs"
 

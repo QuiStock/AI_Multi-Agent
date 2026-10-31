@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import timezone
 from functools import lru_cache, partial
-from ipaddress import ip_address
 from typing import Any, cast
 
 from fastapi import Depends, HTTPException, Request, status
@@ -103,18 +102,6 @@ def get_authenticated_principal(
     credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
 ) -> AuthenticatedPrincipal:
     settings = config.get_settings()
-    client = request.client
-    if settings.auth_bypass_local_tests and client is not None:
-        try:
-            is_loopback = ip_address(client.host).is_loopback
-        except ValueError:
-            is_loopback = False
-        if is_loopback:
-            return AuthenticatedPrincipal(
-                email=settings.auth_bypass_email,
-                role_id=settings.auth_bypass_role_id,
-            )
-
     if not isinstance(credentials, HTTPAuthorizationCredentials) or (
         credentials.scheme.lower() != "bearer"
     ):

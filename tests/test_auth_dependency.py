@@ -34,7 +34,12 @@ class GraphSpy:
 
 
 class FakeAccountRepository:
-    result: UserAccount | None = UserAccount(email="person@example.test", role_id=2)
+    result: UserAccount | None = UserAccount(
+        user_id=7,
+        email="person@example.test",
+        role_code="MANAGER",
+        store_ids=(30,),
+    )
     fail = False
 
     def __init__(self, _: object, **__: object) -> None:
@@ -43,9 +48,9 @@ class FakeAccountRepository:
     def find_by_email(self, email: str) -> UserAccount | None:
         if self.fail:
             raise AccountLookupError
-        if self.result is None:
+        if self.result is None or self.result.email != email:
             return None
-        return UserAccount(email=email, role_id=self.result.role_id)
+        return self.result
 
 
 JWT_SECRET = "a-long-test-only-shared-secret-for-hs256"
@@ -59,10 +64,22 @@ def _compact_jwt(email: str = "person@example.test") -> str:
     )
 
 
+def _account(
+    role_code: str = "MANAGER",
+    store_ids: tuple[int, ...] = (30,),
+) -> UserAccount:
+    return UserAccount(
+        user_id=7,
+        email="person@example.test",
+        role_code=role_code,
+        store_ids=store_ids,
+    )
+
+
 def _setup(
     monkeypatch: pytest.MonkeyPatch,
     *,
-    role_id: int = 2,
+    account: UserAccount | None = None,
     missing_account: bool = False,
     database_error: bool = False,
 ) -> tuple[Any, GraphSpy]:
@@ -71,11 +88,12 @@ def _setup(
         "get_settings",
         lambda: config.Settings(jwt_secret=JWT_SECRET, auth_jwt_algorithm="HS256"),
     )
-    FakeAccountRepository.result = (
-        None
-        if missing_account
-        else UserAccount(email="person@example.test", role_id=role_id)
-    )
+    if missing_account:
+        FakeAccountRepository.result = None
+    elif account is None:
+        FakeAccountRepository.result = _account()
+    else:
+        FakeAccountRepository.result = account
     FakeAccountRepository.fail = database_error
     monkeypatch.setattr(
         "src.api.dependencies.PostgresAccountRepository", FakeAccountRepository
@@ -121,19 +139,26 @@ def test_malformed_jwt_returns_401_without_running_graph(
 
 
 @pytest.mark.parametrize(
-    ("role_id", "missing_account", "database_error", "expected_status"),
-    [(1, False, False, 403), (2, True, False, 401), (2, False, True, 500)],
+    ("account", "missing_account", "database_error", "expected_status"),
+    [
+        (_account("REGIONAL_MANAGER"), False, False, 403),
+        (_account("AUDITOR"), False, False, 403),
+        (_account("MANAGER", ()), False, False, 403),
+        (_account("EMPLOYEE", (30, 32)), False, False, 403),
+        (None, True, False, 401),
+        (_account(), False, True, 500),
+    ],
 )
 def test_authentication_failures_do_not_enter_graph(
     monkeypatch: pytest.MonkeyPatch,
-    role_id: int,
+    account: UserAccount | None,
     missing_account: bool,
     database_error: bool,
     expected_status: int,
 ) -> None:
     app, graph = _setup(
         monkeypatch,
-        role_id=role_id,
+        account=account,
         missing_account=missing_account,
         database_error=database_error,
     )
@@ -149,10 +174,12 @@ def test_authentication_failures_do_not_enter_graph(
     assert graph.calls == []
 
 
-def test_valid_jwt_email_becomes_graph_identity(
+@pytest.mark.parametrize("role_code", ["MANAGER", "EMPLOYEE"])
+def test_valid_jwt_carries_role_code_and_the_single_store(
     monkeypatch: pytest.MonkeyPatch,
+    role_code: str,
 ) -> None:
-    app, graph = _setup(monkeypatch)
+    app, graph = _setup(monkeypatch, account=_account(role_code, (30,)))
 
     with TestClient(app) as client:
         response = client.post(
@@ -162,7 +189,12 @@ def test_valid_jwt_email_becomes_graph_identity(
         )
 
     assert response.status_code == 200
-    assert graph.calls[0]["request"]["email"] == "person@example.test"
+    request = graph.calls[0]["request"]
+    assert request["email"] == "person@example.test"
+    assert request["user_id"] == 7
+    assert request["role_code"] == role_code
+    assert request["store_ids"] == [30]
+    assert "role_id" not in request
 
 
 def test_client_email_or_user_id_cannot_be_sent_as_identity(
