@@ -48,12 +48,11 @@ from src.auth.account_repository import PostgresAccountRepository
 from src.auth.errors import (
     AccountLookupError,
     AuthenticationConfigurationError,
-    AuthenticationDependencyError,
     InvalidCredentialError,
 )
 from src.auth.models import AuthenticatedPrincipal
 from src.auth.service import AuthenticationService
-from src.auth.token import JWTIdentityDecoder
+from src.auth.token import JWTVerifierSettings, get_jwt_decoder
 from src.graphs.adapters import GraphNode
 from src.graphs.agent_graph import create_agent_graph
 from src.graphs.state import RouteName
@@ -89,11 +88,6 @@ from src.observability.usage.ai_usage_repository import (
 _bearer_scheme = HTTPBearer(auto_error=False)
 
 
-@lru_cache
-def get_jwt_decoder(issuer: str | None, jwks_url: str | None) -> JWTIdentityDecoder:
-    return JWTIdentityDecoder(issuer, jwks_url)
-
-
 def get_postgres_pool(request: Request) -> Any:
     pool = getattr(request.app.state, "postgres_pool", None)
     if pool is None:
@@ -117,10 +111,8 @@ def get_authenticated_principal(
             is_loopback = False
         if is_loopback:
             return AuthenticatedPrincipal(
-                user_id=settings.auth_bypass_user_id,
                 email=settings.auth_bypass_email,
-                role_code=settings.auth_bypass_role_code,
-                store_ids=(settings.auth_bypass_store_id,),
+                role_id=settings.auth_bypass_role_id,
             )
 
     if not isinstance(credentials, HTTPAuthorizationCredentials) or (
@@ -133,17 +125,24 @@ def get_authenticated_principal(
             headers={"WWW-Authenticate": "Bearer"},
         )
     try:
-        identity = get_jwt_decoder(
-            settings.jwt_issuer, settings.jwt_jwks_url
-        ).decode_identity(credentials.credentials)
         pool = get_postgres_pool(request)
         service = AuthenticationService(
+            get_jwt_decoder(
+                JWTVerifierSettings(
+                    algorithm=settings.auth_jwt_algorithm,
+                    issuer=settings.auth_jwt_issuer,
+                    audience=settings.auth_jwt_audience,
+                    jwks_uri=settings.auth_jwt_jwk_set_uri,
+                    secret=settings.jwt_secret,
+                    environment=settings.app_environment,
+                )
+            ),
             PostgresAccountRepository(
                 pool,
                 statement_timeout_ms=int(settings.postgres_pool_timeout_seconds * 1000),
             ),
         )
-        return service.authenticate(identity)
+        return service.authenticate(credentials.credentials)
     except InvalidCredentialError:
         record_authentication_denial("credential_invalid")
         raise HTTPException(
@@ -155,12 +154,6 @@ def get_authenticated_principal(
         record_authentication_denial("authentication_misconfigured")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Serviço temporariamente indisponível.",
-        ) from None
-    except AuthenticationDependencyError:
-        record_authentication_denial("jwks_unavailable")
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Serviço temporariamente indisponível.",
         ) from None
     except PermissionError:

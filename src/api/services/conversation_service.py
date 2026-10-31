@@ -67,9 +67,6 @@ class ConversationService:
 
         effective_request_id = request_id or str(uuid4())
         trace_id = effective_request_id
-        effective_role_code = role_code or ""
-        if not effective_role_code:
-            raise ValueError("role_code e obrigat\u00f3rio")
         pii_redaction_enabled = (
             self._guardrail_config.enabled
             and self._guardrail_config.redact_sensitive_data
@@ -86,7 +83,7 @@ class ConversationService:
             "request_id": effective_request_id,
             "trace_id": trace_id,
             "email": email,
-            "role_code": effective_role_code,
+            "role_code": role_code or "",
             "conversation_id": normalized_conversation_id,
             "sent_at": request.sent_at,
             "is_new_conversation": not request.is_resuming_conversation,

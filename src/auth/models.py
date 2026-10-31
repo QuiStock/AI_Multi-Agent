@@ -5,22 +5,14 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class AuthenticatedPrincipal:
-    user_id: int
     email: str
-    role_code: str
-    store_ids: tuple[int, ...]
+    role_id: int = 2
+    user_id: int | None = None
+    role_code: str | None = None
+    store_ids: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class UserAccount:
-    user_id: int
     email: str
-    role_code: str
-    status: str
-    store_ids: tuple[int, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class VerifiedToken:
-    user_id: int
-    email: str
+    role_id: int

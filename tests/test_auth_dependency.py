@@ -1,19 +1,22 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 
+import jwt
 import pytest
-from fastapi import HTTPException, Request
 from fastapi.testclient import TestClient
 
 from src import api, config
-from src.auth.errors import (
-    AccountLookupError,
-    AuthenticationDependencyError,
-    InvalidCredentialError,
-)
-from src.auth.models import UserAccount, VerifiedToken
+from src.api.dependencies import get_trace_repository
+from src.auth.errors import AccountLookupError
+from src.auth.models import UserAccount
 from src.main import create_app
+
+
+class FakeTraceRepository:
+    def save_trace(self, trace: dict[str, Any]) -> None:
+        pass
 
 
 class GraphSpy:
@@ -23,196 +26,161 @@ class GraphSpy:
     def invoke(self, state: dict[str, Any], config: Any = None) -> dict[str, Any]:
         self.calls.append(state)
         return {
-            "final_response": {"content": "Resposta de teste.", "status": "success"}
+            "final_response": {
+                "content": "Resposta de teste.",
+                "status": "success",
+            }
         }
 
 
-class FakeDecoder:
-    fail: Exception | None = None
-    identity = VerifiedToken(user_id=42, email="person@example.test")
-
-    def decode_identity(self, token: str) -> VerifiedToken:
-        if self.fail is not None:
-            raise self.fail
-        if token != "valid-token":
-            raise InvalidCredentialError
-        return self.identity
-
-
 class FakeAccountRepository:
-    result: UserAccount | None = None
+    result: UserAccount | None = UserAccount(email="person@example.test", role_id=2)
     fail = False
-    looked_up_id: int | None = None
 
     def __init__(self, _: object, **__: object) -> None:
         pass
 
-    def find_by_id(self, user_id: int) -> UserAccount | None:
-        type(self).looked_up_id = user_id
+    def find_by_email(self, email: str) -> UserAccount | None:
         if self.fail:
             raise AccountLookupError
-        return self.result
+        if self.result is None:
+            return None
+        return UserAccount(email=email, role_id=self.result.role_id)
 
 
-class _FakeMongo:
-    def __getitem__(self, name: str) -> _FakeMongo:
-        return self
+JWT_SECRET = "a-long-test-only-shared-secret-for-hs256"
+
+
+def _compact_jwt(email: str = "person@example.test") -> str:
+    return jwt.encode(
+        {"email": email, "role_id": 1, "exp": int(time.time()) + 300},
+        JWT_SECRET,
+        algorithm="HS256",
+    )
 
 
 def _setup(
     monkeypatch: pytest.MonkeyPatch,
     *,
-    role_code: str = "MANAGER",
+    role_id: int = 2,
     missing_account: bool = False,
     database_error: bool = False,
-    account_status: str = "ACTIVE",
-    account_email: str = "person@example.test",
-    store_ids: tuple[int, ...] = (4, 9),
-    decoder_error: Exception | None = None,
 ) -> tuple[Any, GraphSpy]:
     monkeypatch.setattr(
         config,
         "get_settings",
-        lambda: config.Settings(
-            jwt_issuer="https://auth.example.test",
-            jwt_jwks_url="https://auth.example.test/jwks",
-            mongodb_uri="mongodb://localhost:27017",
-            mongodb_db="quistock-test",
-        ),
+        lambda: config.Settings(jwt_secret=JWT_SECRET, auth_jwt_algorithm="HS256"),
     )
-    api.dependencies.get_trace_repository.cache_clear()
-    monkeypatch.setattr(
-        api.dependencies,
-        "get_mongo_client",
-        lambda: _FakeMongo(),
-    )
-    FakeDecoder.fail = decoder_error
-    FakeDecoder.identity = VerifiedToken(user_id=42, email="person@example.test")
     FakeAccountRepository.result = (
         None
         if missing_account
-        else UserAccount(42, account_email, role_code, account_status, store_ids)
+        else UserAccount(email="person@example.test", role_id=role_id)
     )
     FakeAccountRepository.fail = database_error
-    FakeAccountRepository.looked_up_id = None
-    monkeypatch.setattr(
-        "src.api.dependencies.get_jwt_decoder", lambda *_: FakeDecoder()
-    )
     monkeypatch.setattr(
         "src.api.dependencies.PostgresAccountRepository", FakeAccountRepository
     )
-    monkeypatch.setattr("src.api.dependencies.get_postgres_pool", lambda _: object())
     graph = GraphSpy()
     app = create_app()
     app.state.postgres_pool = object()
     app.dependency_overrides[api.dependencies.get_graph] = lambda: graph
+    app.dependency_overrides[get_trace_repository] = FakeTraceRepository
     return app, graph
 
 
-def _post(app: Any, token: str | None = "valid-token") -> Any:
-    headers = {} if token is None else {"Authorization": f"Bearer {token}"}
-    with TestClient(app) as client:
-        return client.post(
-            "/api/v1/conversations/conversation-1/messages",
-            headers=headers,
-            json={"message": "hello", "sent_at": "2026-09-22T14:30:00-03:00"},
-        )
-
-
-def test_missing_or_invalid_bearer_returns_401_without_running_graph(
+def test_missing_bearer_returns_401_without_running_graph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     app, graph = _setup(monkeypatch)
-    for token in (None, "not-a-jwt"):
-        response = _post(app, token)
-        assert response.status_code == 401
-        assert response.headers["www-authenticate"] == "Bearer"
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/conversations/conversation-1/messages",
+            json={"message": "hello", "sent_at": "2026-09-22T14:30:00-03:00"},
+        )
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+    assert graph.calls == []
+
+
+def test_malformed_jwt_returns_401_without_running_graph(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, graph = _setup(monkeypatch)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/conversations/conversation-1/messages",
+            headers={"Authorization": "Bearer not-a-jwt"},
+            json={"message": "hello", "sent_at": "2026-09-22T14:30:00-03:00"},
+        )
+
+    assert response.status_code == 401
     assert graph.calls == []
 
 
 @pytest.mark.parametrize(
-    ("options", "expected_status"),
-    [
-        ({"role_code": "REGIONAL_MANAGER"}, 403),
-        ({"role_code": "UNKNOWN"}, 403),
-        ({"missing_account": True}, 401),
-        ({"database_error": True}, 500),
-        ({"account_status": "INACTIVE"}, 401),
-        ({"account_email": "other@example.test"}, 401),
-        ({"store_ids": ()}, 403),
-        ({"decoder_error": AuthenticationDependencyError()}, 503),
-    ],
+    ("role_id", "missing_account", "database_error", "expected_status"),
+    [(1, False, False, 403), (2, True, False, 401), (2, False, True, 500)],
 )
 def test_authentication_failures_do_not_enter_graph(
     monkeypatch: pytest.MonkeyPatch,
-    options: dict[str, Any],
+    role_id: int,
+    missing_account: bool,
+    database_error: bool,
     expected_status: int,
 ) -> None:
-    app, graph = _setup(monkeypatch, **options)
-    assert _post(app).status_code == expected_status
-    assert graph.calls == []
+    app, graph = _setup(
+        monkeypatch,
+        role_id=role_id,
+        missing_account=missing_account,
+        database_error=database_error,
+    )
 
-
-@pytest.mark.parametrize("role_code", ["MANAGER", "EMPLOYEE"])
-def test_verified_sub_email_role_and_stores_enter_graph(
-    monkeypatch: pytest.MonkeyPatch,
-    role_code: str,
-) -> None:
-    app, graph = _setup(monkeypatch, role_code=role_code)
-    assert _post(app).status_code == 200
-    assert FakeAccountRepository.looked_up_id == 42
-    assert graph.calls[0]["request"]["user_id"] == 42
-    assert graph.calls[0]["request"]["email"] == "person@example.test"
-    assert graph.calls[0]["request"]["role_code"] == role_code
-    assert graph.calls[0]["request"]["store_ids"] == [4, 9]
-
-
-def test_client_cannot_supply_identity_in_body(monkeypatch: pytest.MonkeyPatch) -> None:
-    app, graph = _setup(monkeypatch)
     with TestClient(app) as client:
         response = client.post(
             "/api/v1/conversations/conversation-1/messages",
-            headers={"Authorization": "Bearer valid-token"},
+            headers={"Authorization": f"Bearer {_compact_jwt()}"},
+            json={"message": "hello", "sent_at": "2026-09-22T14:30:00-03:00"},
+        )
+
+    assert response.status_code == expected_status
+    assert graph.calls == []
+
+
+def test_valid_jwt_email_becomes_graph_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, graph = _setup(monkeypatch)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/conversations/conversation-1/messages",
+            headers={"Authorization": f"Bearer {_compact_jwt()}"},
+            json={"message": "hello", "sent_at": "2026-09-22T14:30:00-03:00"},
+        )
+
+    assert response.status_code == 200
+    assert graph.calls[0]["request"]["email"] == "person@example.test"
+
+
+def test_client_email_or_user_id_cannot_be_sent_as_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, graph = _setup(monkeypatch)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/conversations/conversation-1/messages",
+            headers={"Authorization": f"Bearer {_compact_jwt()}"},
             json={
                 "email": "attacker@example.test",
-                "user_id": 99,
-                "store_ids": [99],
+                "user_id": "attacker",
                 "message": "hello",
                 "sent_at": "2026-09-22T14:30:00-03:00",
             },
         )
+
     assert response.status_code == 422
     assert graph.calls == []
-
-
-def _request_from(host: str) -> Request:
-    return Request(
-        {
-            "type": "http",
-            "method": "POST",
-            "path": "/api/v1/conversations/conversation-1/messages",
-            "headers": [],
-            "client": (host, 12345),
-            "server": ("127.0.0.1", 8000),
-        }
-    )
-
-
-def test_loopback_without_bearer_is_unauthorized(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        config,
-        "get_settings",
-        lambda: config.Settings(
-            jwt_issuer="https://auth.example.test",
-            jwt_jwks_url="https://auth.example.test/jwks",
-        ),
-    )
-
-    with pytest.raises(HTTPException) as error:
-        api.dependencies.get_authenticated_principal(
-            _request_from("127.0.0.1"), credentials=None
-        )
-
-    assert error.value.status_code == 401

@@ -36,8 +36,7 @@ Snapshot atual:
 - MCP continua sendo requisito futuro, não uma capacidade ativa.
 - `AUTH_BYPASS_LOCAL_TESTS` é um bypass temporário para testes locais,
   desativado por padrão e limitado a chamadas loopback em `development`.
-  Fornece uma identidade de teste com cargo/loja configuráveis; fora de
-  `development`, a configuração falha.
+  Fornece email e `role_id` de teste; fora de `development`, a configuração falha.
 - O roadmap em `docs/planejamento-multiagente-fastapi.md`, na seção
   `Atualização de planejamento — 2026-09-23`, registra objetivos confirmados;
   confira o código e os testes para distinguir os itens já implementados dos
@@ -402,13 +401,14 @@ Mensagem:
 ```
 
 Endpoint: `POST /api/v1/conversations/{conversation_id}/messages`, autenticado
-por `Authorization: Bearer <JWT>` assinado com RS256. A API valida o JWT pelo
-JWKS configurado (`JWT_JWKS_URL`), `JWT_ISSUER`, audience `quistock-api` e
-expiração. O `sub` é `user_account.id` decimal; a claim `email` deve coincidir
-com o banco. `role.code` e lojas ativas são carregados antes do grafo. FAQ e
-Product Workflow aceitam `MANAGER` e `EMPLOYEE`; `REGIONAL_MANAGER` recebe 403.
-Token inválido
-ou expirado recebe 401; cargo sem acesso ou sem loja ativa recebe 403.
+por `Authorization: Bearer <JWT>` RS256. A API valida assinatura, issuer,
+audience e expiração pelo JWKS (`AUTH_JWT_ISSUER`, `AUTH_JWT_AUDIENCE`,
+`AUTH_JWT_JWK_SET_URI`). O email vem da claim assinada e é associado a
+`user_account` por email antes do grafo; o principal leva `email` e `role_id`.
+HS256 só entra em `development` com `AUTH_JWT_ALGORITHM=HS256` e `JWT_SECRET`.
+Token inválido, expirado ou email sem conta recebe 401. `role_id` 1 recebe 403.
+O grafo continua exigindo `role_code` `MANAGER` ou `EMPLOYEE` quando esse campo
+está presente no principal; o login por email não preenche cargo nem loja.
 `ConversationRequest` rejeita campos extras, mensagem vazia e mensagens acima
 de 4.000 caracteres. A resposta contém `conversation_id`, `request_id`,
 `response` e status `success`, `rejected`, `clarification_required`,
@@ -508,10 +508,9 @@ validação troca o conteúdo por resposta controlada; nunca expõe regra intern
 
 ### Identidade e dados comerciais
 
-As rotas de conversa recebem JWT Bearer RS256 e validam assinatura, issuer,
-audience e expiração pelo JWKS confiável. A API consulta `user_account` por
-`sub`, compara o email assinado, carrega `role.code` e lojas ativas. A identidade não
-vem do body nem da query e é propagada em todo o fluxo de memória. Consultas de
+As rotas de conversa recebem um JWT Bearer RS256 e derivam o email autenticado
+do principal validado pela API antes de executar o grafo. A identidade não vem do
+body nem da query e é propagada em todo o fluxo de memória. Consultas de
 identidade ao PostgreSQL usam credencial somente de leitura e SQL parametrizado.
 Ao implementar tools comerciais, derive role/store scope no servidor, use
 queries parametrizadas, limite de linhas, timeout e logs de auditoria; cubra
