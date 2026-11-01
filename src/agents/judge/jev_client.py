@@ -180,7 +180,8 @@ class TypeSafeJevClient:
                         "Uma regra do campo regras diz que este texto atende, "
                         "como lista fiel, card unique, ausência ou resumo de "
                         "memória no status certo. Isso basta, mesmo com nome "
-                        "ou preço copiados do resumo."
+                        "ou preço copiados do resumo. Se a resposta gerada "
+                        "estiver sustentada pelas evidências, atende à pergunta."
                     ),
                     "false": (
                         "Nenhuma regra do campo regras diz que o texto atende, "
