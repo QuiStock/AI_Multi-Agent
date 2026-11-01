@@ -66,35 +66,38 @@
               <h2>Métricas</h2>
               <div class="metric-grid">
                 <article class="metric-card"><div class="metric-title">Traces no período <span class="metric-icon violet">⌘</span></div><strong id="metric-runs">—</strong><small>Execuções persistidas</small></article>
+                <article class="metric-card"><div class="metric-title">Tempo médio de resposta <span class="metric-icon violet">◷</span></div><strong id="metric-latency-mean">—</strong><small id="metric-latency-mean-samples">Duração total média dos traces</small></article>
                 <article class="metric-card"><div class="metric-title">Latência p95 <span class="metric-icon purple">◷</span></div><strong id="metric-p95">—</strong><small id="metric-latency-samples">Sem amostras</small></article>
                 <article class="metric-card"><div class="metric-title">Taxa de erro <span class="metric-icon red">!</span></div><strong id="metric-errors">—</strong><small id="metric-error-count">Turnos com erro</small></article>
                 <article class="metric-card"><div class="metric-title">Turnos concluídos <span class="metric-icon green">✓</span></div><strong id="metric-success">—</strong><small id="metric-success-count">Turnos concluídos</small></article>
                 <article class="metric-card"><div class="metric-title">Tokens (entrada + saída) <span class="metric-icon green">✳</span></div><strong id="metric-tokens">—</strong><small id="metric-token-calls">Entrada + saída</small></article>
                 <article class="metric-card"><div class="metric-title">Sucesso das chamadas LLM <span class="metric-icon purple">◉</span></div><strong id="metric-model-success">—</strong><small id="metric-model-success-count">Chamadas concluídas. Falha de turno não entra aqui.</small><br><small id="metric-model-most-used">Mais usado: —</small></article>
-                <article class="metric-card"><div class="metric-title">Uso do modelo fallback <span class="metric-icon purple">↪</span></div><strong id="metric-fallbacks">—</strong><small id="metric-fallback-note">Chamadas concluídas no Groq</small></article>
+                <article class="metric-card"><div class="metric-title">Chamadas ao Qwen (fallback) <span class="metric-icon purple">↪</span></div><strong id="metric-fallbacks">—</strong><small id="metric-fallback-note">Chamadas Qwen identificadas nos traces</small></article>
               </div>
             </section>
             <section class="metric-section">
               <h2>Custos</h2>
               <div class="metric-grid cost-grid">
-                <article class="metric-card"><div class="metric-title">Custo LLM por turno concluído <span class="metric-icon violet">$</span></div><strong id="metric-cost-per-turn">—</strong><small id="metric-cost-per-turn-note">Turno que terminou. Erro do turno fica de fora. Bloqueio e esclarecimento entram.</small></article>
-                <article class="metric-card"><div class="metric-title">Custo por resolução <span class="metric-icon green">$</span></div><strong id="metric-cost-resolution">—</strong><small id="metric-resolution-note">Sem erro ou bloqueio</small></article>
-                <article class="metric-card"><div class="metric-title">ROI <span class="metric-icon purple">%</span></div><p class="roi-formula">(retorno − gasto de todas as origens) / gasto de todas as origens</p><label class="roi-input">Retorno em US$<input id="roi-return" type="number" min="0" step="0.01" /></label><strong id="metric-roi">sem retorno informado</strong><small id="metric-roi-note">Informe o retorno para ver a conta</small></article>
+                <article class="metric-card"><div class="metric-title">Custo variável por resolução <span class="metric-icon green">$</span></div><strong id="metric-cost-resolution">—</strong><small id="metric-resolution-note">Período selecionado; turno sem erro inclui fora de escopo e esclarecimentos.</small></article>
+                <article class="metric-card"><div class="metric-title">Custo estimado por conversa <span class="metric-icon violet">$</span></div><strong id="metric-cost-conversation">—</strong><small id="metric-cost-conversation-note">Custo médio da janela de referência usado nas projeções.</small></article>
+                <article class="metric-card"><div class="metric-title">ROI estimado no período <span class="metric-icon purple">%</span></div><p class="roi-formula">Resultado líquido = retorno informado − custo total de IA. ROI = resultado líquido / custo total de IA × 100</p><label class="roi-input">Retorno financeiro do período (US$)<input id="roi-return" type="number" min="0" step="0.01" /></label><strong id="metric-net-return">—</strong><small>Resultado líquido estimado</small><strong id="metric-roi">sem retorno informado</strong><small id="metric-roi-note">Informe o retorno referente ao mesmo período selecionado.</small><small>Inclui laboratório e indexação no gasto real; selecione os últimos 7 dias para ver o ROI semanal. Exclui hospedagem e infraestrutura.</small></article>
               </div>
             </section>
             <section class="metric-section">
-              <h2>Projeções</h2>
-              <div class="metric-grid cost-grid">
-                <article class="metric-card"><div class="metric-title"><span>Custo semanal <select id="weekly-users" class="weekly-users" aria-label="Usuários por semana"><option value="100">100 usuários</option><option value="1000">1000 usuários</option></select></span><span class="metric-icon violet">$</span></div><strong id="metric-weekly-cost">—</strong><small id="metric-weekly-note">Para este cálculo, 7 conversas é o padrão semanal de um usuário.</small></article>
+              <h2>Projeção de custo semanal</h2>
+              <div class="metric-grid projection-grid">
+                <article class="metric-card"><div class="metric-title">100 usuários por semana <span class="metric-icon violet">$</span></div><strong id="metric-weekly-cost-100">—</strong><small>500 conversas semanais, a 5 por usuário. Referência móvel de 30 dias; exclui laboratório e indexação.</small></article>
+                <article class="metric-card"><div class="metric-title">1.000 usuários por semana <span class="metric-icon violet">$</span></div><strong id="metric-weekly-cost-1000">—</strong><small>5.000 conversas semanais, a 5 por usuário. Referência móvel de 30 dias; exclui laboratório e indexação.</small></article>
               </div>
+              <p class="cost-note" id="projection-note">Projeções usam o custo médio por conversa na janela móvel de referência, independentemente do período selecionado; excluem laboratório, indexação, hospedagem e infraestrutura.</p>
             </section>
             <div class="overview-grid">
-              <article class="panel"><div class="panel-heading"><div><h2>Latência por turno</h2><p>Duração de cada turno no período</p></div></div><canvas id="latency-chart" class="line-chart" height="160"></canvas></article>
-              <article class="panel"><div class="panel-heading"><div><h2>Custo acumulado</h2><p>Soma das estimativas precificadas</p></div></div><canvas id="cost-chart" class="line-chart" height="160"></canvas></article>
+              <article class="panel"><div class="panel-heading"><div><h2>Latência média diária</h2><p>Duração média dos traces por dia</p></div></div><canvas id="latency-chart" class="line-chart" height="160"></canvas></article>
+              <article class="panel"><div class="panel-heading"><div><h2>Custo de chamadas de modelo acumulado</h2><p>Chatbot e JEV com tokens registrados; laboratório e indexação são exibidos à parte</p></div></div><canvas id="cost-chart" class="line-chart" height="160"></canvas></article>
             </div>
             <article class="panel table-panel"><div class="panel-heading"><div><h2>Latência entre agentes</h2><p>Média da duração dos nós</p></div></div><div class="table-scroll"><table><thead><tr><th>NÓ</th><th>MÉDIA</th></tr></thead><tbody id="agent-latency-rows"></tbody></table></div></article>
             <article class="panel slo-panel">
-              <div class="panel-heading"><div><h2>Objetivos de nível de serviço</h2><p>Janela móvel de 28 dias · duração do trace no servidor</p></div><span id="slo-window-label" class="mono-label">Carregando janela…</span></div>
+              <div class="panel-heading"><div><h2>Objetivos de nível de serviço</h2><p>Período, usuário e conversa selecionados · status não restringe os SLOs · duração do trace no servidor</p></div><span id="slo-window-label" class="mono-label">Carregando janela…</span></div>
               <div class="slo-card-grid">
                 <section class="slo-card" aria-labelledby="slo-completion-title">
                   <div class="slo-card-heading"><h3 id="slo-completion-title">Conclusão técnica dos turnos</h3><span id="slo-completion-status" class="slo-status" role="status">—</span></div>
@@ -116,7 +119,7 @@
                 </section>
               </div>
               <div class="slo-models">
-                <div class="panel-heading"><div><h3>Sucesso das chamadas LLM por modelo</h3><p>Meta ≥ 99% para cada modelo</p></div></div>
+                <div class="panel-heading"><div><h3>Sucesso das chamadas LLM por modelo</h3><p>Meta ≥ 95% para cada modelo</p></div></div>
                 <div class="table-scroll"><table><thead><tr><th>MODELO</th><th>SUCESSO</th><th>META</th><th>ORÇAMENTO DE ERRO</th><th>CHAMADAS</th><th>ESTADO</th></tr></thead><tbody id="slo-model-rows"></tbody></table></div>
               </div>
             </article>
@@ -124,7 +127,7 @@
               <article class="panel"><div class="panel-heading"><div><h2>Latência média por componente</h2><p>Valores reais agregados dos spans no intervalo selecionado</p></div></div><div id="component-chart" class="bar-chart"></div></article>
               <article class="panel"><div class="panel-heading"><div><h2>Uso por modelo</h2><p>Tokens, chamadas, sucesso e latência</p></div></div><div class="table-scroll"><table><thead><tr><th>MODELO</th><th>CHAMADAS</th><th>TOKENS</th><th>P95</th><th>SUCESSO</th></tr></thead><tbody id="model-rows"></tbody></table></div><div class="cost-note" id="cost-note"></div></article>
             </div>
-            <article class="panel table-panel cost-origin-panel"><div class="panel-heading"><div><h2>Custo estimado por origem</h2><p id="application-cost-scope">Período selecionado · sem filtros de usuário/status · entradas GPT sem cache</p></div><strong id="application-cost-total" class="cost-total">—</strong></div><div class="table-scroll"><table><thead><tr><th>ORIGEM</th><th>MODELO</th><th>CHAMADAS</th><th>TOKENS DE ENTRADA</th><th>TOKENS DE SAÍDA</th><th>CUSTO ESTIMADO</th></tr></thead><tbody id="cost-origin-rows"></tbody></table></div></article>
+            <article class="panel table-panel cost-origin-panel"><div class="panel-heading"><div><h2>Custo estimado por origem</h2><p id="application-cost-scope">Período selecionado · sem filtros de usuário/status</p><small id="application-cost-split"></small></div><strong id="application-cost-total" class="cost-total">—</strong></div><div class="table-scroll"><table><thead><tr><th>ORIGEM</th><th>MODELO</th><th>CHAMADAS</th><th>TOKENS DE ENTRADA</th><th>TOKENS DE SAÍDA</th><th>CUSTO ESTIMADO</th></tr></thead><tbody id="cost-origin-rows"></tbody></table></div></article>
             <article class="panel table-panel"><div class="panel-heading"><div><h2>Execuções recentes</h2><p>Os traces em andamento aparecem antes de serem persistidos.</p></div><button class="text-button" data-view="traces">Ver traces →</button></div><div class="table-scroll"><table><thead><tr><th>TRACE ID</th><th>CONVERSATION ID</th><th>ETAPAS</th><th>DURAÇÃO</th><th>STATUS</th><th>INÍCIO</th></tr></thead><tbody id="recent-traces"></tbody></table></div></article>
           </section>
 

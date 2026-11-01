@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar, Token
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from threading import RLock
 from time import perf_counter
 from typing import Any, Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.outputs import LLMResult
@@ -109,6 +111,59 @@ class TraceRecorder(BaseCallbackHandler):
     @property
     def trace_id(self) -> str:
         return self._trace.trace_id
+
+    def start_external_llm_span(self, *, model: str, source: str) -> str | None:
+        """Add an in-memory model span that is persisted with its parent trace."""
+        if source != "judge_jev" or not model.strip():
+            return None
+        from src.observability.logger.log_context import get_log_context
+
+        context = get_log_context()
+        parent_span_id = (
+            context.span_id
+            if context is not None and context.trace_id == self.trace_id
+            else self.trace_id
+        )
+        span_id = f"{source}:{uuid4()}"
+        span = TraceSpan(
+            span_id=span_id,
+            parent_span_id=parent_span_id,
+            name="Judge JEV",
+            kind="llm",
+            started_at=datetime.now(timezone.utc),
+            model=model.strip(),
+            attributes={"usage_source": source},
+        )
+        with self._lock:
+            if self._trace.ended_at is not None:
+                return None
+            self._trace.spans.append(span)
+            self._spans_by_id[span_id] = span
+            self._started_monotonic[span_id] = perf_counter()
+        self._publish_span_event("started", span)
+        return span_id
+
+    def finish_external_llm_span(
+        self,
+        *,
+        span_id: str | None,
+        status: Literal["completed", "error"],
+        input_tokens: int | None,
+        output_tokens: int | None,
+        error_type: str | None = None,
+    ) -> None:
+        """Finish a model span without allowing observability to break a turn."""
+        if span_id is None:
+            return
+        with self._lock:
+            span = self._spans_by_id.get(span_id)
+            if span is None:
+                return
+            span.input_tokens = input_tokens
+            span.output_tokens = output_tokens
+            span.error_type = error_type
+            self._finish_span_locked(span_id, status=status)
+        self._publish_span_event(status, span)
 
     def finish_trace(self, *, status: FinalTraceStatus) -> None:
         """Close the turn span and mark any callback spans left open as interrupted."""
@@ -750,3 +805,55 @@ class TraceRecorder(BaseCallbackHandler):
                 safe[key] = count
 
         return safe
+
+
+_ACTIVE_TRACE_RECORDER: ContextVar[TraceRecorder | None] = ContextVar(
+    "active_trace_recorder",
+    default=None,
+)
+
+
+@contextmanager
+def bind_trace_recorder(recorder: TraceRecorder) -> Iterator[None]:
+    """Make the current turn recorder available to synchronous external calls."""
+    token: Token[TraceRecorder | None] = _ACTIVE_TRACE_RECORDER.set(recorder)
+    try:
+        yield
+    finally:
+        _ACTIVE_TRACE_RECORDER.reset(token)
+
+
+def start_jev_trace_span(model: str) -> tuple[TraceRecorder, str] | None:
+    """Start a JEV span when its call is inside an observed conversation turn."""
+    recorder = _ACTIVE_TRACE_RECORDER.get()
+    if recorder is None:
+        return None
+    try:
+        span_id = recorder.start_external_llm_span(model=model, source="judge_jev")
+    except Exception:
+        return None
+    return (recorder, span_id) if span_id else None
+
+
+def finish_jev_trace_span(
+    active_span: tuple[TraceRecorder, str] | None,
+    *,
+    status: Literal["completed", "error"],
+    input_tokens: int | None,
+    output_tokens: int | None,
+    error_type: str | None = None,
+) -> None:
+    """Finish the JEV span; trace collection never changes judge behavior."""
+    if active_span is None:
+        return
+    recorder, span_id = active_span
+    try:
+        recorder.finish_external_llm_span(
+            span_id=span_id,
+            status=status,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            error_type=error_type,
+        )
+    except Exception:
+        return

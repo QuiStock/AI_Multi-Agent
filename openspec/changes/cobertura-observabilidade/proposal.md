@@ -11,7 +11,7 @@ O dev precisa entrar numa tela de observabilidade e explicar um turno: o que dem
 - A conta é um e-mail e uma senha conferidos na tabela `super_admin`, no mesmo Postgres de `user_account`. As colunas são `email` e `password`. A senha é bcrypt com prefixo `$2a$`, `$2b$` ou `$2y$`. Esta entrega não cria, não edita e não apaga linhas.
 - A Visão geral continua sendo a primeira tela depois do login. Os blocos ficam separados, no espírito de um painel Grafana.
 - O serviço calcula, sem usar o LangSmith, os números da aula e os do painel padrão do LangSmith que entraram no escopo: turnos, latência média, p95 nearest-rank, erro, bloqueios separados do erro, tokens, custo, chamadas de modelo, ferramentas e tipos de execução.
-- O p95 aceita até 20 segundos. O banner de conclusão permanece em 99,5% numa janela de 28 dias. Os limites da aula (8 segundos e 5%) não substituem esse banner.
+- Os SLOs seguem o período e os filtros de usuário/conversa selecionados. O filtro de status não restringe a amostra. A meta de conclusão segue em 99,5% e o limite de latência em p95 de 20 segundos; os limites da aula (8 segundos e 5%) não substituem esses objetivos.
 - O custo usa a tabela já codificada: GPT-6 Luna a US$ 0,10 / US$ 0,50 por milhão de tokens, sem cache, e embedding Gemini a US$ 0 ou US$ 0,20 conforme o plano.
 - O trace abre dentro da plataforma, com as etapas. A ligação com o LangSmith fica para depois desta cobertura.
 - Fora desta entrega: feedback, datasets, playground, cadastro de usuário, texto de prompt na tela, tempo até o primeiro token e nota da resposta.

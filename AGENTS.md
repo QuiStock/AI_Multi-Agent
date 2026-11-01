@@ -26,8 +26,8 @@ Snapshot atual:
   de jobs de resumo; Qdrant mantém o conteúdo dos resumos e atende FAQ. O
   checkpointer local é `MemorySaver` para desenvolvimento/testes.
 - Traces, métricas, custos e logs correlacionados estão ativos em
-  `src/observability/`; o router `/api/v1/observability` está registrado e
-  ainda não possui controle de acesso próprio.
+  `src/observability/`; o router `/api/v1/observability` exige uma sessão
+  própria por cookie, sem reutilizar o JWT das conversas.
 - A composição em `src/api/dependencies.py` ativa as rotas `faq` e
   `product_workflow`; Product Workflow depende do PostgreSQL. Ele recebe
   snapshot de card como evidência de origem cliente e tem lookup fixo,

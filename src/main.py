@@ -6,6 +6,7 @@ from psycopg_pool import ConnectionPool
 
 from src import config
 from src.api.errors import register_exception_handlers
+from src.api.observability_cors import ObservabilityCORSMiddleware
 from src.api.routes.conversation import router as conversation_router
 from src.api.routes.conversation_end import router as conversation_end_router
 from src.api.routes.conversation_history import router as conversation_history_router
@@ -38,6 +39,10 @@ def create_app() -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
+    app.add_middleware(
+        ObservabilityCORSMiddleware,
+        allowed_origin=config.get_settings().observability_frontend_origin,
+    )
     register_exception_handlers(app)
     app.include_router(health_router)
     app.include_router(conversation_router, prefix="/api/v1")
@@ -57,6 +62,13 @@ def main() -> None:
 
 
 if __name__ == "__main__":  # pragma: no cover
+    import os
+
     import uvicorn
 
-    uvicorn.run("src.main:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run(
+        "src.main:app",
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", "10000")),
+        reload=False,
+    )

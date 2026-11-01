@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from datetime import datetime, timezone
+from math import isfinite
 from typing import Any, Literal, cast
 
 from pymongo import ASCENDING, DESCENDING
@@ -16,6 +17,7 @@ AI_USAGE_COLLECTION_NAME = "ai_usage"
 
 UsageSource = Literal[
     "lab",
+    "judge_jev",
     "summary_generation",
     "title_generation",
     "faq_embedding_query",
@@ -28,6 +30,7 @@ UsageStatus = Literal["completed", "error"]
 USAGE_SOURCE_LABELS: dict[str, str] = {
     "agent_turn": "Turno do agente",
     "lab": "Laboratório",
+    "judge_jev": "Judge JEV",
     "summary_generation": "Geração de resumo",
     "title_generation": "Geração de título",
     "faq_embedding_query": "Embedding de consulta FAQ",
@@ -62,6 +65,10 @@ class MongoAIUsageRepository:
             [("conversation_id", ASCENDING), ("timestamp", DESCENDING)],
             name="ix_ai_usage_conversation_timestamp",
         )
+        self._collection.create_index(
+            [("trace_id", ASCENDING), ("timestamp", ASCENDING)],
+            name="ix_ai_usage_trace_timestamp",
+        )
         self._collection.update_one(
             {"_id": "__usage_metadata__"},
             {"$setOnInsert": {"metering_started_at": datetime.now(timezone.utc)}},
@@ -95,42 +102,23 @@ class MongoAIUsageRepository:
         item_count: int | None = None,
         trace_id: str | None = None,
         conversation_id: str | None = None,
+        duration_ms: float | None = None,
         timestamp: datetime | None = None,
     ) -> None:
         """Upsert one sanitized usage event; telemetry errors never block work."""
-        if source not in _USAGE_SOURCES:
-            raise ValueError("Origem de uso inválida")
-        if not event_id.strip() or not model.strip():
-            raise ValueError("event_id e model são obrigatórios")
-        for name, value in (
-            ("input_tokens", input_tokens),
-            ("output_tokens", output_tokens),
-            ("item_count", item_count),
-        ):
-            if value is not None and (
-                isinstance(value, bool) or not isinstance(value, int) or value < 0
-            ):
-                raise ValueError(f"{name} precisa ser um inteiro não negativo")
-
-        event_timestamp = timestamp or datetime.now(timezone.utc)
-        if event_timestamp.tzinfo is None or event_timestamp.utcoffset() is None:
-            raise ValueError("timestamp precisa incluir timezone")
-        document: dict[str, Any] = {
-            "_id": event_id.strip(),
-            "source": source,
-            "model": model.strip(),
-            "input_tokens": input_tokens,
-            "output_tokens": output_tokens,
-            "status": status,
-            "timestamp": event_timestamp.astimezone(timezone.utc),
-        }
-        if item_count is not None:
-            document["item_count"] = item_count
-        if trace_id:
-            document["trace_id"] = trace_id
-        if conversation_id:
-            document["conversation_id"] = conversation_id
-
+        document = _usage_document(
+            event_id=event_id,
+            source=source,
+            model=model,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            status=status,
+            item_count=item_count,
+            trace_id=trace_id,
+            conversation_id=conversation_id,
+            duration_ms=duration_ms,
+            timestamp=timestamp,
+        )
         try:
             self.ensure_indexes()
             self._collection.replace_one(
@@ -163,11 +151,107 @@ class MongoAIUsageRepository:
             "status": 1,
             "timestamp": 1,
             "item_count": 1,
+            "trace_id": 1,
+            "conversation_id": 1,
+            "duration_ms": 1,
         }
         cursor = self._collection.find(query, projection).sort(
             [("timestamp", ASCENDING), ("_id", ASCENDING)]
         )
         return cast(Iterator[dict[str, Any]], cursor)
+
+    def iter_trace_usage(self, trace_id: str) -> Iterator[dict[str, Any]]:
+        """Stream content-free usage events correlated to one trace."""
+        if not trace_id.strip():
+            raise ValueError("trace_id não pode estar vazio")
+        self.ensure_indexes()
+        projection = {
+            "_id": 0,
+            "source": 1,
+            "model": 1,
+            "input_tokens": 1,
+            "output_tokens": 1,
+            "status": 1,
+            "timestamp": 1,
+            "duration_ms": 1,
+        }
+        cursor = self._collection.find({"trace_id": trace_id.strip()}, projection).sort(
+            [("timestamp", ASCENDING), ("_id", ASCENDING)]
+        )
+        return cast(Iterator[dict[str, Any]], cursor)
+
+
+def _usage_document(  # noqa: PLR0913
+    *,
+    event_id: str,
+    source: UsageSource,
+    model: str,
+    input_tokens: int | None,
+    output_tokens: int | None,
+    status: UsageStatus,
+    item_count: int | None,
+    trace_id: str | None,
+    conversation_id: str | None,
+    duration_ms: float | None,
+    timestamp: datetime | None,
+) -> dict[str, Any]:
+    _validate_usage_identity(event_id, source, model)
+    _validate_usage_counts(input_tokens, output_tokens, item_count)
+    _validate_usage_duration(duration_ms)
+    event_timestamp = timestamp or datetime.now(timezone.utc)
+    if event_timestamp.tzinfo is None or event_timestamp.utcoffset() is None:
+        raise ValueError("timestamp precisa incluir timezone")
+    document: dict[str, Any] = {
+        "_id": event_id.strip(),
+        "source": source,
+        "model": model.strip(),
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "status": status,
+        "timestamp": event_timestamp.astimezone(timezone.utc),
+    }
+    if item_count is not None:
+        document["item_count"] = item_count
+    if duration_ms is not None:
+        document["duration_ms"] = float(duration_ms)
+    if trace_id:
+        document["trace_id"] = trace_id
+    if conversation_id:
+        document["conversation_id"] = conversation_id
+    return document
+
+
+def _validate_usage_identity(event_id: str, source: UsageSource, model: str) -> None:
+    if source not in _USAGE_SOURCES:
+        raise ValueError("Origem de uso inválida")
+    if not event_id.strip() or not model.strip():
+        raise ValueError("event_id e model são obrigatórios")
+
+
+def _validate_usage_counts(
+    input_tokens: int | None,
+    output_tokens: int | None,
+    item_count: int | None,
+) -> None:
+    for name, value in (
+        ("input_tokens", input_tokens),
+        ("output_tokens", output_tokens),
+        ("item_count", item_count),
+    ):
+        if value is not None and (
+            isinstance(value, bool) or not isinstance(value, int) or value < 0
+        ):
+            raise ValueError(f"{name} precisa ser um inteiro não negativo")
+
+
+def _validate_usage_duration(duration_ms: float | None) -> None:
+    if duration_ms is not None and (
+        isinstance(duration_ms, bool)
+        or not isinstance(duration_ms, (int, float))
+        or not isfinite(duration_ms)
+        or duration_ms < 0
+    ):
+        raise ValueError("duration_ms precisa ser finito e não negativo")
 
 
 @contextmanager
@@ -201,6 +285,7 @@ def record_usage_safely(  # noqa: PLR0913
     item_count: int | None = None,
     trace_id: str | None = None,
     conversation_id: str | None = None,
+    duration_ms: float | None = None,
 ) -> None:
     """Read active trace context and persist usage without affecting the caller."""
     if repository is None:
@@ -223,6 +308,7 @@ def record_usage_safely(  # noqa: PLR0913
                 or current_usage_conversation_id()
                 or (log_context.conversation_id if log_context else None)
             ),
+            duration_ms=duration_ms,
         )
     except Exception:
         _logger.exception("ai_usage_recording_failed", extra={"source": source})

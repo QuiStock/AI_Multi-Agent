@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
 import logging
 import re
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from google import genai
 from google.genai import types as genai_types
@@ -65,6 +68,7 @@ class HealthService:
             "qdrant": self._probe_qdrant,
             "gemini": self._probe_gemini,
             "openai": self._probe_openai,
+            "typesafe": self._probe_typesafe,
         }
         executor = ThreadPoolExecutor(max_workers=len(targets))
         try:
@@ -181,3 +185,44 @@ class HealthService:
             next(iter(client.models.list()), None)
         finally:
             client.close()
+
+    def _probe_typesafe(self) -> None:
+        if not self._settings.typesafe_api_key:
+            raise RuntimeError("TypeSafe credentials are not configured")
+        request = Request(
+            f"{self._settings.typesafe_api_base_url.rstrip('/')}/v1/models",
+            headers={
+                "Authorization": f"Bearer {self._settings.typesafe_api_key}",
+                "Accept": "application/json",
+            },
+            method="GET",
+        )
+        try:
+            with urlopen(
+                request,
+                timeout=self._settings.health_probe_timeout_seconds,
+            ) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            raise RuntimeError(
+                f"TypeSafe models probe returned HTTP {exc.code}"
+            ) from None
+        except (
+            URLError,
+            TimeoutError,
+            OSError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+        ):
+            raise RuntimeError("TypeSafe models probe failed") from None
+
+        models = payload.get("models") if isinstance(payload, dict) else None
+        if not isinstance(models, list) or not models:
+            raise RuntimeError("TypeSafe returned an empty model catalog")
+        model_names = {
+            item.get("name")
+            for item in models
+            if isinstance(item, dict) and isinstance(item.get("name"), str)
+        }
+        if self._settings.typesafe_jev_model not in model_names:
+            raise RuntimeError("Configured JEV model is unavailable")
