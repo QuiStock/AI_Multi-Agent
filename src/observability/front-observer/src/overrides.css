@@ -12,8 +12,9 @@
 .line-chart{width:100%;display:block}
 .metric-section{margin:0 0 18px}
 .metric-section h2{margin:0 0 10px;font-size:13px;letter-spacing:.04em;text-transform:uppercase;color:#6d6478}
-.cost-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-.roi-formula{margin:8px 0 0;font-size:12px;color:#6d6478}
+.cost-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.projection-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.roi-formula{margin:8px 0 0;font-size:11px;color:#6d6478}
 .roi-input{display:grid;gap:4px;font-size:11px;margin:8px 0;max-width:280px}
 .roi-input input{height:36px;border:1px solid #ddd;border-radius:8px;padding:0 8px;font-size:14px}
 .service-status i.offline{background:var(--red);box-shadow:0 0 0 3px #cb5c6920}
@@ -43,7 +44,6 @@
 .live-indicator{font-size:12px}
 .subtle-label{font-size:12px}
 .metric-title{font-size:12px}
-.weekly-users{height:22px;max-width:118px;margin-left:8px;font-size:11px;border:1px solid #e4dcea;border-radius:6px;background:#fff;color:#49365c}
 .metric-card>strong{font-size:26px}
 .metric-card>small{font-size:11px}
 .panel-heading h2{font-size:14px}
@@ -107,6 +107,8 @@ td{height:44px;font-size:11px}
 .empty-cell{font-size:11px}
 
 @media(max-width:760px){
+  .cost-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .projection-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .brand>span{display:none}
   .brand-feather{width:30px;height:30px}
   .page-heading h1{font-size:26px}
@@ -122,3 +124,7 @@ td{height:44px;font-size:11px}
 .form-grid select{height:36px;border:1px solid #e7e2eb;border-radius:5px;padding:0 8px;color:#594f62;background:#fff;font:12px "DM Sans",sans-serif;outline:none}
 .form-grid select:focus{border-color:#ab84ef;box-shadow:0 0 0 3px #7f3aef14}
 .form-grid input[readonly]{background:#faf9fb;color:#766a80}
+.trace-span-table{margin-bottom:14px}
+.trace-span-table td:first-child{min-width:145px}
+.trace-span-table td:first-child small{display:block;margin-top:3px;color:#9b91a2;font-size:10px}
+.trace-span-name{color:#594d64}

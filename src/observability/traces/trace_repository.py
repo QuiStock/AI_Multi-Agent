@@ -50,6 +50,7 @@ _SAFE_SPAN_ATTRIBUTES = {
     "tool_error_code",
     "tool_results_count",
     "tool_evidence_count",
+    "usage_source",
 }
 _TOOL_SUMMARY_STATUSES = {"success", "partial", "error"}
 _TOOL_ERROR_CODE_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
@@ -235,10 +236,16 @@ class MongoTraceRepository:
         )
         projection = {
             "_id": 0,
+            "trace_id": 1,
+            "conversation_id": 1,
+            "started_at": 1,
             "status": 1,
             "duration_ms": 1,
             "fallback_used": 1,
             "spans": 1,
+            "logs.event": 1,
+            "logs.attributes.route": 1,
+            "logs.attributes.status": 1,
         }
         cursor = self._collection.find(query, projection).sort(
             [("started_at", ASCENDING), ("_id", ASCENDING)]
@@ -458,6 +465,10 @@ class MongoTraceRepository:
                         and not isinstance(value, bool)
                         and value >= 0
                     ):
+                        safe_attributes[key] = value
+                    continue
+                if key == "usage_source":
+                    if value == "judge_jev":
                         safe_attributes[key] = value
                     continue
                 if isinstance(value, (str, int, float, bool)):

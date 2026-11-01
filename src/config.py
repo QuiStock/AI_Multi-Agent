@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     postgres_password: str | None = None
     postgres_dsn: str | None = None
     jwt_secret: str | None = None
+    observability_session_secret: str | None = None
+    observability_frontend_origin: str = (
+        "https://quistock-ai-observability.onrender.com"
+    )
     auth_jwt_algorithm: Literal["RS256", "HS256"] = "RS256"
     auth_jwt_issuer: str | None = None
     auth_jwt_audience: str = "quistock-api"

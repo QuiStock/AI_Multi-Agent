@@ -19,6 +19,7 @@ def test_health_endpoint_returns_ok() -> None:
             "qdrant",
             "gemini",
             "openai",
+            "typesafe",
         )
     }
     app.dependency_overrides[get_health_service] = lambda: HealthService(
@@ -42,6 +43,7 @@ def test_health_endpoint_returns_ok() -> None:
             "qdrant": "ok",
             "gemini": "ok",
             "openai": "ok",
+            "typesafe": "ok",
         },
     }
     app.dependency_overrides.clear()
@@ -62,6 +64,7 @@ def test_health_reports_failed_dependency_without_leaking_errors(caplog) -> None
             "qdrant",
             "gemini",
             "openai",
+            "typesafe",
         )
     }
     probes["mongodb"] = fail_with_secret
@@ -137,6 +140,46 @@ def test_provider_probes_use_model_catalog_without_generation(
     assert calls == {"gemini_list": 1, "openai_list": 1, "generated": 0}
 
 
+def test_typesafe_probe_uses_authenticated_model_catalog_without_generation(
+    monkeypatch,
+) -> None:
+    from src.api.services import health_service
+
+    calls: list[tuple[str, float]] = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return b'{"models":[{"name":"jev-latest"}]}'
+
+    def fake_urlopen(request, *, timeout):
+        assert request.full_url == "https://typesafe.example/v1/models"
+        assert request.get_header("Authorization") == "Bearer test-key"
+        calls.append((request.get_method(), timeout))
+        return Response()
+
+    monkeypatch.setattr(health_service, "urlopen", fake_urlopen)
+    service = HealthService(
+        settings=Settings(
+            typesafe_api_key="test-key",
+            typesafe_api_base_url="https://typesafe.example/",
+            typesafe_jev_model="jev-latest",
+            health_probe_timeout_seconds=1.5,
+        ),
+        postgres_pool=None,
+        mongo_client=None,
+    )
+
+    service._probe_typesafe()
+
+    assert calls == [("GET", 1.5)]
+
+
 def test_health_marks_probe_timeout_unavailable() -> None:
     settings = Settings(health_probe_timeout_seconds=0.02)
     probes = {
@@ -148,6 +191,7 @@ def test_health_marks_probe_timeout_unavailable() -> None:
             "qdrant",
             "gemini",
             "openai",
+            "typesafe",
         )
     }
 

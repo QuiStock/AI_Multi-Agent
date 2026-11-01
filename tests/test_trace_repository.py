@@ -124,6 +124,11 @@ def _trace() -> dict[str, Any]:
                 },
             ),
             _span("llm-1", "llm"),
+            _span(
+                "jev-1",
+                "llm",
+                attributes={"usage_source": "judge_jev"},
+            ),
         ],
         "logs": [
             {
@@ -175,6 +180,7 @@ def test_save_get_list_count_and_iter_traces_use_sanitized_documents() -> None:
         "tool_evidence_count": 1,
     }
     assert stored["spans"][1]["attributes"] == {}
+    assert stored["spans"][2]["attributes"] == {"usage_source": "judge_jev"}
     assert stored["logs"][0]["attributes"] == {
         "event": "tool_call",
         "results_count": 2,
@@ -216,6 +222,19 @@ def test_save_get_list_count_and_iter_traces_use_sanitized_documents() -> None:
     assert collection.last_projection == {"spans": 0, "logs": 0}
     assert repository.count_traces(conversation_id="conversation-1") == 1
     assert list(repository.iter_traces(started_from=START, started_to=END)) == [stored]
+    assert collection.last_projection == {
+        "_id": 0,
+        "trace_id": 1,
+        "conversation_id": 1,
+        "started_at": 1,
+        "status": 1,
+        "duration_ms": 1,
+        "fallback_used": 1,
+        "spans": 1,
+        "logs.event": 1,
+        "logs.attributes.route": 1,
+        "logs.attributes.status": 1,
+    }
     assert len(collection.indexes) == 3
 
 

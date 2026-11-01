@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Literal, cast
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
 
 from src import config
 from src.api.dependencies import (
@@ -20,6 +20,9 @@ from src.api.schemas.observability import (
     LiveTraceFeedResponse,
     ObservabilityConversationDetailResponse,
     ObservabilityConversationListResponse,
+    ObservabilityLoginRequest,
+    ObservabilityLoginResponse,
+    ObservabilityLogoutResponse,
     ObservabilityMetricsResponse,
     TraceDetailResponse,
     TraceListResponse,
@@ -34,6 +37,14 @@ from src.api.services.lab_run_service import (
     UnsupportedLabModelError,
 )
 from src.api.services.observability_service import ObservabilityService
+from src.auth.observability_session import (
+    clear_observability_session_cookie,
+    create_observability_session_token,
+    get_observability_session_secret,
+    require_observability_session,
+    set_observability_session_cookie,
+    verify_observability_password,
+)
 from src.observability.traces.live_trace_store import live_trace_store
 
 router = APIRouter(prefix="/observability", tags=["observability"])
@@ -42,7 +53,83 @@ StatusFilter = Literal["completed", "error"]
 ConversationStatusFilter = Literal["active", "ended"]
 
 
-@router.get("/lab/models", response_model=LabModelCatalogResponse)
+@router.post("/login", response_model=ObservabilityLoginResponse)
+def login(
+    credentials: ObservabilityLoginRequest,
+    request: Request,
+    response: Response,
+) -> ObservabilityLoginResponse:
+    settings = config.get_settings()
+    secret = get_observability_session_secret(settings)
+    pool = getattr(request.app.state, "postgres_pool", None)
+    if pool is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Serviço de autenticação temporariamente indisponível.",
+        )
+
+    email = credentials.email.strip().lower()
+    statement_timeout_ms = max(1, int(settings.postgres_pool_timeout_seconds * 1000))
+    try:
+        with (
+            pool.connection(
+                timeout=settings.postgres_pool_timeout_seconds
+            ) as connection,
+            connection.cursor() as cursor,
+        ):
+            cursor.execute(
+                "SELECT set_config('statement_timeout', %s, true)",
+                (f"{statement_timeout_ms}ms",),
+            )
+            cursor.execute(
+                'SELECT email, "password" FROM public.super_admin '
+                "WHERE lower(email) = lower(%s) LIMIT 2",
+                (email,),
+            )
+            rows = cursor.fetchall()
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="Serviço de autenticação temporariamente indisponível.",
+        ) from None
+
+    if (
+        len(rows) != 1
+        or not isinstance(rows[0][1], str)
+        or not verify_observability_password(
+            credentials.password.get_secret_value(), rows[0][1]
+        )
+    ):
+        raise HTTPException(status_code=401, detail="Credenciais inválidas.")
+
+    token = create_observability_session_token(email, secret)
+    set_observability_session_cookie(
+        response,
+        token,
+        production=settings.app_environment == "production",
+    )
+    return ObservabilityLoginResponse()
+
+
+@router.post(
+    "/logout",
+    response_model=ObservabilityLogoutResponse,
+    dependencies=[Depends(require_observability_session)],
+)
+def logout(response: Response) -> ObservabilityLogoutResponse:
+    settings = config.get_settings()
+    clear_observability_session_cookie(
+        response,
+        production=settings.app_environment == "production",
+    )
+    return ObservabilityLogoutResponse()
+
+
+@router.get(
+    "/lab/models",
+    response_model=LabModelCatalogResponse,
+    dependencies=[Depends(require_observability_session)],
+)
 def list_lab_models() -> LabModelCatalogResponse:
     """Expose only the chat model currently accepted by the lab runner."""
     model_id = config.OPENAI_MODEL
@@ -53,7 +140,11 @@ def list_lab_models() -> LabModelCatalogResponse:
     )
 
 
-@router.post("/lab/run", response_model=LabRunResponse)
+@router.post(
+    "/lab/run",
+    response_model=LabRunResponse,
+    dependencies=[Depends(require_observability_session)],
+)
 def run_lab_model(
     request: LabRunRequest,
     service: Annotated[LabRunService, Depends(get_lab_run_service)],
@@ -69,7 +160,11 @@ def run_lab_model(
         ) from exc
 
 
-@router.get("/agents/{agent_id}", response_model=LabAgentConfigResponse)
+@router.get(
+    "/agents/{agent_id}",
+    response_model=LabAgentConfigResponse,
+    dependencies=[Depends(require_observability_session)],
+)
 def get_lab_agent_config(
     agent_id: Annotated[str, Path(min_length=1)],
     service: Annotated[
@@ -86,6 +181,7 @@ def get_lab_agent_config(
 @router.get(
     "/conversations",
     response_model=ObservabilityConversationListResponse,
+    dependencies=[Depends(require_observability_session)],
 )
 def list_conversations(  # noqa: PLR0913, PLR0917
     service: Annotated[ObservabilityService, Depends(get_observability_service)],
@@ -118,6 +214,7 @@ def list_conversations(  # noqa: PLR0913, PLR0917
 @router.get(
     "/conversations/{conversation_id}",
     response_model=ObservabilityConversationDetailResponse,
+    dependencies=[Depends(require_observability_session)],
 )
 def get_conversation(
     conversation_id: Annotated[str, Path(min_length=1)],
@@ -135,7 +232,11 @@ def get_conversation(
     return ObservabilityConversationDetailResponse.model_validate(conversation)
 
 
-@router.get("/metrics", response_model=ObservabilityMetricsResponse)
+@router.get(
+    "/metrics",
+    response_model=ObservabilityMetricsResponse,
+    dependencies=[Depends(require_observability_session)],
+)
 def get_metrics(  # noqa: PLR0913, PLR0917
     started_from: datetime,
     started_to: datetime,
@@ -165,7 +266,11 @@ def get_metrics(  # noqa: PLR0913, PLR0917
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@router.get("/traces", response_model=TraceListResponse)
+@router.get(
+    "/traces",
+    response_model=TraceListResponse,
+    dependencies=[Depends(require_observability_session)],
+)
 def list_traces(  # noqa: PLR0913, PLR0917
     service: Annotated[ObservabilityService, Depends(get_observability_service)],
     started_from: datetime | None = None,
@@ -196,7 +301,11 @@ def list_traces(  # noqa: PLR0913, PLR0917
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@router.get("/traces/live", response_model=LiveTraceFeedResponse)
+@router.get(
+    "/traces/live",
+    response_model=LiveTraceFeedResponse,
+    dependencies=[Depends(require_observability_session)],
+)
 def get_live_trace_feed(
     after: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=1, le=1_000)] = 500,
@@ -207,7 +316,11 @@ def get_live_trace_feed(
     )
 
 
-@router.get("/traces/{trace_id}", response_model=TraceDetailResponse)
+@router.get(
+    "/traces/{trace_id}",
+    response_model=TraceDetailResponse,
+    dependencies=[Depends(require_observability_session)],
+)
 def get_trace(
     trace_id: Annotated[str, Path(min_length=1)],
     service: Annotated[ObservabilityService, Depends(get_observability_service)],

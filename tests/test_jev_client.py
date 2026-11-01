@@ -10,6 +10,7 @@ from src.agents.judge.jev_client import (
     TypeSafeJevClient,
 )
 from src.graphs.state import Evidence, ResponseDraft
+from src.observability.traces.traces import TraceRecorder, bind_trace_recorder
 
 
 def _draft() -> ResponseDraft:
@@ -133,6 +134,47 @@ def test_typesafe_client_sends_typed_judge_questions(
     assert result.verdict == "approved"
     assert result.reason_code == "none"
     assert result.noul_probability == 0.96
+
+
+def test_typesafe_client_records_invalid_judgment_as_trace_span(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "src.agents.judge.jev_client.urlopen",
+        lambda *_args, **_kwargs: FakeResponse(
+            {
+                "model": "jev-1.13.0",
+                "answers": {},
+                "usage": {"input_tokens": 1200, "output_tokens": 8},
+            }
+        ),
+    )
+    client = TypeSafeJevClient(api_key="test-key")
+    trace = TraceRecorder(
+        trace_id="trace-1",
+        conversation_id="conversation-1",
+        environment="test",
+    )
+
+    with bind_trace_recorder(trace):
+        with pytest.raises(JevClientError, match="verdict"):
+            client.evaluate(
+                user_question="2",
+                response_draft=_draft(),
+                evidences=[_evidence()],
+            )
+
+    trace.finish_trace(status="error")
+    jev_span = next(
+        span for span in trace.to_document()["spans"] if span["kind"] == "llm"
+    )
+    assert jev_span["name"] == "Judge JEV"
+    assert jev_span["model"] == "jev-1.13.0"
+    assert jev_span["attributes"]["usage_source"] == "judge_jev"
+    assert jev_span["input_tokens"] == 1200
+    assert jev_span["output_tokens"] == 8
+    assert jev_span["status"] == "error"
+    assert jev_span["duration_ms"] >= 0
 
 
 def test_typesafe_client_sends_prior_assistant_message_as_context(

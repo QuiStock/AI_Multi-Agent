@@ -1,7 +1,13 @@
 import './style.css';
 import './overrides.css';
 
-const API = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+const configuredAPI = import.meta.env.VITE_API_BASE_URL?.trim();
+const apiBase = configuredAPI || (import.meta.env.PROD
+  ? 'https://api-chatbot-gdox.onrender.com/api/v1'
+  : '/api/v1');
+const API = /\/api\/v1\/?$/i.test(apiBase)
+  ? apiBase.replace(/\/+$/, '')
+  : `${apiBase.replace(/\/+$/, '')}/api/v1`;
 const OBS = `${API}/observability`;
 const TAB_KEY = 'observability-tab';
 let authState = 'anonymous';
@@ -38,6 +44,13 @@ const escapeHTML = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => 
 const dateTime = (value) => value ? new Date(value).toLocaleString('pt-BR') : '—';
 const shortId = (value, length = 15) => value && value.length > length ? `${value.slice(0, 8)}…${value.slice(-5)}` : (value || '—');
 const number = (value, digits = 0) => value == null || !Number.isFinite(Number(value)) ? '—' : Number(value).toLocaleString('pt-BR', { maximumFractionDigits: digits });
+const usd = (value) => {
+  if (value == null || !Number.isFinite(Number(value))) return '—';
+  const amount = Number(value);
+  const minimumFractionDigits = Math.abs(amount) >= 0.01 || amount === 0 ? 2 : 0;
+  const maximumFractionDigits = minimumFractionDigits === 2 ? 2 : 8;
+  return `US$ ${amount.toLocaleString('pt-BR', { minimumFractionDigits, maximumFractionDigits })}`;
+};
 const duration = (value) => value == null ? '—' : value < 1000 ? `${number(value, 1)} ms` : `${number(value / 1000, 2)} s`;
 const statusText = (status) => ({ completed: 'Concluído', error: 'Erro', running: 'Em andamento', interrupted: 'Interrompido' }[status] || status || '—');
 const attributeLine = (attributes) => {
@@ -54,6 +67,7 @@ async function requestJSON(path, { method = 'GET', body } = {}) {
   try {
     const response = await fetch(path, {
       method,
+      credentials: 'include',
       headers: body ? { 'Content-Type': 'application/json' } : undefined,
       body: body ? JSON.stringify(body) : undefined,
     });
@@ -218,6 +232,8 @@ function renderMetrics() {
   if (!metrics) return;
   renderSLOMetrics(metrics.slos);
   $('metric-runs').textContent = number(metrics.traces?.count);
+  $('metric-latency-mean').textContent = duration(metrics.traces?.latency?.average_ms);
+  $('metric-latency-mean-samples').textContent = `${number(metrics.traces?.latency?.sample_count)} traces com duração registrada`;
   $('metric-p95').textContent = duration(metrics.traces?.latency?.p95_ms);
   $('metric-latency-samples').textContent = `${number(metrics.traces?.latency?.sample_count)} amostras de turno`;
   const errorRate = metrics.traces?.error_rate;
@@ -244,19 +260,11 @@ function renderMetrics() {
   renderComponentChart(metrics.components || {});
   renderModels(metrics.models || {});
   const cost = metrics.cost || {};
-  $('metric-cost-per-turn').textContent = cost.cost_per_completed_trace_usd == null
-    ? '—'
-    : `US$ ${number(cost.cost_per_completed_trace_usd, 6)}`;
-  $('metric-cost-per-turn-note').textContent = 'Turno que terminou. Erro do turno fica de fora. Bloqueio e esclarecimento entram.';
   $('cost-note').textContent = cost.estimated_total_usd == null
     ? `Custo do LLM não estimado para o período: ${number(cost.unpriced_calls)} chamadas sem preço/uso completo.`
-    : `Custo estimado do LLM: US$ ${number(cost.estimated_total_usd, 6)} · ${number(cost.priced_calls)} chamadas precificadas; entrada sem cache.`;
+    : `Custo estimado do LLM: ${usd(cost.estimated_total_usd)} · ${number(cost.priced_calls)} chamadas precificadas; entrada sem cache.`;
   renderApplicationCost(metrics.application_cost || {});
   renderBoard(metrics.board || {}, metrics);
-}
-
-function money(value) {
-  return value == null ? '—' : `US$ ${number(value, 6)}`;
 }
 
 function renderBoard(board, metrics) {
@@ -265,36 +273,69 @@ function renderBoard(board, metrics) {
     banner.textContent = 'SLO do período: sem turnos suficientes';
     banner.className = 'slo-banner';
   } else if (board.slo_ok) {
-    banner.textContent = 'SLO dentro: p95 até 20 s e erro até 5%';
+    banner.textContent = 'SLO dentro: 95% dos turnos sem erro e p95 até 20 s';
     banner.className = 'slo-banner ok';
   } else {
-    banner.textContent = 'SLO estourado: p95 acima de 20 s ou erro acima de 5%';
+    banner.textContent = 'SLO estourado: menos de 95% sem erro ou p95 acima de 20 s';
     banner.className = 'slo-banner breached';
   }
-  $('metric-fallbacks').textContent = number(board.fallback_count);
-  $('metric-fallback-note').textContent = 'Chamadas concluídas no Groq';
+  const fallback = metrics.fallback || {};
+  const traceCount = metrics.traces?.count || 0;
+  if (!traceCount) {
+    $('metric-fallbacks').textContent = '—';
+    $('metric-fallback-note').textContent = 'Sem traces no período.';
+  } else {
+    $('metric-fallbacks').textContent = number(fallback.qwen_call_count || 0);
+    $('metric-fallback-note').textContent = `${number(fallback.qwen_trace_count || 0)} turnos com Qwen · ${number((fallback.rate || 0) * 100, 2)}% dos traces.`;
+  }
   $('metric-model-most-used').textContent = board.most_used_model
     ? `Mais usado: ${board.most_used_model}`
     : 'Mais usado: —';
-  const weeklyUsers = $('weekly-users').value === '1000' ? 1000 : 100;
-  const weeklyValue = weeklyUsers === 1000
-    ? board.weekly_cost_1000_users_usd
-    : board.weekly_cost_100_users_usd;
-  $('metric-weekly-cost').textContent = money(weeklyValue);
-  $('metric-cost-resolution').textContent = money(board.cost_per_resolution_usd);
-  $('metric-resolution-note').textContent = `${number(board.resolution_count)} resoluções · sem erro ou bloqueio`;
-  const retornoRaw = $('roi-return').value;
-  const retorno = Number(retornoRaw);
-  const custo = metrics.application_cost?.estimated_total_usd;
-  if (retornoRaw === '' || !Number.isFinite(retorno) || custo == null) {
-    $('metric-roi').textContent = 'sem retorno informado';
-    $('metric-roi-note').textContent = 'Informe o retorno para ver (retorno − gasto de todas as origens) / gasto';
-  } else if (custo === 0) {
-    $('metric-roi').textContent = '0';
-    $('metric-roi-note').textContent = `(${number(retorno, 6)} − 0) / 0`;
+  const applicationCost = metrics.application_cost || {};
+  const resolutionCount = board.resolution_count || 0;
+  $('metric-cost-resolution').textContent = usd(board.cost_per_resolution_usd);
+  if (applicationCost.conversation_variable_cost_usd == null) {
+    $('metric-resolution-note').textContent = 'Custo por turno sem erro indisponível: uso/preço conversacional incompleto ou cobertura parcial.';
+  } else if (!resolutionCount) {
+    $('metric-resolution-note').textContent = 'Nenhum turno sem erro no período.';
   } else {
-    $('metric-roi').textContent = number((retorno - custo) / custo, 4);
-    $('metric-roi-note').textContent = `(${number(retorno, 6)} − ${number(custo, 6)}) / ${number(custo, 6)}`;
+    $('metric-resolution-note').textContent = `${number(resolutionCount)} turnos concluídos sem erro no período selecionado · inclui fora de escopo, rejeições e esclarecimentos.`;
+  }
+  $('metric-cost-conversation').textContent = usd(board.cost_per_conversation_usd);
+  $('metric-cost-conversation-note').textContent = board.cost_per_conversation_usd == null
+    ? 'Indisponível por cobertura, uso ou preço incompletos.'
+    : `Média de ${number(board.conversation_count)} conversas em ${number(board.projection_window_days, 1)} dias de cobertura.`;
+  $('metric-weekly-cost-100').textContent = usd(board.weekly_cost_100_users_usd);
+  $('metric-weekly-cost-1000').textContent = usd(board.weekly_cost_1000_users_usd);
+
+  const returnRaw = $('roi-return').value;
+  const returnValue = Number(returnRaw);
+  const totalCost = applicationCost.estimated_total_usd;
+  $('metric-net-return').textContent = returnRaw === '' || totalCost == null || !Number.isFinite(returnValue)
+    ? '—'
+    : usd(returnValue - totalCost);
+  if (returnRaw === '' || !Number.isFinite(returnValue)) {
+    $('metric-roi').textContent = 'sem retorno informado';
+    $('metric-roi-note').textContent = 'Informe o retorno para calcular o ROI estimado.';
+  } else if (totalCost == null) {
+    $('metric-roi').textContent = 'N/D';
+    $('metric-roi-note').textContent = 'Custo de IA indisponível por preço, uso ou cobertura incompletos.';
+  } else if (totalCost === 0) {
+    $('metric-roi').textContent = 'Indefinido';
+    $('metric-roi-note').textContent = 'O custo estimado de IA é zero; não é possível dividir por zero.';
+  } else {
+    const roi = ((returnValue - totalCost) / totalCost) * 100;
+    $('metric-roi').textContent = `${number(roi, 2)}%`;
+    $('metric-roi-note').textContent = `(${usd(returnValue)} − ${usd(totalCost)}) / ${usd(totalCost)} × 100.`;
+  }
+
+  const projectionNote = $('projection-note');
+  if (!board.conversation_count) {
+    projectionNote.textContent = 'Projeção indisponível: não há conversas observadas na janela de referência.';
+  } else if (board.cost_per_conversation_usd == null) {
+    projectionNote.textContent = 'Projeção indisponível: faltam tokens/preços de chamadas ligadas a conversas ou a cobertura de medição é parcial.';
+  } else {
+    projectionNote.textContent = `Base móvel: ${number(board.conversation_count)} conversas em ${number(board.projection_window_days, 1)} dias de cobertura. Usa ${usd(board.cost_per_conversation_usd)} por conversa e 5 conversas por usuário/semana; independe dos filtros de período. Laboratório e indexação ficam à parte.`;
   }
   const agents = board.agent_latency || [];
   $('agent-latency-rows').innerHTML = agents.length
@@ -377,12 +418,12 @@ async function submitLogin(event) {
 }
 
 async function logout() {
+  try {
+    if (authState === 'active') await requestJSON(`${OBS}/logout`, { method: 'POST' });
+  } catch { /* a tela de login abre mesmo se a API não responder */ }
   authState = 'anonymous';
   sessionStorage.removeItem(TAB_KEY);
   state.loadSeq += 1;
-  try {
-    await fetch(`${OBS}/logout`, { method: 'POST' });
-  } catch { /* a tela de login abre mesmo se a API não responder */ }
   state.metrics = null;
   state.traces = [];
   state.traceTotal = 0;
@@ -404,19 +445,21 @@ function renderApplicationCost(applicationCost) {
   const coverageComplete = applicationCost.coverage_complete === true;
   const formattedTotal = !coverageComplete
     ? 'Cobertura parcial'
-    : total == null ? 'Incompleto' : `US$ ${number(total, 6)}`;
+    : total == null ? 'Incompleto' : usd(total);
   const tier = applicationCost.embedding_tier === 'paid' ? 'Gemini pago' : 'Gemini gratuito';
   $('application-cost-total').textContent = formattedTotal;
   const coverageStart = applicationCost.coverage_start_at
     ? `medição completa desde ${dateTime(applicationCost.coverage_start_at)}`
     : 'início da medição indisponível';
-  $('application-cost-scope').textContent = `Período selecionado · sem filtros de usuário/status · GPT sem cache · ${tier} · ${coverageStart}`;
+  $('application-cost-scope').textContent = `Período selecionado · sem filtros de usuário/status · GPT sem cache · JEV por tokens de entrada · ${tier} · ${coverageStart}`;
+  const formatCost = (value) => value == null ? 'Incompleto' : usd(value);
+  $('application-cost-split').textContent = `Conversacional: ${formatCost(applicationCost.conversation_variable_cost_usd)} · Laboratório/indexação/sem conversa associada: ${formatCost(applicationCost.operational_cost_usd)}`;
 
   const origins = applicationCost.origins || [];
   $('cost-origin-rows').innerHTML = origins.length ? origins.map((origin) => {
     const cost = origin.estimated_cost_usd == null
-      ? `Incompleto · ${number(origin.unpriced_calls)} sem uso/preço`
-      : `US$ ${number(origin.estimated_cost_usd, 6)}`;
+      ? `Incompleto · ${number(origin.unpriced_calls)} sem cálculo (${number(origin.calls_missing_usage)} sem uso · ${number(origin.calls_missing_price)} sem preço · ${number(origin.calls_missing_both)} ambos)`
+      : usd(origin.estimated_cost_usd);
     const inputTokens = origin.input_tokens == null ? '—' : number(origin.input_tokens);
     const outputTokens = origin.output_tokens == null ? '—' : number(origin.output_tokens);
     return `<tr><td>${escapeHTML(origin.label || origin.source)}</td><td title="${escapeHTML(origin.model)}">${escapeHTML(shortId(origin.model, 32))}</td><td>${number(origin.calls)}</td><td>${inputTokens}</td><td>${outputTokens}</td><td>${cost}</td></tr>`;
@@ -427,8 +470,8 @@ function renderSLOMetrics(slos) {
   if (!slos) return;
   const window = slos.window || {};
   $('slo-window-label').textContent = window.started_at && window.ended_at
-    ? `${dateTime(window.started_at)} – ${dateTime(window.ended_at)}`
-    : 'Últimos 28 dias';
+    ? `${dateTime(window.started_at)} – ${dateTime(window.ended_at)} · ${number(window.duration_days, 1)} dias`
+    : 'Período selecionado';
 
   const completion = slos.turn_completion || {};
   renderSLOStatus('slo-completion-status', completion.status);
@@ -703,6 +746,8 @@ function renderTraceDetail() {
   const events = normalizedTraceEvents(trace);
   const spanEvents = events.filter((event) => event.event_type === 'span');
   const logs = events.filter((event) => event.event_type === 'log');
+  const spans = traceSpans(trace).sort((left, right) => new Date(left.started_at) - new Date(right.started_at));
+  const usageEvents = trace.usage_events || [];
   const startedAt = new Date(trace.started_at).getTime();
   const timeline = events.map((event) => renderTraceEvent(event, startedAt)).join('');
   const labAgentIds = new Set(['faq_rag', 'product_workflow', 'router', 'compiler']);
@@ -710,8 +755,28 @@ function renderTraceDetail() {
   const agentIds = [...new Set(agentSpans.map((span) => span.attributes.agent_id))].filter((agentId) => labAgentIds.has(agentId));
   const labButtons = agentIds.map((agentId) => `<button class="button button-secondary" data-lab-agent="${escapeHTML(agentId)}">Testar ${escapeHTML(agentId)}</button>`).join('');
   const detail = $('trace-detail');
-  detail.innerHTML = `<div class="detail-head"><h2>${escapeHTML(trace.trace_id)}</h2><p>Conversa ${escapeHTML(trace.conversation_id)}</p><div class="detail-actions"><span class="status-pill ${escapeHTML(trace.status)}">${escapeHTML(statusText(trace.status))}</span><span class="subtle-label">${duration(trace.duration_ms)} · início ${dateTime(trace.started_at)}</span></div>${labButtons ? `<div class="detail-actions">${labButtons}</div>` : ''}</div><div class="detail-section-title">Fluxo do trace <small>${number(spanEvents.length)} eventos de span · ${number(logs.length)} logs</small></div><div class="timeline">${timeline || '<p class="empty-note">Aguardando spans e logs.</p>'}</div>`;
+  detail.innerHTML = `<div class="detail-head"><h2>${escapeHTML(trace.trace_id)}</h2><p>Conversa ${escapeHTML(trace.conversation_id)}</p><div class="detail-actions"><span class="status-pill ${escapeHTML(trace.status)}">${escapeHTML(statusText(trace.status))}</span><span class="subtle-label">${duration(trace.duration_ms)} · início ${dateTime(trace.started_at)}</span></div>${labButtons ? `<div class="detail-actions">${labButtons}</div>` : ''}</div><div class="detail-section-title">Spans e chamadas <small>${number(spans.length)} spans · ${number(usageEvents.length)} chamadas de uso fora dos spans</small></div>${renderTraceSpans(spans, usageEvents)}<div class="detail-section-title">Eventos do trace <small>${number(spanEvents.length)} eventos · ${number(logs.length)} logs</small></div><div class="timeline">${timeline || '<p class="empty-note">Aguardando spans e logs.</p>'}</div>`;
   detail.querySelectorAll('[data-lab-agent]').forEach((button) => button.addEventListener('click', () => openLabFromTrace(button.dataset.labAgent)));
+}
+
+function renderTraceSpans(spans, usageEvents = []) {
+  if (!spans.length && !usageEvents.length) return '<p class="empty-note">Nenhum span ou chamada registrada.</p>';
+  const spanRows = spans.map((span) => {
+    const hasTokens = span.input_tokens != null || span.output_tokens != null;
+    const tokens = hasTokens
+      ? `${span.input_tokens == null ? '—' : number(span.input_tokens)} / ${span.output_tokens == null ? '—' : number(span.output_tokens)}`
+      : '—';
+    const model = span.model ? `<small>${escapeHTML(span.model)}</small>` : '';
+    return `<tr><td><strong class="trace-span-name">${escapeHTML(span.name || span.kind || 'span')}</strong><small>${escapeHTML(span.kind || 'componente')}${model ? ` · ${model}` : ''}</small></td><td><span class="status-pill ${escapeHTML(span.status)}">${escapeHTML(statusText(span.status))}</span></td><td class="duration">${duration(span.duration_ms)}</td><td>${tokens}</td><td>${span.estimated_cost_usd == null ? '—' : usd(span.estimated_cost_usd)}</td></tr>`;
+  }).join('');
+  const usageRows = usageEvents.map((event) => {
+    const tokens = event.input_tokens == null && event.output_tokens == null
+      ? '—'
+      : `${event.input_tokens == null ? '—' : number(event.input_tokens)} / ${event.output_tokens == null ? '—' : number(event.output_tokens)}`;
+    const source = event.source === 'judge_jev' ? 'Judge JEV' : event.source;
+    return `<tr><td><strong class="trace-span-name">${escapeHTML(source || 'Uso de modelo')}</strong><small>${escapeHTML(event.model || 'modelo desconhecido')} · chamada fora dos spans</small></td><td><span class="status-pill ${escapeHTML(event.status)}">${escapeHTML(statusText(event.status))}</span></td><td class="duration">${duration(event.duration_ms)}</td><td>${tokens}</td><td>${event.estimated_cost_usd == null ? '—' : usd(event.estimated_cost_usd)}</td></tr>`;
+  }).join('');
+  return `<div class="table-scroll trace-span-table"><table><thead><tr><th>SPAN / CHAMADA</th><th>STATUS</th><th>DURAÇÃO</th><th>TOKENS (ENTRADA / SAÍDA)</th><th>CUSTO ESTIMADO</th></tr></thead><tbody>${spanRows}${usageRows}</tbody></table></div>`;
 }
 
 function renderTraceEvent(event, traceStartedAt) {
@@ -1004,7 +1069,7 @@ document.querySelectorAll('[data-view]').forEach((button) => button.addEventList
   if (view) activateView(view);
 }));
 $('refresh-button').addEventListener('click', () => loadData());
-$('weekly-users').addEventListener('change', () => {
+$('roi-return').addEventListener('input', () => {
   if (state.metrics) renderBoard(state.metrics.board || {}, state.metrics);
 });
 $('apply-filters').addEventListener('click', applyFilters);
@@ -1022,7 +1087,6 @@ $('run-lab').addEventListener('click', runLab);
 $('lab-messages').addEventListener('input', updateLabMessageCount);
 $('login-screen').addEventListener('submit', submitLogin);
 $('logout-button').addEventListener('click', logout);
-$('roi-return').addEventListener('input', () => { if (state.metrics) renderBoard(state.metrics.board || {}, state.metrics); });
 
 async function boot() {
   initDateFilters();
@@ -1030,9 +1094,6 @@ async function boot() {
   if (['overview', 'traces', 'conversations', 'lab'].includes(initialView)) activateView(initialView);
   if (!sessionStorage.getItem(TAB_KEY)) {
     showLogin();
-    try {
-      await fetch(`${OBS}/logout`, { method: 'POST' });
-    } catch { /* sem a marca da aba, a tela fica no login */ }
     return;
   }
   authState = 'active';

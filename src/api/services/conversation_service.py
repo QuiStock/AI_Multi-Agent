@@ -20,7 +20,7 @@ from src.memory.conversations.mongo_repository import (
 )
 from src.observability.logger.log_capture import CorrelatedLogCapture
 from src.observability.traces.live_trace_store import live_trace_store
-from src.observability.traces.traces import TraceRecorder
+from src.observability.traces.traces import TraceRecorder, bind_trace_recorder
 
 logger = logging.getLogger(__name__)
 
@@ -138,20 +138,21 @@ class ConversationService:
                     },
                 )
                 try:
-                    result = self._graph.invoke(
-                        state,
-                        config={
-                            "configurable": {
-                                "thread_id": normalized_conversation_id,
+                    with bind_trace_recorder(trace_recorder):
+                        result = self._graph.invoke(
+                            state,
+                            config={
+                                "configurable": {
+                                    "thread_id": normalized_conversation_id,
+                                },
+                                "metadata": {
+                                    "trace_id": trace_id,
+                                    "conversation_id": normalized_conversation_id,
+                                    "environment": settings.app_environment,
+                                },
+                                "callbacks": [trace_recorder],
                             },
-                            "metadata": {
-                                "trace_id": trace_id,
-                                "conversation_id": normalized_conversation_id,
-                                "environment": settings.app_environment,
-                            },
-                            "callbacks": [trace_recorder],
-                        },
-                    )
+                        )
                 except (
                     ConversationClosedError,
                     ConversationNotEndedError,

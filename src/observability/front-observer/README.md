@@ -19,7 +19,16 @@ npm install
 npm run dev
 ```
 
-O Vite encaminha `/api` para a API. Para apontar a outro host durante o desenvolvimento, configure `OBSERVABILITY_API_URL` antes de iniciar o Vite. Para uma implantação estática em outro domínio, defina `VITE_API_BASE_URL` no build.
+O Vite encaminha `/api` para a API. Para apontar a outro host durante o desenvolvimento, configure `OBSERVABILITY_API_URL` antes de iniciar o Vite. Para uma implantação estática, `VITE_API_BASE_URL` é incorporada durante o build e aceita tanto a raiz da API quanto a URL completa com `/api/v1`. Exemplo no Render: `https://api-chatbot-gdox.onrender.com`.
+
+## Configuração no Render
+
+- No serviço estático `quistock-ai-observability`, defina `VITE_API_BASE_URL=https://api-chatbot-gdox.onrender.com` nas variáveis de build. O frontend acrescenta `/api/v1` quando a variável contém apenas a raiz.
+- No serviço da API, defina `OBSERVABILITY_FRONTEND_ORIGIN=https://quistock-ai-observability.onrender.com` e `OBSERVABILITY_SESSION_SECRET` com um segredo aleatório próprio, de pelo menos 32 caracteres. Não reutilize `JWT_SECRET` das conversas.
+- O container escuta `0.0.0.0:$PORT` (padrão local 10000). Em **Settings → Health Check Path** do serviço da API, configure `/health`.
+- Após alterar variáveis do frontend, faça um novo build; variáveis `VITE_*` são compiladas no bundle estático.
+
+A sessão da observabilidade usa um cookie `HttpOnly`, separado do JWT do chatbot. Em produção ele é `Secure` e `SameSite=None` para permitir as chamadas autenticadas entre os dois serviços Render.
 
 ## Atualização e trace ao vivo
 

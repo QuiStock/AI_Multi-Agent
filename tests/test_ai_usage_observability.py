@@ -73,13 +73,21 @@ class FakeCollection:
     ) -> FakeCursor:
         self.query = query
         self.projection = projection
-        return FakeCursor(
-            [
-                item
-                for key, item in self.documents.items()
-                if key != "__usage_metadata__"
-            ]
-        )
+        items = []
+        for key, item in self.documents.items():
+            if key == "__usage_metadata__":
+                continue
+            if "trace_id" in query and item.get("trace_id") != query["trace_id"]:
+                continue
+            projected = {
+                field: value
+                for field, value in item.items()
+                if projection.get(field) == 1
+            }
+            if projection.get("_id", 1) != 0 and "_id" in item:
+                projected["_id"] = item["_id"]
+            items.append(projected)
+        return FakeCursor(items)
 
 
 def _repository() -> tuple[MongoAIUsageRepository, FakeCollection]:
@@ -91,7 +99,7 @@ def test_usage_repository_indexes_upserts_and_reads_metering_start() -> None:
     repository, collection = _repository()
     repository.ensure_indexes()
     repository.ensure_indexes()
-    assert len(collection.indexes) == 3
+    assert len(collection.indexes) == 4
 
     stored_start = collection.documents["__usage_metadata__"]["metering_started_at"]
     assert repository.get_metering_started_at() == stored_start
@@ -106,6 +114,7 @@ def test_usage_repository_indexes_upserts_and_reads_metering_start() -> None:
         status="completed",
         trace_id="trace-1",
         conversation_id="conversation-1",
+        duration_ms=12.5,
         timestamp=NOW,
     )
     event = collection.documents["event-1"]
@@ -119,6 +128,7 @@ def test_usage_repository_indexes_upserts_and_reads_metering_start() -> None:
         "status": "completed",
         "trace_id": "trace-1",
         "conversation_id": "conversation-1",
+        "duration_ms": 12.5,
         "timestamp": NOW,
     }
 
@@ -134,6 +144,15 @@ def test_usage_repository_indexes_upserts_and_reads_metering_start() -> None:
     }
     assert collection.projection is not None
     assert "input_tokens" in collection.projection
+    assert "duration_ms" in collection.projection
+
+    trace_events = list(repository.iter_trace_usage("trace-1"))
+    assert len(trace_events) == 1
+    assert trace_events[0]["source"] == "lab"
+    assert "_id" not in trace_events[0]
+    assert collection.query == {"trace_id": "trace-1"}
+    assert collection.projection is not None
+    assert collection.projection["_id"] == 0
 
 
 def test_usage_repository_validates_usage_and_timestamps() -> None:
@@ -154,6 +173,7 @@ def test_usage_repository_validates_usage_and_timestamps() -> None:
         ("input_tokens", -1),
         ("output_tokens", 1.5),
         ("item_count", -1),
+        ("duration_ms", float("inf")),
     ):
         kwargs: dict[str, Any] = {
             "event_id": "e",

@@ -56,7 +56,7 @@ Status: **implementada na branch `refactor`**. O issuer e a URL do JWKS devem se
 
 ## Configuração de implantação
 
-Definir `JWT_ISSUER` exatamente igual à claim `iss` publicada pela Auth e `JWT_JWKS_URL` como URL HTTPS do JWKS dessa mesma Auth. `aud` é fixo em `quistock-api`. Usar em `POSTGRES_DSN` uma conta somente leitura com `SELECT` em `user_account(id,email,role_id,status)`, `role(id,code)`, `user_store(user_id,store_id,active,unassigned_at)` e `store(id,status)`; a consulta comercial também requer as tabelas já documentadas em `AGENTS.md`. Sem issuer/JWKS, a API responde 500 ao receber bearer; sem banco configurado, não autentica a conta.
+Definir `AUTH_JWT_ISSUER` exatamente igual à claim `iss` publicada pela Auth e `AUTH_JWT_JWK_SET_URI` como URL HTTPS do JWKS dessa mesma Auth. A API usa `AUTH_JWT_AUDIENCE` (padrão `quistock-api`) e `AUTH_JWT_ALGORITHM` (padrão `RS256`). Usar em `POSTGRES_DSN` uma conta somente leitura com `SELECT` em `user_account(id,email,role_id,status)`, `role(id,code)`, `user_store(user_id,store_id,active,unassigned_at)` e `store(id,status)`; a consulta comercial também requer as tabelas já documentadas em `AGENTS.md`. Sem issuer/JWKS, a API responde 500 ao receber bearer; sem banco configurado, não autentica a conta.
 
 ## Referências técnicas
 

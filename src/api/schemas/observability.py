@@ -1,11 +1,37 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    model_validator,
+)
 
 MAX_LAB_CONTENT_CHARACTERS = 100_000
+
+
+class ObservabilityLoginRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(min_length=3, max_length=320)
+    password: SecretStr = Field(min_length=1, max_length=256)
+
+
+class ObservabilityLoginResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authenticated: Literal[True] = True
+
+
+class ObservabilityLogoutResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    authenticated: Literal[False] = False
 
 
 class ObservabilityConversationMessageResponse(BaseModel):
@@ -131,6 +157,7 @@ class TraceSpanResponse(BaseModel):
     model: str | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
+    estimated_cost_usd: float | None = Field(default=None, ge=0)
     error_type: str | None = None
     attributes: dict[str, Any] = Field(default_factory=dict)
 
@@ -150,9 +177,23 @@ class TraceLogResponse(BaseModel):
     attributes: dict[str, Any] = Field(default_factory=dict)
 
 
+class TraceUsageEventResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: str = Field(min_length=1)
+    model: str = Field(min_length=1)
+    timestamp: AwareDatetime
+    status: Literal["completed", "error"]
+    duration_ms: float | None = Field(default=None, ge=0)
+    input_tokens: int | None = Field(default=None, ge=0)
+    output_tokens: int | None = Field(default=None, ge=0)
+    estimated_cost_usd: float | None = Field(default=None, ge=0)
+
+
 class TraceDetailResponse(TraceSummaryResponse):
     spans: list[TraceSpanResponse]
     logs: list[TraceLogResponse] = Field(default_factory=list)
+    usage_events: list[TraceUsageEventResponse] = Field(default_factory=list)
 
 
 class TraceListResponse(BaseModel):
@@ -259,6 +300,9 @@ class CostOriginResponse(BaseModel):
     output_tokens: int | None = Field(default=None, ge=0)
     calls_with_usage: int = Field(ge=0)
     calls_without_usage: int = Field(ge=0)
+    calls_missing_usage: int = Field(ge=0)
+    calls_missing_price: int = Field(ge=0)
+    calls_missing_both: int = Field(ge=0)
     priced_calls: int = Field(ge=0)
     unpriced_calls: int = Field(ge=0)
     estimated_cost_usd: float | None = Field(default=None, ge=0)
@@ -270,6 +314,12 @@ class ApplicationCostMetricsResponse(BaseModel):
 
     currency: str
     estimated_total_usd: float | None = Field(default=None, ge=0)
+    conversation_count: int = Field(ge=0)
+    resolution_count: int = Field(ge=0)
+    conversation_variable_cost_usd: float | None = Field(default=None, ge=0)
+    conversation_variable_unpriced_calls: int = Field(ge=0)
+    operational_cost_usd: float | None = Field(default=None, ge=0)
+    operational_unpriced_calls: int = Field(ge=0)
     priced_subtotal_usd: float = Field(ge=0)
     priced_calls: int = Field(ge=0)
     unpriced_calls: int = Field(ge=0)
@@ -284,9 +334,8 @@ class ApplicationCostMetricsResponse(BaseModel):
 class FallbackMetricsResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    observed_trace_count: int = Field(ge=0)
-    trace_signal_count: int = Field(ge=0)
-    signal_coverage: float | None = None
+    qwen_call_count: int = Field(ge=0)
+    qwen_trace_count: int = Field(ge=0)
     rate: float | None = None
 
 
@@ -341,7 +390,7 @@ class SLOWindowResponse(BaseModel):
 
     started_at: AwareDatetime
     ended_at: AwareDatetime
-    duration_days: int = Field(ge=1)
+    duration_days: float = Field(ge=0)
     environment: str | None = None
 
 
@@ -349,9 +398,47 @@ class ObservabilitySLOResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     window: SLOWindowResponse
+    period_slo_ok: bool | None = None
     turn_completion: SLOMetricResponse
     turn_latency: SLOLatencyResponse
     models: dict[str, SLOModelResponse]
+
+
+class AgentLatencyBoardEntryResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1)
+    average_ms: float | None = Field(default=None, ge=0)
+
+
+class ObservabilityMetricsBoardResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    slo_ok: bool | None = None
+    most_used_model: str | None = None
+    agent_latency: list[AgentLatencyBoardEntryResponse]
+    conversation_count: int = Field(default=0, ge=0)
+    resolution_count: int = Field(default=0, ge=0)
+    cost_per_conversation_usd: float | None = Field(default=None, ge=0)
+    cost_per_resolution_usd: float | None = Field(default=None, ge=0)
+    projection_window_days: float = Field(default=0, ge=0, le=30)
+    weekly_cost_100_users_usd: float | None = Field(default=None, ge=0)
+    weekly_cost_1000_users_usd: float | None = Field(default=None, ge=0)
+
+
+class LatencySeriesPointResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    date: date
+    duration_ms: float | None = Field(default=None, ge=0)
+    sample_count: int = Field(ge=0)
+
+
+class CumulativeCostSeriesPointResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    date: date
+    cumulative_cost_usd: float = Field(ge=0)
 
 
 class ObservabilityMetricsResponse(BaseModel):
@@ -366,3 +453,6 @@ class ObservabilityMetricsResponse(BaseModel):
     components: dict[str, ComponentMetricsResponse]
     models: dict[str, ModelMetricsResponse]
     slos: ObservabilitySLOResponse
+    board: ObservabilityMetricsBoardResponse
+    latency_series: list[LatencySeriesPointResponse]
+    cumulative_cost_series: list[CumulativeCostSeriesPointResponse]

@@ -21,7 +21,7 @@ A Visão geral e o Trace Explorer já existem em `src/observability/front-observ
 1. A sessão de observabilidade é um cookie próprio, separado do JWT das conversas. O JWT atual identifica o usuário do chat, não a linha de `super_admin`. Alternativa descartada: reutilizar o JWT e só checar um papel.
 2. O login só lê `super_admin`. Se a tabela ou a linha não existir, a entrada é recusada. Este serviço não faz cadastro nem seed. Alternativa descartada: criar a primeira linha na entrega.
 3. A senha em `super_admin.password` é bcrypt. A comparação aceita os prefixos `$2a$`, `$2b$` e `$2y$` com `bcrypt.checkpw`. Hash ausente ou inválido recusa a senha. Alternativa descartada: SHA-256 e Argon2id.
-4. Os números novos entram em `calculate_metrics` e na Visão geral atual. Ferramentas e tipos de execução usam o nome e o status dos spans já persistidos. Não há segunda taxonomia. Alternativa descartada: um painel paralelo só para o formato da aula.
+4. Os números novos entram em `calculate_metrics` e na Visão geral atual. Chamadas JEV, que usam HTTP direto e não geram spans LangChain, são registradas como spans filhos do nó judge e persistidas junto ao trace do turno. Eventos antigos do JEV continuam legíveis durante a transição. O Qwen é contado pelo model ID dos spans já capturados.
 5. O detalhe do trace reaproveita o Trace Explorer. A página lista os spans guardados. Não há chamada externa para montar a árvore.
 
 ## Risks / Trade-offs
@@ -30,6 +30,7 @@ A Visão geral e o Trace Explorer já existem em `src/observability/front-observ
 - [O hash gravado pode ser `$2b$` mesmo com o padrão `$2a$`] → A comparação aceita os três prefixos bcrypt. Um hash que não é bcrypt recusa a senha.
 - [Um span sem tokens não tem custo] → O detalhe mostra nome, duração e status, e deixa tokens em branco.
 - [Modelo sem preço na tabela atual] → O custo parcial segue a regra já existente: total incompleto visível, chamada sem preço contada à parte.
+- [Projeção semanal confundida por custos operacionais] → Somente custos de uso associados a conversas entram no custo variável; laboratório e indexação ficam visíveis por origem e fora das projeções.
 
 ## Migration Plan
 

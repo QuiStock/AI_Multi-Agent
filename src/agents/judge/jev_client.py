@@ -8,6 +8,10 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from src.graphs.state import Evidence, ResponseDraft
+from src.observability.traces.traces import (
+    finish_jev_trace_span,
+    start_jev_trace_span,
+)
 
 JevVerdict = Literal["approved", "rejected"]
 JevReasonCode = Literal[
@@ -375,7 +379,58 @@ class TypeSafeJevClient:
             response_draft=response_draft,
             evidences=evidences,
         )
-        response = self._request(payload)
+        trace_span = start_jev_trace_span(self.model)
+        try:
+            response = self._request(payload)
+        except Exception:
+            finish_jev_trace_span(
+                trace_span,
+                status="error",
+                input_tokens=None,
+                output_tokens=None,
+                error_type="JevClientError",
+            )
+            raise
+        usage = response.get("usage")
+        if not isinstance(usage, Mapping):
+            usage = {}
+        model = response.get("model", self.model)
+        input_tokens = _nonnegative_int(usage.get("input_tokens"))
+        output_tokens = _nonnegative_int(usage.get("output_tokens"))
+        try:
+            evaluation = self._parse_response(
+                response=response,
+                usage=usage,
+                model=model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            )
+        except Exception:
+            finish_jev_trace_span(
+                trace_span,
+                status="error",
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                error_type="JevClientError",
+            )
+            raise
+        finish_jev_trace_span(
+            trace_span,
+            status="completed",
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )
+        return evaluation
+
+    def _parse_response(
+        self,
+        *,
+        response: Mapping[str, Any],
+        usage: Mapping[str, Any],
+        model: object,
+        input_tokens: int | None,
+        output_tokens: int | None,
+    ) -> JevEvaluation:
         answers = response.get("answers")
         if not isinstance(answers, Mapping):
             raise JevClientError(
@@ -404,24 +459,19 @@ class TypeSafeJevClient:
         if reason_code == "none" and verdict == "rejected":
             reason_code = "low_confidence"
 
-        usage = response.get("usage")
-        if not isinstance(usage, Mapping):
-            usage = {}
-
-        input_tokens = usage.get("input_tokens")
-        output_tokens = usage.get("output_tokens")
-        if input_tokens is not None and not isinstance(input_tokens, int):
+        input_tokens_raw = usage.get("input_tokens")
+        output_tokens_raw = usage.get("output_tokens")
+        if input_tokens_raw is not None and input_tokens is None:
             raise JevClientError(
                 "JEV_INVALID_OUTPUT",
                 "O uso de tokens de entrada do JEV é inválido.",
             )
-        if output_tokens is not None and not isinstance(output_tokens, int):
+        if output_tokens_raw is not None and output_tokens is None:
             raise JevClientError(
                 "JEV_INVALID_OUTPUT",
                 "O uso de tokens de saída do JEV é inválido.",
             )
 
-        model = response.get("model", self.model)
         if not isinstance(model, str) or not model:
             raise JevClientError(
                 "JEV_INVALID_OUTPUT",
@@ -436,3 +486,9 @@ class TypeSafeJevClient:
             input_tokens=input_tokens,
             output_tokens=output_tokens,
         )
+
+
+def _nonnegative_int(value: object) -> int | None:
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return None
