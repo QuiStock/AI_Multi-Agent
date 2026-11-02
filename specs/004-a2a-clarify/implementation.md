@@ -1,5 +1,7 @@
 # Contrato executável A2A
 
+> **Sem planos de implementação de MCP ou A2A (confirmado em 2026-11-02):** este arquivo é registro histórico de propostas/decisões anteriores; seus requisitos, aprovações e fluxos não são planos vigentes nem instruções para o runtime.
+
 ## Fluxo
 
 ```text

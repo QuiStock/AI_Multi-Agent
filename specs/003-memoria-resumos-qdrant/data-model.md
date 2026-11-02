@@ -1,7 +1,7 @@
 # Data Model: Memória conversacional
 
 **Feature**: `003-memoria-resumos-qdrant`
-**Status**: Proposta técnica alinhada aos requisitos confirmados; nomes físicos finais precisam ser revisados antes da implementação.
+**Status**: Modelo de referência do desenho original. A implementação já existe; rótulos como “a criar” e campos físicos devem ser conferidos em `src/memory/` e `contracts/memory-persistence.md` antes de qualquer alteração.
 
 ## 1. Conversation document — MongoDB `conversations`
 
@@ -37,7 +37,7 @@ Um documento por conversa, identificado por `_id`; mensagens ficam em array orde
 - Mensagem duplicada com mesmo `message_id` não é acrescentada novamente.
 - O limite MongoDB de 16 MiB por documento continua aplicável; política de compactação/retention é questão fora do escopo e precisa de monitoramento.
 
-## 2. Summary job metadata — MongoDB `conversation_summary_jobs` (a criar)
+## 2. Summary job metadata — MongoDB `conversation_summary_jobs` (modelo de referência)
 
 Coleção operacional nova; não contém texto ou embedding de resumo. `closure_key` é gerada uma vez na camada de aplicação ao iniciar o encerramento e é reutilizada em retries do mesmo evento. O job ID enviado ao Redis é uma referência a este documento, nunca o conteúdo do resumo.
 
@@ -56,7 +56,7 @@ Coleção operacional nova; não contém texto ou embedding de resumo. `closure_
 
 **Redis Stream**: evento contém apenas `job_id`; Mongo é a fonte durável. O relay publica jobs sem `published_at` e só registra publicação após o `XADD`; se cair entre `XADD` e atualização do Mongo, a publicação duplicada é segura porque o worker reivindica o mesmo job idempotente.
 
-## 2.1 Lease por conversa — MongoDB `conversation_summary_locks` (a criar)
+## 2.1 Lease por conversa — MongoDB `conversation_summary_locks` (modelo de referência)
 
 Um documento de coordenação por conversa, separado do histórico e dos jobs. A mesma lease é compartilhada futuramente pelo worker de resumo e pela exclusão.
 

@@ -1,20 +1,20 @@
 # Proposal
 
+**Status:** implementado; proposta histórica. O contrato atual está nas specs delta deste change, em `AGENTS.md` e no runtime.
+
 ## Why
 
-O dev precisa entrar numa tela de observabilidade e explicar um turno: o que demorou, qual modelo falou, quanto custou e se o limite de confiabilidade estourou. Hoje a Visão geral calcula uma parte disso no próprio serviço, a API `/api/v1/observability` responde sem login, e o que o LangSmith mostraria não está coberto aqui.
+O dev precisa entrar numa tela de observabilidade e explicar um turno: o que demorou, qual modelo falou, quanto custou e se o limite de confiabilidade estourou. Antes desta change, a Visão geral calculava apenas parte das métricas e a API `/api/v1/observability` não exigia login próprio. Esta change implementou a sessão; a plataforma não usa LangSmith para calcular essas métricas.
 
-## What Changes
+## Resultado implementado
 
-- Login só da página de observabilidade e da API `/api/v1/observability`, inclusive o laboratório. A API de conversas continua com o JWT atual.
-- **BREAKING**: essa API deixa de responder sem a sessão desse login.
-- A conta é um e-mail e uma senha conferidos na tabela `super_admin`, no mesmo Postgres de `user_account`. As colunas são `email` e `password`. A senha é bcrypt com prefixo `$2a$`, `$2b$` ou `$2y$`. Esta entrega não cria, não edita e não apaga linhas.
-- A Visão geral continua sendo a primeira tela depois do login. Os blocos ficam separados, no espírito de um painel Grafana.
-- O serviço calcula, sem usar o LangSmith, os números da aula e os do painel padrão do LangSmith que entraram no escopo: turnos, latência média, p95 nearest-rank, erro, bloqueios separados do erro, tokens, custo, chamadas de modelo, ferramentas e tipos de execução.
-- Os SLOs seguem o período e os filtros de usuário/conversa selecionados. O filtro de status não restringe a amostra. A meta de conclusão segue em 99,5% e o limite de latência em p95 de 20 segundos; os limites da aula (8 segundos e 5%) não substituem esses objetivos.
-- O custo usa a tabela já codificada: GPT-6 Luna a US$ 0,10 / US$ 0,50 por milhão de tokens, sem cache, e embedding Gemini a US$ 0 ou US$ 0,20 conforme o plano.
-- O trace abre dentro da plataforma, com as etapas. A ligação com o LangSmith fica para depois desta cobertura.
-- Fora desta entrega: feedback, datasets, playground, cadastro de usuário, texto de prompt na tela, tempo até o primeiro token e nota da resposta.
+- A página e todas as rotas de /api/v1/observability, incluindo laboratório e feed ao vivo, exigem sessão própria. O acesso de conversa permanece com seu JWT Bearer.
+- O login consulta super_admin (email, password) e compara bcrypt; não cria nem altera linhas.
+- A Visão geral e o Trace Explorer usam dados do próprio serviço, sem LangSmith.
+- A API, os cards de SLO e o banner usam a mesma meta: 95% de turnos sem erro (até 5% de erro) e p95 de latência até 20 segundos.
+- Custos de chamadas JEV são estimados por tokens de entrada registrados; chamadas sem uso/preço aparecem como incompletas.
+- O Trace Explorer mostra os spans e logs armazenados. A Visão geral não exibe etapas do grafo.
+- Custos variáveis de conversa sustentam custo por conversa e projeções; laboratório e indexação aparecem separados.
 
 ## Capabilities
 

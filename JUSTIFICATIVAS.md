@@ -14,7 +14,10 @@
 - `src/auth/models.py`, `permissions.py` e `errors.py`: contratos, cargos permitidos e falhas tipadas.
 - `src/auth/postgres.py`, `src/config.py` e `src/main.py`: pool, configurações e ciclo de vida do pool em `app.state`.
 - `.env.example`: documenta ambiente; não contém mais configurações de bypass.
-- Rotas protegidas: `src/api/routes/conversation.py`, `conversation_end.py`, `conversation_history.py` e `conversation_list.py`; controllers/serviços propagam o principal.
+- Rotas protegidas do chatbot: `src/api/routes/conversation.py`, `conversation_end.py`, `conversation_history.py` e `conversation_list.py`; controllers/serviços propagam o principal.
+- `src/api/routes/observability.py`: login, logout e exigência de sessão nas demais rotas da plataforma de observabilidade.
+- `src/auth/observability_session.py`: sessão administrativa própria da observabilidade e configuração do cookie.
+- `tests/test_observability_session.py`: cobertura da sessão e da proteção das rotas.
 
 **Validações do JWT**
 - Exige RS256, chave `kid` do JWKS, issuer `iss` e audience `aud` exatamente `["quistock-api"]`.
@@ -32,7 +35,25 @@
 - `src/observability/audit.py` registra motivos sem JWT ou identidade. Testes de contrato: `tests/test_auth_token.py`, `test_auth_repository.py`, `test_auth_dependency.py`, `test_auth_audit.py` e `tests/integration/test_auth_postgres.py`.
 - O teste de dependência exige `401` também em loopback sem token. Testes não foram executados nesta análise.
 
-**Limites:** bypass e verificação de loopback foram removidos do checkout principal. `src/api/routes/observability.py` não usa esta dependência; sua política fica para a revisão da API.
+**Sessão da observabilidade**
+- O chatbot mantém autenticação por JWT RS256/JWKS. A observabilidade usa um mecanismo próprio de sessão por cookie; uma identidade não substitui a outra.
+
+**Decisão e interpretação**
+- Os acessos ficam separados: o JWT identifica usuários do chatbot; o login administrativo protege a plataforma de observabilidade.
+- Essa separação mantém os limites de acesso de cada superfície independentes, sem exigir mudança no fluxo JWT do chatbot para autenticar o painel.
+- O trade-off é configurar e manter dois mecanismos de autenticação. Uma mudança em um fluxo não precisa alterar o outro.
+- Evidências: `src/api/routes/observability.py`, `src/auth/observability_session.py` e `tests/test_observability_session.py`.
+- `POST /api/v1/observability/login` valida credenciais de administrador (`super_admin`) e emite o cookie de sessão. `POST /logout` encerra essa sessão.
+- O acesso fica restrito a contas `super_admin`, pois o painel reúne traces, logs e chamadas de laboratório.
+- Todas as demais rotas sob `/api/v1/observability`, inclusive laboratório e feed ao vivo, exigem `require_observability_session`.
+- O cookie é HTTPOnly, tem escopo limitado ao prefixo da API de observabilidade e validade de uma hora. Segredo ou dependências de autenticação ausentes fazem o fluxo falhar de forma fechada.
+- A validade de uma hora equilibra a redução da janela de acesso com a conveniência de não exigir login a cada chamada.
+- O cookie é `HttpOnly`: o JavaScript da página não lê seu valor, e o navegador o envia nas requisições configuradas com credenciais. Quando a sessão expira, a API responde `401` e o frontend volta à tela de login.
+- **Limite do logout:** ele remove o cookie do navegador, mas não há revogação no servidor. Uma cópia do token ainda pode ser aceita até sua expiração, no máximo uma hora após o login.
+- Essa é uma decisão de segurança: sem credencial de sessão ou banco, o acesso é negado para não expor dados operacionais sem autenticação. O trade-off é a observabilidade ficar indisponível enquanto a dependência estiver fora do ar.
+- Os testes em `tests/test_observability_session.py` cobrem validade/configuração da sessão, login/logout, falha sem banco e exigência de sessão nas rotas. Foram inspecionados nesta análise; não foram executados.
+
+**Limites:** a sessão da observabilidade protege as rotas desse domínio. A autenticação do chatbot continua seguindo o fluxo JWT descrito acima.
 
 ## Análise 2 — Guardrails de entrada e saída
 
@@ -58,11 +79,13 @@
 7. Após entrada aprovada, `greeting_guardrail` usa LLM estruturado apenas para mensagens de até 160 caracteres. Se for apenas saudação, a resposta é fixa; se não, segue ao fluxo normal. Mensagens maiores seguem sem chamada do classificador.
 
 **PII — privacidade e restauração**
+- **Decisão registrada:** a API mascara dados sensíveis antes de executar o grafo e restaura os valores originais somente na resposta HTTP. O mapa de restauração fica local à requisição, fora do estado e do checkpointer.
 - A mensagem original não é enviada aos agentes: eles recebem a versão marcada, inclusive durante a retomada do histórico.
 - Os marcadores deste turno são comparados com os marcadores da resposta. A lista permitida vem apenas da mensagem Human atual, identificada por `request_id`; marcadores antigos do histórico não autorizam reprodução.
 - Se surgir marcador não presente na mensagem atual, o output guardrail troca a resposta inteira pela mensagem controlada. A resposta inteira é substituída para não deixar uma frase quebrada ao remover só o token.
 - O compiler recebe uma orientação simples: quando precisar reproduzir informação escondida na mensagem atual, copiar exatamente o marcador correspondente.
 - Marcadores de PII do usuário permanecem na resposta persistida. Depois do grafo, a API restaura somente marcadores presentes no mapa local e devolve o valor original na resposta HTTP; o valor restaurado não volta ao estado/checkpointer. Contatos em texto puro vindos de evidências podem ser persistidos.
+- **Trade-off:** o histórico conserva o marcador, não o valor original. Isso reduz a exposição de PII persistida, mas o valor não pode ser recuperado automaticamente em uma retomada posterior.
 - Não mascaramos PII em texto puro gerado na saída. Um contato presente na evidência autorizada do FAQ pode ser respondido; mascará-lo impediria esse uso legítimo. O mapa de restauração também não é ampliado com valores gerados pelo modelo.
 
 **Saída — validações determinísticas vigentes**
@@ -70,16 +93,25 @@
 2. Limita a resposta a 6.000 caracteres.
 3. Remove emojis quando a opção está ativa.
 4. Rejeita texto vazio e delimitadores Markdown desbalanceados de crase ou `**`.
-5. Bloqueia frases que afirmam operações comerciais não executadas: pedido enviado, compra concluída, promoção ativada, entrega confirmada ou pedido processado.
+5. Bloqueia as cinco frases configuradas para operações comerciais não executadas: pedido enviado, compra concluída, promoção ativada, entrega confirmada e pedido processado. Essa lista fixa não detecta toda alegação comercial sem suporte. Quando há violação, o guardrail substitui o texto por uma resposta controlada; o turno segue para persistência.
 6. Não exige evidências do FAQ no output guardrail: o judge já avalia evidências e citações das respostas factuais compiladas. Mensagens diretas sem evidência são controladas, não respostas factuais do compiler.
 7. Não repete no output guardrail a aprovação do judge: o grafo só encaminha resposta compilada aprovada para esse nó.
 
 **Decisões de simplicidade e limites**
-- A validação usa padrões, limites e listas pequenas mantidas no código; não adicionamos outro LLM para decidir segurança na entrada ou compliance na saída.
+- O input guardrail usa padrões explícitos e não adiciona uma chamada de LLM; isso evita custo e latência e mantém a decisão previsível. O trade-off é cobertura limitada aos padrões implementados, sem garantir detecção de toda variação semântica.
+- Cumprimentos de até 160 caracteres passam por classificador estruturado. Se a mensagem for só uma saudação, a resposta é fixa e segue para persistência sem percorrer memória, router, compiler ou judge. Isso evita acionar o restante do fluxo para um cumprimento. O trade-off é uma chamada ao modelo para classificar mensagens curtas; se ela falhar, o fluxo normal continua. Evidências: `src/guardrails/greeting.py` e `src/graphs/agent_graph.py`.
 - Cada controle fica junto da fronteira que protege: entrada antes dos agentes, saída depois da compilação/julgamento. O grafo apenas conecta as etapas.
-- O judge é a única revisão semântica de suporte factual da resposta compilada; assim não duplicamos a mesma regra no guardrail.
+- O JEV avalia o suporte factual das respostas. O output guardrail valida formato, PII e as cinco frases operacionais explícitas quando a resposta passa por ele. Assim, as regras de saída ficam determinísticas e não repetimos uma chamada semântica de modelo.
+- Quando uma validação falha, o output guardrail substitui a resposta inteira por uma frase controlada. Isso evita deixar uma violação no texto ou entregar uma resposta parcial confusa. O trade-off é descartar também partes úteis que estavam corretas.
+- A substituição mantém o turno como `success` e o trace como `completed`: o usuário recebeu uma mensagem segura, compreensível e sem detalhes técnicos internos. A taxa de erros representa falhas técnicas; não contabilizar essas correções como erro é uma decisão intencional.
+
+**Semântica dos status**
+- A resposta da API pode ter `success`, `rejected`, `clarification_required`, `out_of_scope` ou `error`. Rejeição, pedido de esclarecimento e fora de escopo têm status próprios; não são `success`.
+- O trace registra apenas `completed` ou `error`. Qualquer status válido da API diferente de `error` conclui o trace como `completed`.
+- Falhas de modelo ou dependência podem gerar status error, assim como exceções no grafo e ausência ou invalidade de `final_response`. A resposta controlada aprovada como `success` permanece `completed` e não conta como erro técnico.
+- Evidências: `src/api/schemas/conversation.py`, `src/api/services/conversation_service.py` e `src/observability/metrics.py`.
 - Mantemos respostas fixas para bloqueios e falhas para não depender de geração durante uma recusa ou indisponibilidade.
-- O output guardrail atualmente atende saudação e resposta compilada aprovada. Algumas rotas controladas terminam diretamente em `persist_turn`; unificá-las no output guardrail é uma alteração de grafo separada, não incluída nesta análise.
+- O output guardrail recebe respostas aprovadas pelo judge. Saudações isoladas e respostas terminais controladas (como entrada bloqueada, fora de escopo e judge bloqueado) seguem diretamente para `persist_turn`. Mantemos esse caminho porque essas mensagens são definidas pelo servidor; evita aplicar checagens de saída a texto fixo. O trade-off é depender de que esses caminhos continuem sem conteúdo dinâmico ou gerado por modelo.
 - `pipeline.py`, as fachadas `input_guardrail.py`/`output_guardrail.py`, `GuardrailResult` e `timeout_ms` sem uso foram removidos. A API e o grafo importam os nós diretamente dos módulos `input.py` e `output.py`.
 - Os testes relacionados estão em `tests/test_input_guardrail.py`, `tests/test_output_guardrail.py`, `tests/test_greeting_classifier.py`, `tests/test_agent_graph.py` e `tests/integration/test_guardrails_integration.py`; não foram executados nesta análise.
 
@@ -95,10 +127,14 @@
 - `src/agents/router/router_node.py`: valida a resposta do executor, projeta evidências e erros no estado, e direciona a decisão do router.
 - `src/agents/router/tools/schemas.py`: limita os argumentos de data da tool e valida o intervalo.
 - `src/agents/router/tools/search_conversation_summaries.py`: vincula identidade e mensagem do contexto autenticado, chama o service e empacota resultados como evidências.
-- `src/memory/service.py`: escolhe busca semântica ou busca temporal no Qdrant.
-- `src/memory/get_summary_context.py`: aplica filtros de usuário, status, conversa atual e intervalo temporal no Qdrant.
+- `src/memory/summaries/service.py`: escolhe busca semântica ou busca temporal no Qdrant.
+- `src/memory/summaries/get_summary_context.py`: aplica filtros de usuário, status, conversa atual e intervalo temporal no Qdrant.
 - `src/api/dependencies.py`: constrói o service e o injeta no `RouterExecutor`.
 - `src/graphs/agent_graph.py`, `src/graphs/decisions.py` e `src/graphs/contracts.py`: registram o nó, contratos de rota e caminhos seguintes.
+
+**Decisão de persistência da memória**
+- O MongoDB guarda mensagens e metadados de conversas; Redis Streams transporta IDs de jobs de resumo; Qdrant guarda e indexa os resumos usados na recuperação.
+- Essa divisão evita varrer o histórico completo do MongoDB em cada busca de contexto. O trade-off é depender da execução e indexação dos jobs para que os resumos fiquem disponíveis. Evidências: `src/memory/conversations/message_service.py`, `src/memory/jobs/summary_queue.py`, `src/memory/summaries/service.py` e `qdrant_summary_indexer.py`.
 
 **Fluxo executável**
 1. O grafo envia a mensagem sanitizada ao nó `router`, implementado por `run_router_node`.
@@ -114,11 +150,11 @@
 - `RouteResponse` pode carregar `tool_called` e `error_code` na fronteira do executor. `RoutingDecision` no estado não carrega esses campos; evidências vão para `GraphState.evidences` e erros técnicos para `state.errors`.
 - `router_node` mapeia `faq`/`product_workflow` para despacho, `clarification_required` e `out_of_scope` para seus resultados controlados, e `memory_recall` para resposta direta.
 - O executor e o nó não delegam resposta factual ao router. O router classifica; FAQ/Product Workflow respondem por suas capacidades, e o compiler/judge atuam depois quando aplicável.
-- Exceção do modelo, resposta estruturada inválida, rota inválida, erro da tool ou busca sem resultados não são tratados como sucesso factual. O nó registra falha e usa resposta controlada quando necessário.
+- **Falhas do router:** exceção do modelo, saída/rota inválida ou erro da tool não acionam uma rota improvisada. O nó registra a falha e usa resposta controlada. Isso evita adivinhar uma capacidade; o trade-off é não tentar outra rota que talvez pudesse responder.
 
 **Regras da tool `search_conversation_summaries`**
 - Única tool do router; serve apenas para referências a conversas anteriores encerradas. Não consulta FAQ, produtos nem dados comerciais.
-- A identidade autenticada, `conversation_id` e mensagem sanitizada são vinculadas no servidor. O modelo fornece somente os argumentos visíveis `start_date` e `end_date`.
+- **Decisão de isolamento:** email, `conversation_id` e mensagem sanitizada vêm do contexto autenticado do servidor. O modelo fornece somente `start_date` e `end_date`; assim não pode escolher outra identidade ou conversa, e a ferramenta mantém um contrato estreito. O trade-off é limitar a busca às conversas do usuário autenticado. Evidências: `src/agents/router/tools/search_conversation_summaries.py` e `src/api/dependencies.py`.
 - As duas datas devem ser informadas juntas ou omitidas juntas. Para uma data única, o prompt instrui o modelo a enviar a mesma data nos dois campos. Intervalo invertido é rejeitado.
 - O router converte datas relativas usando a data atual injetada no turno; se o ano faltar, usa o ano atual; se somente o dia do mês for informado, usa o mês e ano atuais. O service não interpreta texto de data.
 - Com intervalo, o service converte o período civil inclusivo de `America/Sao_Paulo` em limites datetime e chama `scroll`, sem embedding. O limite superior é a meia-noite após `end_date`, exclusiva no filtro.
@@ -134,13 +170,97 @@
 - Essa resposta evita uma segunda chamada de modelo para resumir a saída já estruturada da busca. A memória serve para resolver contexto, não para substituir evidência atual de FAQ ou produto.
 
 **Por que a composição é simples e eficiente**
+- **Decisão confirmada:** o router classifica e escolhe uma rota; não redige a resposta final. As capacidades especializadas fornecem resultados/evidências, e o compiler compõe a resposta. Isso evita geração duplicada e mantém cada etapa com uma responsabilidade clara. Se o router falha ou retorna saída inválida, o fluxo usa resposta controlada em vez de improvisar uma rota. Evidências: `src/agents/router/executor.py`, `router_node.py`, `src/graphs/agent_graph.py` e `decisions.py`.
 - Há um único nó de router ligado ao grafo e um único executor responsável pela chamada estruturada do modelo.
 - A tool é opcional e estreita: o modelo não controla identidade, escopo de usuário nem SQL; o servidor aplica os filtros no Qdrant.
-- A data já resolvida vira filtro temporal direto; não há parsing de datas dentro do service nem geração de embedding para consultas por período.
-- Sem data, a busca semântica existente permanece disponível; o fallback recente é explicitamente identificado, evitando afirmar correspondência que não foi encontrada.
+- **Decisão da busca:** quando há datas, o service aplica filtro temporal direto no Qdrant, sem gerar embedding; sem datas, usa similaridade semântica. Isso evita embedding desnecessário para consultas por período e usa busca semântica quando a pessoa descreve um assunto. O filtro temporal considera `updated_at` do resumo, como registrado nos limites. Evidências: `src/memory/summaries/service.py` e `src/memory/summaries/get_summary_context.py`.
+- **Decisão de fallback:** sem resultado semântico, a busca pode mostrar até três resumos recentes como `recent_fallback`, identificados como contexto não confirmado. Isso oferece uma pista para retomada sem afirmar que encontrou o assunto pedido. O trade-off é que o contexto recente pode ser irrelevante; por isso, o router pede esclarecimento quando necessário.
 - Validação e formatação local cobrem falhas e retomada sem criar outro agente de resposta ou rotas paralelas.
 
 **Limites e testes relacionados**
-- O limite atual é de três resumos por chamada, inclusive em períodos longos. A data filtra `updated_at` do resumo, não uma data extraída de cada mensagem original.
+- O limite atual é de três resumos por chamada, inclusive em períodos longos, para manter o contexto enviado ao modelo enxuto. O trade-off é poder deixar de fora uma conversa antiga relevante. A data filtra `updated_at` do resumo, não uma data extraída de cada mensagem original.
 - Contratos e fluxo aparecem em `tests/test_router_graph.py`, `tests/test_router_memory_tool.py`, `tests/test_agent_executors.py`, `tests/test_agent_graph.py` e `tests/integration/test_router_graph_integration.py`.
 - Esta análise documenta o código presente; os testes não foram executados nesta alteração.
+
+## Análise 4 — FAQ/RAG
+
+**Objetivo:** responder dúvidas documentadas com trechos recuperados da base autorizada, sem completar lacunas com conhecimento próprio do modelo.
+
+**Arquivos centrais**
+- `src/agents/faq/card.py` e `faq_prompt.py`: declaram a capacidade do agente, sua única ferramenta e as regras de uso das evidências.
+- `src/agents/faq/executor.py`: cria o agente por turno, injeta a busca com escopo autorizado e valida o resultado da ferramenta.
+- `src/agents/faq/faq_node.py`: deriva as audiências do cargo autenticado, projeta evidências no grafo e trata ausência ou falha.
+- `src/agents/faq/tools/faq_tool.py` e `schemas.py`: executam a consulta e validam o envelope, os resultados e o desfecho `not_found`.
+- `src/agents/faq/retrieval/qdrant_retriever.py`: aplica o filtro de audiência durante a busca vetorial.
+- `tests/test_faq_role_filter.py`, `tests/test_faq_tools.py` e `tests/integration/test_faq_no_evidence_graph_integration.py`: cobrem escopo por cargo, ausência de resultados e caminho pelo grafo.
+
+**Decisões e interpretação**
+- **Decisão confirmada:** o FAQ consulta documentos indexados no Qdrant. A aplicação define o escopo a partir do cargo autenticado: conteúdo compartilhado e conteúdo do cargo correspondente. A pergunta do usuário não pode escolher cargo nem ampliar esse acesso.
+- A ferramenta registra `not_found` com evidência explícita quando a busca não encontra trechos. O fluxo informa que não encontrou informação documentada; não trata ausência como falha técnica nem permite completar a resposta por conhecimento próprio.
+- Quando há resultados, o agente deve responder apenas com os trechos recuperados e indicar a fonte. Consulta sem resultado continua pelo compiler e pelo judge, que recebem a ausência explícita como evidência.
+- Essa organização mantém recuperação, escopo de acesso e composição da resposta em pontos distintos. O runtime constrói a ferramenta autorizada por requisição, sem guardar o cargo em estado global.
+
+**Trade-off e limites**
+- Respostas ficam limitadas ao acervo indexado e à relevância dos trechos recuperados. Um documento ausente ou não recuperado pode produzir `not_found`, mesmo que a informação exista fora da base.
+- O FAQ não consulta dados comerciais em tempo real nem outras fontes externas. Perguntas que dependem dessas capacidades devem seguir a rota própria.
+- Os testes citados foram inspecionados nesta análise; não foram executados nesta alteração.
+
+## Análise 5 — Product Workflow
+
+**Objetivo:** consultar informações comerciais autorizadas sobre sugestões e promoções para responder às perguntas do usuário.
+
+**Arquivos centrais**
+- `src/agents/product_workflow/card.py`: declara a capacidade e as ferramentas comerciais disponíveis ao agente.
+- `src/agents/product_workflow/executor.py`: valida o contexto da requisição, monta as ferramentas permitidas e executa o agente.
+- `src/agents/product_workflow/repository.py`: concentra as consultas ao PostgreSQL comercial.
+- `src/agents/product_workflow/filters.py` e `tools/`: definem filtros e operações de consulta expostas ao agente.
+- `src/agents/product_workflow/product_workflow_node.py`: integra o resultado e as evidências ao grafo.
+- `tests/test_product_workflow.py` e `tests/test_product_workflow_repository.py`: cobrem o agente e as consultas do repositório.
+
+**Decisão confirmada**
+- O Product Workflow é somente leitura: consulta sugestões e promoções, mas não cria pedidos nem altera dados comerciais.
+- **Decisão confirmada de visibilidade:** as consultas incluem somente sugestões `ORDER` e `PROMOTION` autorizadas para o usuário, associadas a lojas e produtos ativos e sem evento `EXPIRED`. Os filtros ficam no repositório, não dependem da interpretação do modelo. Evidências: `src/agents/product_workflow/filters.py`, `repository.py` e testes do repositório.
+- **Decisão confirmada de paginação:** cada listagem apresenta até seis itens; a numeração continua entre páginas e o fluxo só consulta outra página quando o usuário pede. Isso mantém cada resposta e contexto menores; o trade-off é exigir mais interações para percorrer listas extensas. Evidências: `src/agents/product_workflow/tools/schemas.py`, `list_suggestions.py`, `src/agents/product_workflow/product_workflow_node.py` e `tests/test_product_workflow.py`.
+- **Escolha numerada:** quando o usuário escolhe um item, o agente repete a consulta na página e no tipo corretos para obter a referência da opção; a ferramenta de detalhe então consulta o repositório e valida novamente a seleção e seu escopo antes de devolver o card. A validação extra reduz o risco de exibir uma opção alterada ou fora do escopo. O trade-off é uma consulta adicional ao banco. Evidências: `src/agents/product_workflow/product_workflow_prompt.py`, `tools/get_suggestion_detail.py`, `tools/schemas.py` e `tests/test_product_workflow.py`.
+- **Decisão confirmada sobre datas relativas:** o executor usa `request.sent_at` convertido para `America/Sao_Paulo` como data local da mensagem ao interpretar prazos. Se `sent_at` não estiver disponível, usa a data local atual. Isso mantém a referência alinhada ao turno quando há timestamp; o fallback evita interromper a consulta sem ele. Evidências: `src/agents/product_workflow/executor.py` e `product_workflow_prompt.py`.
+- **Decisão confirmada sobre o filtro `until`:** quando o usuário informa uma data final, a busca lista promoções com validade entre a data de referência da mensagem e a data final, inclusive. Esse filtro define um intervalo e não é combinado com o critério de validade `nearest` ou `longest`. Evidências: `src/agents/product_workflow/tools/get_promotion_by_expiration.py` e `repository.py`.
+- **Decisão confirmada sobre validade extrema:** sem data final, `nearest` busca a menor data de validade a partir da data de referência; `longest` busca a maior, sempre dentro do escopo autorizado. Evidências: `src/agents/product_workflow/tools/get_promotion_by_expiration.py` e `repository.py`.
+- **Decisão confirmada de autorização:** usuário, cargo e lojas vêm do contexto autenticado e são aplicados pelo servidor. O agente não escolhe outra identidade nem envia SQL livre.
+- **Decisão confirmada sobre a quantidade nas sugestões consultadas no banco:** para `ORDER`, a API de IA usa somente `current_batch_count`; `ml_batch_count` foi removido da consulta, do DTO e do card público na PR #46. A escolha evita misturar uma estimativa de ML com a quantidade atual e reduz a ambiguidade para o usuário. Se `current_batch_count` estiver ausente, o fluxo não usa outro campo como fallback nem inventa uma quantidade. **Decisão confirmada na pergunta 42:** `batch_count` pertence somente ao `product_card` enviado pelo cliente. É um valor do snapshot, separado de `current_batch_count`, que vem das consultas PostgreSQL; não substitui nem serve de fallback para a consulta SQL. Evidências: PR #46; `src/agents/product_workflow/contracts.py`, `repository.py`, `tools/schemas.py` e `product_workflow_prompt.py`.
+- **Decisão confirmada na pergunta 43:** as respostas não expõem origem, dados de triagem, loja, status interno ou preço de referência. A projeção pública omite esses campos, e o prompt orienta a não os apresentar quando existem em outras fontes do turno. Isso mantém a resposta voltada aos dados comerciais necessários e evita revelar contexto administrativo. O trade-off é não mostrar a proveniência interna nem o preço de referência. Evidências: `src/agents/product_workflow/tools/schemas.py`, `product_workflow_prompt.py` e `tests/test_product_workflow.py`.
+- **Decisão confirmada na pergunta 44:** nas consultas do Product Workflow, a API usa somente `current_discount_percentage`; se estiver ausente, omite o percentual e não usa `ml_discount_percentage` como fallback. O campo ML foi removido da consulta, do record interno e do card enviado ao modelo. O card fornecido pelo cliente continua usando seu campo único `discount_percentage`. Essa escolha segue a leitura do backend, que projeta o percentual atual como `discount_percentage`; o trade-off é não exibir estimativa ML nem percentual quando o valor atual falta. Evidências: PR #46; `src/agents/product_workflow/repository.py`, `contracts.py`, `tools/schemas.py` e `product_workflow_prompt.py`; [ActionReadRepository.java](https://github.com/QuiStock/DS_Backend/blob/main/src/main/java/com/quistock/ds_backend/repository/ActionReadRepository.java) e [ActionDTO.java](https://github.com/QuiStock/DS_Backend/blob/main/src/main/java/com/quistock/ds_backend/model/dto/ActionDTO.java).
+- **Decisão confirmada na pergunta 45:** nas respostas sobre uma promoção, apresentar o preço promocional, o percentual atual (`current_discount_percentage` nas consultas ou `discount_percentage` no card recebido do cliente) e as datas de validade (`promotion_valid_from` e `promotion_valid_until`) quando disponíveis. Campos ausentes não devem ser inferidos. Os contratos já carregam esses campos e omitem valores nulos; o prompt atual não enumera explicitamente as datas como informações a apresentar, então essa decisão de apresentação ainda precisa ser alinhada à instrução do agente. Evidências: `src/agents/product_workflow/contracts.py`, `tools/schemas.py`, `product_workflow_prompt.py` e a projeção `suggestion_card`.
+- **Resultado verificado na pergunta 46 — card do cliente sem dado solicitado:** quando `product_card` está presente, `ProductWorkflowExecutor` desativa as tools comerciais e o prompt manda explicar somente esse card, sem inventar campos ausentes. A lógica vigente não garante a frase literal “não consta no card”. O teste `test_missing_product_card_field_is_not_invented_and_jev_blocks_claim` usa um executor falso que já retorna essa frase; ele verifica que o JEV bloqueia uma validade inventada e que o turno fica `clarification_required`, não que o modelo real sempre diga que o campo está ausente. O trade-off é não buscar no banco nem inventar o dado, mas a explicação da ausência não é padronizada. Evidências: `src/agents/product_workflow/executor.py`, `product_workflow_prompt.py` e `tests/test_product_card_evidence.py`.
+- **Decisão confirmada na pergunta 47:** manter o fluxo atual para `product_card`: o agente usa o snapshot sem tools comerciais, e o JEV avalia a resposta frente à evidência do card. Se o juiz retornar `missing_evidence` ou `insufficient_evidence`, o grafo substitui a resposta por uma mensagem controlada e define `clarification_required`; não é necessário exigir uma frase literal sobre o campo ausente. O teste cobre o bloqueio usando um JEV simulado, portanto comprova o tratamento da rejeição no grafo, não a decisão do JEV externo para cada resposta de ausência. O trade-off é evitar consultas extras e alegações sem suporte, embora a formulação controlada não identifique qual campo faltou. Evidências: `src/agents/product_workflow/executor.py`, `src/agents/judge/jev_client.py`, `src/agents/judge/jev_node.py` e `tests/test_product_card_evidence.py`.
+- **Decisão confirmada na pergunta 48:** `client_card_snapshot` comprova somente o conteúdo recebido em `conversation_request.product_card`; não atesta que os dados ainda estejam atuais nem que foram conferidos no PostgreSQL. O motivo para manter o snapshot é preservar a sugestão que o cliente viu: o backend pode atualizar a sugestão antes de a tela receber a atualização, e a resposta deve continuar alinhada ao card selecionado pelo cliente. O trade-off é evitar consulta adicional e possível divergência com a tela, aceitando que o snapshot possa ficar desatualizado. Evidências: `src/agents/product_workflow/product_workflow_node.py`, `executor.py`, `contracts.py` e `tests/test_product_card_evidence.py`.
+- **Decisão confirmada na pergunta 49:** `product_card` inválido é rejeitado e não é descartado para iniciar uma busca no PostgreSQL. No contrato HTTP, `ConversationRequest` valida o card como `ProductCard`; se um valor inválido chegar ao executor, `_product_card` retorna `PRODUCT_WORKFLOW_INVALID_SNAPSHOT` antes de criar as tools. O grafo encerra pela resposta controlada de erro. O trade-off é negar a resposta para um snapshot inválido, evitando responder sobre outra sugestão. Evidências: `src/api/schemas/conversation.py`, `src/agents/product_workflow/contracts.py`, `executor.py`, `product_workflow_node.py` e `tests/test_product_workflow_paths.py`.
+- **Decisão confirmada na pergunta 50, após verificação do código:** cada chamada de tool aparece no trace pelo nome serializado da tool. O callback não usa `input_str`; ao terminar, resume a saída por uma allowlist: status e código seguro de erro, desfecho, tipo `ORDER`/`PROMOTION`, direção `nearest`/`longest`, indicador de próxima página e contagens de resultados/evidências. Metadados também são filtrados por chaves permitidas, e o conteúdo bruto da saída não é copiado para o span. Assim, parâmetros de busca e conteúdo comercial retornado não são registrados nesses spans. A inspeção de `tests/test_trace_repository.py` confirma a sanitização dos atributos persistidos; os testes não foram executados nesta análise. O trade-off é ter menos detalhe para reproduzir uma consulta específica. Evidências: `src/observability/traces/traces.py` (`on_tool_start`, `on_tool_end`, `_safe_metadata`, `_tool_result_summary`, `_safe_tool_summary_attributes`) e `tests/test_trace_repository.py`.
+- **Trade-off:** o modelo deixa de apresentar a estimativa de ML. Quando a quantidade atual não estiver disponível, a resposta não mostrará quantidade em vez de inferi-la.
+- O executor valida esse contexto antes de habilitar as ferramentas; o repositório aplica os parâmetros e predicados fixos de cargo e loja nas consultas. Isso mantém a consulta dentro do escopo concedido ao usuário. O trade-off é que somente os cargos e lojas autorizados podem usar a capacidade. Evidências: `src/agents/product_workflow/executor.py`, `repository.py` e `filters.py`.
+- Essa separação deixa as respostas consultivas sem autorização para executar operações comerciais. As alterações de negócio permanecem fora desta capacidade.
+- **Trade-off:** o fluxo pode explicar o que está registrado, mas não conclui a operação pelo usuário.
+
+**Limite da análise:** os testes citados não foram executados nesta alteração.
+
+## Análise 6 — MCP e A2A: avaliação e decisão
+
+**Status:** MCP e A2A não implementados.
+
+**Pendência:** não há implementação pendente aprovada. A ausência é uma decisão deliberada de escopo, não uma tarefa esquecida. Reabrir a avaliação somente se os requisitos ou o escopo do projeto mudarem.
+
+**MCP avaliados**
+- **Genie com Databricks:** a proposta era receber perguntas em linguagem natural, convertê-las em consultas no Databricks e devolver os resultados. O MCP existia, mas houve dificuldades de conexão com o Databricks. Também não atendia à necessidade de gerar gráficos com imagens; para isso seria necessário consumir a API. A integração foi deixada de lado.
+- **Busca na internet:** foram considerados MCPs como Firecrawl e alternativas. Alguns tinham custo, e a busca externa não foi considerada necessária ao escopo do projeto.
+- **FAQ da Swift:** foi considerada a ingestão de uma URL de FAQ como fonte, com vetorização no Qdrant para uso pela ferramenta existente `faq_search`. Essa abordagem faria o FAQ entrar como conteúdo previamente indexado, sem o agente escolher quando buscar na web. Usar um MCP de busca escolhido pelo próprio agente exigiria obter e vetorizar conteúdo da URL durante a requisição antes da busca semântica. Isso acrescentaria processamento e latência ao fluxo, que hoje consulta conteúdo já indexado no Qdrant. Nenhuma dessas opções foi adotada.
+
+**A2A avaliado**
+- Não foram encontrados agentes externos disponíveis pelo protocolo que justificassem a integração.
+- Dividir a arquitetura existente apenas para cumprir o requisito aumentaria a complexidade sem benefício funcional identificado. O grupo priorizou manter o fluxo simples e reduzir latência.
+
+**Decisão e trade-off**
+- Não adicionar MCP nem A2A: as alternativas avaliadas não justificaram custo, complexidade de conexão ou latência adicional para o escopo atual.
+- O projeto mantém FAQ/RAG sobre conteúdo já indexado no Qdrant e a arquitetura multiagente interna existente. A limitação é não oferecer consultas externas sob demanda via MCP nem comunicação com agentes externos via A2A.
+- Se surgir uma necessidade concreta ou uma exigência de escopo diferente, a integração deve ser reavaliada com uma fonte, capacidade, custo e impacto de latência definidos.
+
+**Evidências:** avaliação e decisão de escopo do grupo, conforme registrada nesta justificativa. MCP e A2A não são capacidades implementadas no código atual.
+

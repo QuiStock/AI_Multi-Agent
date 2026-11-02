@@ -1,5 +1,7 @@
 # Exposição MCP das consultas de Product Workflow
 
+> **Sem planos de implementação de MCP ou A2A (confirmado em 2026-11-02):** este arquivo é registro histórico de propostas/decisões anteriores; seus requisitos, aprovações e fluxos não são planos vigentes nem instruções para o runtime.
+
 Status: definição inicial na branch `refactor` (2026-10-13). Nenhum servidor MCP está implementado.
 
 ## Decisões confirmadas

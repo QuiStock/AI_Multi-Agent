@@ -1,5 +1,7 @@
 # ADR-A2A-001 — Fachada A2A sobre o grafo do Quistock
 
+> **Sem planos de implementação de MCP ou A2A (confirmado em 2026-11-02):** este arquivo é registro histórico de propostas/decisões anteriores; seus requisitos, aprovações e fluxos não são planos vigentes nem instruções para o runtime.
+
 **Estado:** aceito quanto à fachada e aos dois papéis do Quistock;
 detalhes de credencial, peer e roteamento dinâmico permanecem em aberto.
 
