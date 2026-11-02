@@ -1,12 +1,12 @@
 # Autenticação da API de IA por JWT RS256
 
-Status: **implementada na branch `refactor`**. O issuer e a URL do JWKS devem ser fornecidos pela Auth no ambiente de implantação.
+Status: **implementada**. `AUTH_JWT_ISSUER`, `AUTH_JWT_AUDIENCE` e `AUTH_JWT_JWK_SET_URI` devem ser configurados pela Auth no ambiente de implantação.
 
 ## Origem da mudança
 
 - A branch `main` (`47ee5df`) não continha `src/api/` nem `src/auth/`; `fix(auth)` foi integrada à `refactor` como base da API.
 - A implementação anterior aceitava HS256 sem verificar `exp` e consultava `user_account` por email.
-- O JWT humano das rotas da API de IA é distinto das credenciais A2A entre serviços.
+- A autenticação desta spec cobre as rotas conversacionais. Não há contrato de credenciais MCP/A2A ativo; essas integrações estão fora do escopo atual.
 
 ## Contrato
 

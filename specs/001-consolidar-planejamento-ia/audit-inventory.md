@@ -1,6 +1,18 @@
 # Inventário da auditoria do planejamento de IA
 
-Feature 001-consolidar-planejamento-ia; revisão 2026-09-30. Escopo: repositórios AI_Multi-Agent e Quistock, fontes ligadas ao serviço IA, domínio, dados, integrações, arquitetura e rubrica. Paths do AI repo são relativos à raiz; paths Quistock usam Quistock:. Status únicos: confirmado, implementado, proposto, aberto, divergente; implementação e decisão são dimensões distintas.
+Feature 001-consolidar-planejamento-ia; fotografia histórica da revisão de 2026-09-30. Os campos `current_state`, status de implementação e candidatas abaixo representam apenas o que foi observado naquela data. Não use esse inventário como status atual do runtime.
+
+> Atualização verificada em 2026-11-02: API de conversa com JWT RS256/JWKS, Product Workflow read-only e observabilidade estão implementados no serviço. MCP e A2A estão fora do escopo por decisão posterior e não devem ser iniciados a partir deste inventário. Pendências de implantação e de validação de memória continuam limitadas às indicadas nas specs e testes atuais.
+
+| Tema | Estado atual | Referência vigente |
+|---|---|---|
+| Autenticação da API | JWT RS256/JWKS, conta ativa e escopo de cargo/loja no servidor | `specs/005-auth-jwt-rs256/`, `src/auth/`, `tests/` |
+| Product Workflow | Capacidade read-only registrada; validação dos grants no ambiente continua necessária | `specs/005-product-workflow-read-only/`, `src/agents/product_workflow/`, `tests/` |
+| Observabilidade | API, sessão própria, traces, métricas, laboratório e feed ao vivo ativos | `openspec/changes/cobertura-observabilidade/`, `AGENTS.md`, `src/observability/` |
+| Memória | Scheduler/worker e persistência de resumos no Qdrant implementados; validação cross-store e cutover em ambiente permanecem abertas | `specs/003-memoria-resumos-qdrant/tasks.md`, `src/memory/`, `tests/` |
+| MCP/A2A | Fora do escopo; nenhuma implementação ativa ou autorizada | `AGENTS.md` |
+
+Escopo original da fotografia: repositórios AI_Multi-Agent e Quistock, fontes ligadas ao serviço IA, domínio, dados, integrações, arquitetura e rubrica. Paths do AI repo são relativos à raiz; paths Quistock usam `Quistock:`. Status originais únicos: confirmado, implementado, proposto, aberto, divergente; implementação e decisão eram dimensões distintas.
 
 ## Limites e exclusões
 

@@ -1,8 +1,10 @@
 # Design
 
-## Context
+**Status:** implementação concluída; este documento registra o desenho original. O runtime atual e os limites operacionais estão descritos em `AGENTS.md` e nas specs ativas.
 
-A Visão geral e o Trace Explorer já existem em `src/observability/front-observer`. Os números saem de `calculate_metrics` em `src/observability/metrics.py`, com preços em `src/api/services/observability_service.py`. Os traces persistidos têm spans com nome, duração e status. A API em `src/api/routes/observability.py` não pede o login do chat. O login do chat continua em `src/api/dependencies/auth.py` e lê `user_account` no Postgres. `super_admin` não é escrita por este serviço. Ver `proposal.md`.
+## Contexto na abertura da change
+
+A Visão geral e o Trace Explorer já existiam em `src/observability/front-observer`. Naquele momento a API de observabilidade ainda não exigia a sessão própria; esta change implementou o login e o gate nas rotas. A API de conversas continua usando seu próprio Bearer JWT. `super_admin` é somente lida pelo login de observabilidade. Ver `proposal.md`.
 
 ## Goals / Non-Goals
 

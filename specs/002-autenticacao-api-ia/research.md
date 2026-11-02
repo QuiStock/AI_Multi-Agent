@@ -1,5 +1,7 @@
 # Decisões de implementação: autenticação HS256
 
+> Registro histórico supersedido. O contrato vigente é JWT RS256/JWKS em `specs/005-auth-jwt-rs256/`.
+
 ## R1 — Formato do token
 
 - **Decisão confirmada**: receber JWT assinado com `HS256`; a API de IA valida a assinatura com `JWT_SECRET` compartilhado pelo emissor e extrai somente `email`.

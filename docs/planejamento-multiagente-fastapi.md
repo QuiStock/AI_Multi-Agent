@@ -1,13 +1,8 @@
 # Planejamento do sistema multiagente e da API FastAPI
 
-**Status:** MVP do roteador e do grafo FAQ implementado; Product Flow Advisor ainda não implementado
+**Status:** documento histórico do desenho inicial, atualizado pela última vez em 2026-09-21. As afirmações abaixo descrevem aquele snapshot e não o estado atual do serviço.
 
-**Última atualização:** 2026-09-21
-
-O planejamento específico da branch `memory` está em
-[`planejamento-memory.md`](planejamento-memory.md). Ele define a retomada pelo
-MongoDB em `enrich_context` e a busca semântica sob demanda pelo router. Os
-endpoints e a interface de sessões ficam para a futura branch `api`.
+> Para o estado vigente, consulte [`AGENTS.md`](../AGENTS.md), as specs ativas em [`specs/`](../specs/) e confirme em `src/` e `tests/`. A API, Product Workflow, memória e observabilidade foram implementados desde este plano. MCP e A2A estão fora do escopo atual e não devem ser implementados com base nas propostas históricas abaixo.
 
 ## Objetivo
 
@@ -466,9 +461,9 @@ Métricas futuras podem incluir precisão de roteamento, taxa de respostas sem e
 
 ## Ordem recomendada para começar
 
-## Primeiro fluxo implementável: FAQ/RAG
+## Primeiro fluxo implementável: FAQ/RAG — snapshot histórico de 2026-09-21
 
-O projeto possui o agente FAQ/RAG, a ferramenta de busca, o estado compartilhado inicial, o guardrail de entrada, o roteador e o grafo MVP. Ainda não possui o Product Flow Advisor, a API FastAPI, persistência operacional ou o conjunto completo de validação e observabilidade.
+O parágrafo seguinte descreve o estado anterior à implementação de Product Workflow, API, persistência e observabilidade. Não o use como descrição do runtime atual.
 
 O primeiro fluxo contém apenas o caminho de FAQ/RAG. O Product Flow Advisor ficará para a etapa seguinte e não aparece como rota ativa enquanto não for implementado.
 
@@ -938,12 +933,9 @@ Validar rotas, respostas com evidências, indisponibilidade, permissões e reten
 
 Somente após a definição de autorização, confirmação e execução de pedidos ou promoções.
 
-## Atualização de planejamento — 2026-09-23
+## Atualização de planejamento — snapshot histórico de 2026-09-23
 
-Os itens abaixo são direções confirmadas para as próximas revisões do sistema.
-Eles não ativam capacidades no grafo atual e não devem ser tratados como
-implementados até que seus contratos, critérios de aceite e testes sejam
-definidos.
+> Decisão vigente em 2026-11-02: MCP e A2A estão fora do escopo. As propostas, aprovações e perguntas desta seção são registros históricos; não representam requisitos atuais nem autorização para implementação.
 
 ### Direções confirmadas
 

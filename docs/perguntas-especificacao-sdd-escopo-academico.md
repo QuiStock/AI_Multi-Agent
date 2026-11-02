@@ -1,5 +1,7 @@
 # Quais decisões ainda precisam ser tomadas para especificar o projeto acadêmico?
 
+> Questionário de descoberta histórico. Consulte `AGENTS.md` e as specs atuais antes de tratar qualquer item como pendência. A decisão vigente exclui MCP e A2A do escopo.
+
 ## Rodada 1 — Como o projeto será dividido entre os sistemas?
 
 1. A API Java com Spring cuidará dos CRUDs e das regras comerciais enquanto a FastAPI cuidará somente do chatbot e dos agentes?
@@ -84,6 +86,6 @@
 1. Quais casos de uso serão ligados aos requisitos funcionais e usados nos dois diagramas de atividades?
 2. Quais testes comprovarão isolamento entre usuários, cargos, lojas e sessões?
 3. Quais testes comprovarão memória no MongoDB, fila no Redis e reindexação no Qdrant?
-4. Quais testes comprovarão RAG com fontes, juiz, guardrails, MCP e A2A?
+4. Quais testes comprovarão RAG com fontes, juiz e guardrails? MCP e A2A não fazem parte da entrega.
 5. Qual carga será usada para medir latência e índice de erros?
 6. Quais diagramas, relatórios, links e evidências serão reunidos no documento final de entregas?

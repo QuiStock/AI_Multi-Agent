@@ -1,5 +1,7 @@
 # Checklist: autenticação HS256
 
+> Histórico supersedido. Esta checklist registra decisões da implementação anterior; não use suas regras HS256 como contrato atual. Consulte `specs/005-auth-jwt-rs256/`.
+
 ## Escopo confirmado
 
 - [x] A FastAPI só recebe token; login e emissão permanecem com o emissor existente.

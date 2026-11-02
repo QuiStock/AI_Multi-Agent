@@ -3,7 +3,9 @@
 **Feature**: `003-memoria-resumos-qdrant`
 **Date**: 2026-09-30
 
-## Current implementation evidence
+> Pesquisa histórica de antes da implementação da feature. Trechos que dizem “ainda não implementado” ou descrevem Mongo como origem do resumo valem somente para o snapshot de 2026-09-30. Runtime atual: `src/memory/`; status e validações restantes: `spec.md` e `tasks.md`.
+
+## Estado do runtime observado na pesquisa original
 
 1. **Documento e mensagens** — `MongoConversationRepository` já mantém um documento por conversa e acrescenta mensagens no campo físico confirmado `messages`. `StoredMessage.message_id` é derivado de `request_id` e papel; `append_message` usa atualização atômica e reconhece IDs já persistidos. Isso satisfaz a granularidade funcional aprovada. A amostra em português chama conceitualmente o array de `mensagens`; os demais nomes físicos existentes serão preservados conforme contrato.
 2. **Resumo duplicado** — `ConversationDocument`, `ConversationSummarySnapshot`, `SummaryCommit` e métodos do repositório mantêm `summary`, `summary_version` e `summarized_through_message_id` no documento `conversations`. O worker primeiro grava o resumo no Mongo e depois chama o indexador Qdrant. Esse é o caminho a substituir.
