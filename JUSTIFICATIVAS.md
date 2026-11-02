@@ -244,7 +244,9 @@
 
 ## Análise 6 — MCP e A2A: avaliação e decisão
 
-**Status:** MCP e A2A não foram implementados. A decisão atual é não os incluir no escopo; não há pendência de implementação aprovada. Esta seção registra a avaliação para evitar que a ausência das integrações seja confundida com uma tarefa esquecida. O tema só deve ser reaberto se os requisitos ou o escopo do projeto mudarem.
+**Status:** MCP e A2A não implementados.
+
+**Pendência:** não há implementação pendente aprovada. A ausência é uma decisão deliberada de escopo, não uma tarefa esquecida. Reabrir a avaliação somente se os requisitos ou o escopo do projeto mudarem.
 
 **MCP avaliados**
 - **Genie com Databricks:** a proposta era receber perguntas em linguagem natural, convertê-las em consultas no Databricks e devolver os resultados. O MCP existia, mas houve dificuldades de conexão com o Databricks. Também não atendia à necessidade de gerar gráficos com imagens; para isso seria necessário consumir a API. A integração foi deixada de lado.
