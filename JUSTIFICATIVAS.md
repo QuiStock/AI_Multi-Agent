@@ -168,6 +168,6 @@
 - Validação e formatação local cobrem falhas e retomada sem criar outro agente de resposta ou rotas paralelas.
 
 **Limites e testes relacionados**
-- O limite atual é de três resumos por chamada, inclusive em períodos longos. A data filtra `updated_at` do resumo, não uma data extraída de cada mensagem original.
+- O limite atual é de três resumos por chamada, inclusive em períodos longos, para manter o contexto enviado ao modelo enxuto. O trade-off é poder deixar de fora uma conversa antiga relevante. A data filtra `updated_at` do resumo, não uma data extraída de cada mensagem original.
 - Contratos e fluxo aparecem em `tests/test_router_graph.py`, `tests/test_router_memory_tool.py`, `tests/test_agent_executors.py`, `tests/test_agent_graph.py` e `tests/integration/test_router_graph_integration.py`.
 - Esta análise documenta o código presente; os testes não foram executados nesta alteração.
