@@ -241,3 +241,24 @@
 - **Trade-off:** o fluxo pode explicar o que está registrado, mas não conclui a operação pelo usuário.
 
 **Limite da análise:** os testes citados não foram executados nesta alteração.
+
+## Análise 6 — MCP e A2A: avaliação e decisão
+
+**Status:** MCP e A2A não foram implementados. A decisão atual é não os incluir no escopo; não há pendência de implementação aprovada. Esta seção registra a avaliação para evitar que a ausência das integrações seja confundida com uma tarefa esquecida. O tema só deve ser reaberto se os requisitos ou o escopo do projeto mudarem.
+
+**MCP avaliados**
+- **Genie com Databricks:** a proposta era receber perguntas em linguagem natural, convertê-las em consultas no Databricks e devolver os resultados. O MCP existia, mas houve dificuldades de conexão com o Databricks. Também não atendia à necessidade de gerar gráficos com imagens; para isso seria necessário consumir a API. A integração foi deixada de lado.
+- **Busca na internet:** foram considerados MCPs como Firecrawl e alternativas. Alguns tinham custo, e a busca externa não foi considerada necessária ao escopo do projeto.
+- **FAQ da Swift:** foi considerada a ingestão de uma URL de FAQ como fonte, com vetorização no Qdrant para uso pela ferramenta existente `faq_search`. Essa abordagem faria o FAQ entrar como conteúdo previamente indexado, sem o agente escolher quando buscar na web. Usar um MCP de busca escolhido pelo próprio agente exigiria obter e vetorizar conteúdo da URL durante a requisição antes da busca semântica. Isso acrescentaria processamento e latência ao fluxo, que hoje consulta conteúdo já indexado no Qdrant. Nenhuma dessas opções foi adotada.
+
+**A2A avaliado**
+- Não foram encontrados agentes externos disponíveis pelo protocolo que justificassem a integração.
+- Dividir a arquitetura existente apenas para cumprir o requisito aumentaria a complexidade sem benefício funcional identificado. O grupo priorizou manter o fluxo simples e reduzir latência.
+
+**Decisão e trade-off**
+- Não adicionar MCP nem A2A: as alternativas avaliadas não justificaram custo, complexidade de conexão ou latência adicional para o escopo atual.
+- O projeto mantém FAQ/RAG sobre conteúdo já indexado no Qdrant e a arquitetura multiagente interna existente. A limitação é não oferecer consultas externas sob demanda via MCP nem comunicação com agentes externos via A2A.
+- Se surgir uma necessidade concreta ou uma exigência de escopo diferente, a integração deve ser reavaliada com uma fonte, capacidade, custo e impacto de latência definidos.
+
+**Evidências:** avaliação e decisão de escopo do grupo, conforme registrada nesta justificativa. MCP e A2A não são capacidades implementadas no código atual.
+
