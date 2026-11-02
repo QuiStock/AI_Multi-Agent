@@ -654,14 +654,10 @@ async function submitLogin(event) {
       body: { email: $('login-email').value.trim(), password: $('login-password').value },
     });
     $('login-password').value = '';
-    const loaded = await loadData({ quiet: true });
-    if (authState === 'anonymous' || !loaded) {
-      authState = 'anonymous';
-      showLogin();
-      $('login-error').textContent = 'Não foi possível carregar os dados.';
-      return;
-    }
+    // Dashboard availability does not determine whether login succeeded.
+    // Protected requests still close the session on 401 in requestJSON.
     startSession();
+    await loadData();
   } catch (error) {
     authState = 'anonymous';
     if (error.status !== 401) $('login-error').textContent = error.message;
@@ -1346,10 +1342,8 @@ async function boot() {
     showLogin();
     return;
   }
-  authState = 'active';
-  const loaded = await loadData();
-  if (authState !== 'active' || !loaded) return;
   startSession();
+  await loadData();
 }
 
 boot();

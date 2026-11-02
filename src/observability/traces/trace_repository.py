@@ -223,6 +223,7 @@ class MongoTraceRepository:
         conversation_ids: Sequence[str] | None = None,
         environment: str | None = None,
         status: TraceStatus | None = None,
+        cost_only: bool = False,
     ) -> Iterator[dict[str, Any]]:
         """Stream matching trace data for complete metric aggregation."""
         self.ensure_indexes()
@@ -234,6 +235,11 @@ class MongoTraceRepository:
             environment=environment,
             status=status,
         )
+        if cost_only:
+            yield from self._collection.aggregate(
+                [{"$match": query}, {"$project": _cost_projection()}], batchSize=25
+            )
+            return
         projection = {
             "_id": 0,
             "trace_id": 1,
@@ -242,7 +248,14 @@ class MongoTraceRepository:
             "status": 1,
             "duration_ms": 1,
             "fallback_used": 1,
-            "spans": 1,
+            "spans.name": 1,
+            "spans.kind": 1,
+            "spans.status": 1,
+            "spans.duration_ms": 1,
+            "spans.model": 1,
+            "spans.input_tokens": 1,
+            "spans.output_tokens": 1,
+            "spans.attributes.usage_source": 1,
             "logs.event": 1,
             "logs.attributes.route": 1,
             "logs.attributes.status": 1,
@@ -487,3 +500,31 @@ class MongoTraceRepository:
                 raise ValueError(f"{token_field} precisa ser inteiro não negativo")
 
         return document
+
+
+def _cost_projection() -> dict[str, Any]:
+    """Transfer only cost inputs; preserve every trace and LLM call."""
+    fields: dict[str, Any] = {
+        key: f"$$span.{key}"
+        for key in ("kind", "model", "status", "input_tokens", "output_tokens")
+    }
+    fields["attributes"] = {"usage_source": "$$span.attributes.usage_source"}
+    return {
+        "_id": 0,
+        "trace_id": 1,
+        "conversation_id": 1,
+        "status": 1,
+        "spans": {
+            "$map": {
+                "input": {
+                    "$filter": {
+                        "input": {"$ifNull": ["$spans", []]},
+                        "as": "span",
+                        "cond": {"$eq": ["$$span.kind", "llm"]},
+                    }
+                },
+                "as": "span",
+                "in": fields,
+            }
+        },
+    }

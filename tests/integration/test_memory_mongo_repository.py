@@ -277,3 +277,51 @@ def test_conversation_history_cannot_be_resumed_by_another_user(
     assert document is not None
     assert document["email"] == "owner"
     assert document["status"] == "ended"
+
+
+def test_cost_trace_projection_preserves_costs_without_non_llm_spans(
+    conversation_collection: Collection,
+) -> None:
+    from src.observability.metrics import ModelPricing, calculate_application_cost
+    from src.observability.traces.trace_repository import MongoTraceRepository
+
+    now = datetime(2026, 11, 2, tzinfo=timezone.utc)
+    for index in range(2):
+        conversation_collection.insert_one(
+            {
+                "_id": f"trace-{index}",
+                "trace_id": f"trace-{index}",
+                "conversation_id": f"conversation-{index}",
+                "started_at": now,
+                "status": "completed",
+                "spans": [
+                    {"kind": "tool", "name": "synthetic", "status": "completed"},
+                    {
+                        "kind": "llm",
+                        "model": "synthetic-model",
+                        "status": "completed",
+                        "input_tokens": 100,
+                        "output_tokens": 20,
+                        "attributes": {"usage_source": "agent_turn"},
+                    },
+                ],
+                "logs": [{"event": "synthetic"}],
+            }
+        )
+    repository = MongoTraceRepository(conversation_collection)
+    full = list(repository.iter_traces(started_from=now, started_to=now))
+    compact = list(
+        repository.iter_traces(started_from=now, started_to=now, cost_only=True)
+    )
+    assert len(compact) == 2
+    assert all(len(trace["spans"]) == 1 and "logs" not in trace for trace in compact)
+    pricing = {"synthetic-model": ModelPricing(1.0, 2.0)}
+    options = {
+        "model_pricing": pricing,
+        "embedding_model": "synthetic-embedding",
+        "embedding_input_usd_per_million_tokens": 0.0,
+        "embedding_tier": "free",
+    }
+    assert calculate_application_cost(
+        compact, [], **options
+    ) == calculate_application_cost(full, [], **options)
