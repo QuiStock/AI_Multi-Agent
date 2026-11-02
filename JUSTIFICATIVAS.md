@@ -14,7 +14,10 @@
 - `src/auth/models.py`, `permissions.py` e `errors.py`: contratos, cargos permitidos e falhas tipadas.
 - `src/auth/postgres.py`, `src/config.py` e `src/main.py`: pool, configurações e ciclo de vida do pool em `app.state`.
 - `.env.example`: documenta ambiente; não contém mais configurações de bypass.
-- Rotas protegidas: `src/api/routes/conversation.py`, `conversation_end.py`, `conversation_history.py` e `conversation_list.py`; controllers/serviços propagam o principal.
+- Rotas protegidas do chatbot: `src/api/routes/conversation.py`, `conversation_end.py`, `conversation_history.py` e `conversation_list.py`; controllers/serviços propagam o principal.
+- `src/api/routes/observability.py`: login, logout e exigência de sessão nas demais rotas da plataforma de observabilidade.
+- `src/auth/observability_session.py`: sessão administrativa própria da observabilidade e configuração do cookie.
+- `tests/test_observability_session.py`: cobertura da sessão e da proteção das rotas.
 
 **Validações do JWT**
 - Exige RS256, chave `kid` do JWKS, issuer `iss` e audience `aud` exatamente `["quistock-api"]`.
@@ -32,7 +35,14 @@
 - `src/observability/audit.py` registra motivos sem JWT ou identidade. Testes de contrato: `tests/test_auth_token.py`, `test_auth_repository.py`, `test_auth_dependency.py`, `test_auth_audit.py` e `tests/integration/test_auth_postgres.py`.
 - O teste de dependência exige `401` também em loopback sem token. Testes não foram executados nesta análise.
 
-**Limites:** bypass e verificação de loopback foram removidos do checkout principal. `src/api/routes/observability.py` não usa esta dependência; sua política fica para a revisão da API.
+**Sessão da observabilidade**
+- O chatbot mantém autenticação por JWT RS256/JWKS. A observabilidade usa um mecanismo próprio de sessão por cookie; uma identidade não substitui a outra.
+- `POST /api/v1/observability/login` valida credenciais de administrador (`super_admin`) e emite o cookie de sessão. `POST /logout` encerra essa sessão.
+- Todas as demais rotas sob `/api/v1/observability`, inclusive laboratório e feed ao vivo, exigem `require_observability_session`.
+- O cookie é HTTPOnly, tem escopo limitado ao prefixo da API de observabilidade e validade de uma hora. Segredo ou dependências de autenticação ausentes fazem o fluxo falhar de forma fechada.
+- Os testes em `tests/test_observability_session.py` cobrem validade/configuração da sessão, login/logout, falha sem banco e exigência de sessão nas rotas. Foram inspecionados nesta análise; não foram executados.
+
+**Limites:** a sessão da observabilidade protege as rotas desse domínio. A autenticação do chatbot continua seguindo o fluxo JWT descrito acima.
 
 ## Análise 2 — Guardrails de entrada e saída
 
