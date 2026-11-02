@@ -160,6 +160,7 @@
 - Essa resposta evita uma segunda chamada de modelo para resumir a saída já estruturada da busca. A memória serve para resolver contexto, não para substituir evidência atual de FAQ ou produto.
 
 **Por que a composição é simples e eficiente**
+- **Decisão confirmada:** o router classifica e escolhe uma rota; não redige a resposta final. As capacidades especializadas fornecem resultados/evidências, e o compiler compõe a resposta. Isso evita geração duplicada e mantém cada etapa com uma responsabilidade clara. Se o router falha ou retorna saída inválida, o fluxo usa resposta controlada em vez de improvisar uma rota. Evidências: `src/agents/router/executor.py`, `router_node.py`, `src/graphs/agent_graph.py` e `decisions.py`.
 - Há um único nó de router ligado ao grafo e um único executor responsável pela chamada estruturada do modelo.
 - A tool é opcional e estreita: o modelo não controla identidade, escopo de usuário nem SQL; o servidor aplica os filtros no Qdrant.
 - A data já resolvida vira filtro temporal direto; não há parsing de datas dentro do service nem geração de embedding para consultas por período.
