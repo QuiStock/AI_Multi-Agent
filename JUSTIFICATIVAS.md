@@ -85,6 +85,7 @@
 - Se surgir marcador não presente na mensagem atual, o output guardrail troca a resposta inteira pela mensagem controlada. A resposta inteira é substituída para não deixar uma frase quebrada ao remover só o token.
 - O compiler recebe uma orientação simples: quando precisar reproduzir informação escondida na mensagem atual, copiar exatamente o marcador correspondente.
 - Marcadores de PII do usuário permanecem na resposta persistida. Depois do grafo, a API restaura somente marcadores presentes no mapa local e devolve o valor original na resposta HTTP; o valor restaurado não volta ao estado/checkpointer. Contatos em texto puro vindos de evidências podem ser persistidos.
+- **Trade-off:** o histórico conserva o marcador, não o valor original. Isso reduz a exposição de PII persistida, mas o valor não pode ser recuperado automaticamente em uma retomada posterior.
 - Não mascaramos PII em texto puro gerado na saída. Um contato presente na evidência autorizada do FAQ pode ser respondido; mascará-lo impediria esse uso legítimo. O mapa de restauração também não é ampliado com valores gerados pelo modelo.
 
 **Saída — validações determinísticas vigentes**
