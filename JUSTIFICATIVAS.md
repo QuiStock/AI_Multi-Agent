@@ -126,6 +126,10 @@
 - `src/api/dependencies.py`: constrói o service e o injeta no `RouterExecutor`.
 - `src/graphs/agent_graph.py`, `src/graphs/decisions.py` e `src/graphs/contracts.py`: registram o nó, contratos de rota e caminhos seguintes.
 
+**Decisão de persistência da memória**
+- O MongoDB guarda mensagens e metadados de conversas; Redis Streams transporta IDs de jobs de resumo; Qdrant guarda e indexa os resumos usados na recuperação.
+- Essa divisão evita varrer o histórico completo do MongoDB em cada busca de contexto. O trade-off é depender da execução e indexação dos jobs para que os resumos fiquem disponíveis. Evidências: `src/memory/conversations/message_service.py`, `src/memory/jobs/summary_queue.py`, `src/memory/summaries/service.py` e `qdrant_summary_indexer.py`.
+
 **Fluxo executável**
 1. O grafo envia a mensagem sanitizada ao nó `router`, implementado por `run_router_node`.
 2. O nó chama `RouterExecutor.invoke`; o modelo retorna `RouteDecision` com rota e justificativa curta.
