@@ -99,6 +99,7 @@
 
 **Decisões de simplicidade e limites**
 - O input guardrail usa padrões explícitos e não adiciona uma chamada de LLM; isso evita custo e latência e mantém a decisão previsível. O trade-off é cobertura limitada aos padrões implementados, sem garantir detecção de toda variação semântica.
+- Cumprimentos de até 160 caracteres passam por classificador estruturado. Se a mensagem for só uma saudação, a resposta é fixa e segue para persistência sem percorrer memória, router, compiler ou judge. Isso evita acionar o restante do fluxo para um cumprimento. O trade-off é uma chamada ao modelo para classificar mensagens curtas; se ela falhar, o fluxo normal continua. Evidências: `src/guardrails/greeting.py` e `src/graphs/agent_graph.py`.
 - Cada controle fica junto da fronteira que protege: entrada antes dos agentes, saída depois da compilação/julgamento. O grafo apenas conecta as etapas.
 - O judge é a única revisão semântica de suporte factual da resposta compilada; assim não duplicamos a mesma regra no guardrail.
 - Mantemos respostas fixas para bloqueios e falhas para não depender de geração durante uma recusa ou indisponibilidade.
