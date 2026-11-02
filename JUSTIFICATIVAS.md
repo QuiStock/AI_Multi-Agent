@@ -108,7 +108,7 @@
 **Semântica dos status**
 - A resposta da API pode ter `success`, `rejected`, `clarification_required`, `out_of_scope` ou `error`. Rejeição, pedido de esclarecimento e fora de escopo têm status próprios; não são `success`.
 - O trace registra apenas `completed` ou `error`. Qualquer status válido da API diferente de `error` conclui o trace como `completed`.
-- Falhas de modelo ou dependência podem gerar `error), assim como exceções no grafo e ausência ou invalidade de `final_response`. A resposta controlada aprovada como `success` permanece `completed` e não conta como erro técnico.
+- Falhas de modelo ou dependência podem gerar status error, assim como exceções no grafo e ausência ou invalidade de `final_response`. A resposta controlada aprovada como `success` permanece `completed` e não conta como erro técnico.
 - Evidências: `src/api/schemas/conversation.py`, `src/api/services/conversation_service.py` e `src/observability/metrics.py`.
 - Mantemos respostas fixas para bloqueios e falhas para não depender de geração durante uma recusa ou indisponibilidade.
 - O output guardrail recebe respostas aprovadas pelo judge. Saudações isoladas e respostas terminais controladas (como entrada bloqueada, fora de escopo e judge bloqueado) seguem diretamente para `persist_turn`. Mantemos esse caminho porque essas mensagens são definidas pelo servidor; evita aplicar checagens de saída a texto fixo. O trade-off é depender de que esses caminhos continuem sem conteúdo dinâmico ou gerado por modelo.
