@@ -24,4 +24,5 @@ class LabAgentConfigService:
             role=card.role.value,
             version=card.version,
             system_prompt=card.system_prompt_template,
+            tools=[tool.model_dump(mode="json") for tool in card.tools],
         )

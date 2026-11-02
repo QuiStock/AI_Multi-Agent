@@ -143,6 +143,7 @@ def list_lab_models() -> LabModelCatalogResponse:
 @router.post(
     "/lab/run",
     response_model=LabRunResponse,
+    response_model_exclude_defaults=True,
     dependencies=[Depends(require_observability_session)],
 )
 def run_lab_model(
@@ -150,7 +151,11 @@ def run_lab_model(
     service: Annotated[LabRunService, Depends(get_lab_run_service)],
 ) -> LabRunResponse:
     try:
+        if request.agent_id is not None:
+            return service.preview(request)
         return LabRunResponse(result=service.run(request))
+    except LabAgentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Agente não encontrado.") from exc
     except UnsupportedLabModelError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except LabModelInvocationError as exc:

@@ -82,6 +82,8 @@ class LabRunMessage(BaseModel):
 class LabRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    agent_id: str | None = Field(default=None, min_length=1, max_length=100)
+
     model_id: str = Field(min_length=1, max_length=200)
     prompt: str = Field(min_length=1, max_length=30_000)
     messages: list[LabRunMessage] = Field(min_length=1, max_length=100)
@@ -104,6 +106,7 @@ class LabRunResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     result: str
+    tool_calls: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class LabModelOptionResponse(BaseModel):
@@ -129,6 +132,7 @@ class LabAgentConfigResponse(BaseModel):
     role: str = Field(min_length=1)
     version: str = Field(min_length=1)
     system_prompt: str = Field(min_length=1)
+    tools: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class TraceSummaryResponse(BaseModel):

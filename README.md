@@ -20,3 +20,7 @@ and the existing vector dimension without calling an embedding API. Apply uses G
 persists the FAQ manifest in MongoDB, and refuses populated FAQ without a compatible
 manifest. Execute only one FAQ apply Job at a time. Back up shared external databases
 before migrations; no operation here creates `public.super_admin` or its credentials.
+
+### Contrato do laboratório
+
+O frontend envia `agent_id`, `model_id`, `prompt` e `messages` a `/api/v1/observability/lab/run`. Com `agent_id`, a API obtém somente os schemas do card registrado, vincula-os ao modelo e devolve `tool_calls` com nome e argumentos previstos; as tools não são executadas. Sem `agent_id`, mantém a resposta textual anterior. A sessão própria de observabilidade continua obrigatória. O catálogo de configuração de agente inclui os metadados das tools exibidos no frontend.
