@@ -103,7 +103,7 @@
 - Cada controle fica junto da fronteira que protege: entrada antes dos agentes, saída depois da compilação/julgamento. O grafo apenas conecta as etapas.
 - O JEV avalia o suporte factual das respostas. O output guardrail valida formato, PII e as cinco frases operacionais explícitas quando a resposta passa por ele. Assim, as regras de saída ficam determinísticas e não repetimos uma chamada semântica de modelo.
 - Mantemos respostas fixas para bloqueios e falhas para não depender de geração durante uma recusa ou indisponibilidade.
-- O output guardrail atualmente atende saudação e resposta compilada aprovada. Algumas rotas controladas terminam diretamente em `persist_turn`; unificá-las no output guardrail é uma alteração de grafo separada, não incluída nesta análise.
+- O output guardrail recebe respostas após a aprovação do judge. No grafo atual, saudações isoladas e rotas terminais controladas (como entrada bloqueada, fora de escopo e judge bloqueado) seguem diretamente para `persist_turn` e não passam por ele. Esta análise registra o fluxo existente; qualquer mudança dessa cobertura exige uma decisão de grafo separada.
 - `pipeline.py`, as fachadas `input_guardrail.py`/`output_guardrail.py`, `GuardrailResult` e `timeout_ms` sem uso foram removidos. A API e o grafo importam os nós diretamente dos módulos `input.py` e `output.py`.
 - Os testes relacionados estão em `tests/test_input_guardrail.py`, `tests/test_output_guardrail.py`, `tests/test_greeting_classifier.py`, `tests/test_agent_graph.py` e `tests/integration/test_guardrails_integration.py`; não foram executados nesta análise.
 
