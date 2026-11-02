@@ -108,6 +108,24 @@ def product_reader_pool() -> Iterator[ConnectionPool]:
             )
             connection.execute(
                 """
+                CREATE TABLE product_analysis (
+                    id BIGINT PRIMARY KEY,
+                    product_id BIGINT NOT NULL,
+                    store_id BIGINT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
+                CREATE TABLE product_store (
+                    id BIGINT PRIMARY KEY,
+                    product_id BIGINT NOT NULL,
+                    store_id BIGINT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
                 CREATE TABLE suggestion_log (
                     id BIGINT PRIMARY KEY,
                     suggestion_id BIGINT NOT NULL,
@@ -120,8 +138,7 @@ def product_reader_pool() -> Iterator[ConnectionPool]:
                 CREATE TABLE suggestion (
                     id BIGINT PRIMARY KEY,
                     product_analysis_id BIGINT,
-                    store_id BIGINT NOT NULL,
-                    product_id BIGINT NOT NULL,
+                    product_store_id BIGINT,
                     type suggestion_type NOT NULL,
                     origin suggestion_origin NOT NULL,
                     status suggestion_status NOT NULL,
@@ -136,8 +153,41 @@ def product_reader_pool() -> Iterator[ConnectionPool]:
                     available_for_triage BOOLEAN NOT NULL,
                     created_by_id BIGINT,
                     created_at TIMESTAMPTZ NOT NULL,
-                    updated_at TIMESTAMPTZ
+                    updated_at TIMESTAMPTZ,
+                    desired_order_date DATE
                 )
+                """
+            )
+            connection.execute(
+                """
+                CREATE VIEW suggestion_context AS
+                SELECT
+                    s.id,
+                    s.product_analysis_id,
+                    s.product_store_id,
+                    COALESCE(pa.product_id, ps.product_id) AS product_id,
+                    COALESCE(pa.store_id, ps.store_id) AS store_id,
+                    s.type,
+                    s.origin,
+                    s.status,
+                    s.ml_batch_count,
+                    s.current_batch_count,
+                    s.ml_discount_percentage,
+                    s.current_discount_percentage,
+                    s.promotion_valid_from,
+                    s.promotion_valid_until,
+                    s.reference_sale_price,
+                    s.promotional_price,
+                    s.available_for_triage,
+                    s.created_by_id,
+                    s.created_at,
+                    s.updated_at,
+                    s.desired_order_date
+                FROM suggestion AS s
+                LEFT JOIN product_analysis AS pa
+                  ON pa.id = s.product_analysis_id
+                LEFT JOIN product_store AS ps
+                  ON ps.id = s.product_store_id
                 """
             )
             connection.execute(
@@ -193,34 +243,56 @@ def product_reader_pool() -> Iterator[ConnectionPool]:
             )
             connection.execute(
                 """
+                INSERT INTO product_analysis(id, product_id, store_id)
+                VALUES (100, 40, 30), (101, 40, 30), (102, 40, 30),
+                       (103, 40, 30), (200, 41, 30), (201, 41, 30)
+                """
+            )
+            connection.execute(
+                """
                 INSERT INTO suggestion(
-                    id, product_analysis_id, store_id, product_id, type, origin,
+                    id, product_analysis_id, product_store_id, type, origin,
                     status, ml_batch_count, current_batch_count,
                     ml_discount_percentage, current_discount_percentage,
                     promotion_valid_from, promotion_valid_until,
                     reference_sale_price, promotional_price, available_for_triage,
                     created_by_id, created_at, updated_at
                 ) VALUES
-                    (10, 100, 30, 40, 'ORDER', 'ML', 'SENT_TO_MANAGER', 2, 2,
+                    (10, 100, NULL, 'ORDER', 'ML', 'SENT_TO_MANAGER', 2, 2,
                      NULL, NULL, NULL, NULL, 10.00, NULL, TRUE, NULL,
                      '2026-10-01T12:00:00Z', '2026-10-01T12:00:00Z'),
-                    (11, 101, 30, 40, 'ORDER', 'ML', 'SENT_TO_MANAGER', 3, 3,
+                    (11, 101, NULL, 'ORDER', 'ML', 'SENT_TO_MANAGER', 3, 3,
                      NULL, NULL, NULL, NULL, 10.00, NULL, TRUE, NULL,
                      '2026-10-02T12:00:00Z', '2026-10-02T12:00:00Z'),
-                    (12, 102, 30, 40, 'ORDER', 'ML', 'SENT_TO_MANAGER', 4, 4,
+                    (12, 102, NULL, 'ORDER', 'ML', 'SENT_TO_MANAGER', 4, 4,
                      NULL, NULL, NULL, NULL, 10.00, NULL, TRUE, NULL,
                      '2026-10-03T12:00:00Z', '2026-10-03T12:00:00Z'),
-                    (13, 103, 30, 40, 'MONITOR', 'ML', 'GENERATED', NULL, NULL,
+                    (13, 103, NULL, 'MONITOR', 'ML', 'GENERATED', NULL, NULL,
                      NULL, NULL, NULL, NULL, NULL, NULL, FALSE, NULL,
                      '2026-10-04T12:00:00Z', '2026-10-04T12:00:00Z'),
-                    (20, 200, 30, 41, 'PROMOTION', 'ML', 'SENT_TO_MANAGER',
+                    (20, 200, NULL, 'PROMOTION', 'ML', 'SENT_TO_MANAGER',
                      NULL, NULL, NULL, NULL, '2026-10-01', '2026-11-01',
                      12.00, 9.00, TRUE, NULL,
                      '2026-10-05T12:00:00Z', '2026-10-05T12:00:00Z'),
-                    (21, 201, 30, 41, 'PROMOTION', 'ML', 'SENT_TO_MANAGER',
+                    (21, 201, NULL, 'PROMOTION', 'ML', 'SENT_TO_MANAGER',
                      NULL, NULL, NULL, NULL, '2026-10-01', '2026-12-15',
                      15.00, 11.00, TRUE, NULL,
                      '2026-10-06T12:00:00Z', '2026-10-06T12:00:00Z')
+                """
+            )
+            connection.execute(
+                "INSERT INTO product_store(id, product_id, store_id) "
+                "VALUES (300, 40, 30)"
+            )
+            connection.execute(
+                """
+                INSERT INTO suggestion(
+                    id, product_analysis_id, product_store_id, type, origin,
+                    status, available_for_triage, created_by_id, created_at
+                ) VALUES (
+                    30, NULL, 300, 'ORDER', 'MANAGER', 'APPROVED', TRUE, 7,
+                    '2026-10-07T12:00:00Z'
+                )
                 """
             )
             connection.execute(
@@ -259,7 +331,8 @@ def product_reader_pool() -> Iterator[ConnectionPool]:
             connection.execute("GRANT USAGE ON SCHEMA public TO ai_product_reader")
             connection.execute(
                 "GRANT SELECT ON user_account, user_store, store, category, "
-                "product, suggestion, suggestion_log, suggestion_triage, batch "
+                "product, suggestion, suggestion_context, suggestion_log, "
+                "suggestion_triage, batch "
                 "TO ai_product_reader"
             )
 
@@ -297,6 +370,17 @@ def test_product_workflow_reads_postgres_with_select_only_grants(
             connection.execute(
                 "UPDATE suggestion SET current_batch_count = 99 WHERE id = 11"
             )
+
+
+def test_suggestion_context_view_resolves_manual_product_store_source(
+    product_reader_pool: ConnectionPool,
+) -> None:
+    with product_reader_pool.connection() as connection:
+        row = connection.execute(
+            "SELECT product_id, store_id FROM suggestion_context WHERE id = 30"
+        ).fetchone()
+
+    assert row == (40, 30)
 
 
 def test_product_workflow_lists_orders_and_promotions(
