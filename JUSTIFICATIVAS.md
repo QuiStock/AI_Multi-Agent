@@ -44,6 +44,7 @@
 - O trade-off é configurar e manter dois mecanismos de autenticação. Uma mudança em um fluxo não precisa alterar o outro.
 - Evidências: `src/api/routes/observability.py`, `src/auth/observability_session.py` e `tests/test_observability_session.py`.
 - `POST /api/v1/observability/login` valida credenciais de administrador (`super_admin`) e emite o cookie de sessão. `POST /logout` encerra essa sessão.
+- O acesso fica restrito a contas `super_admin`, pois o painel reúne traces, logs e chamadas de laboratório.
 - Todas as demais rotas sob `/api/v1/observability`, inclusive laboratório e feed ao vivo, exigem `require_observability_session`.
 - O cookie é HTTPOnly, tem escopo limitado ao prefixo da API de observabilidade e validade de uma hora. Segredo ou dependências de autenticação ausentes fazem o fluxo falhar de forma fechada.
 - Os testes em `tests/test_observability_session.py` cobrem validade/configuração da sessão, login/logout, falha sem banco e exigência de sessão nas rotas. Foram inspecionados nesta análise; não foram executados.
