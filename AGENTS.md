@@ -187,9 +187,10 @@ validade extrema `nearest` ou `longest`. Com `until`, omite `direction` e
 lista promoções cuja validade fica entre a data da mensagem e `until`,
 inclusive. O piso da data é o `sent_at`, não um argumento do modelo.
 
-ORDER mostra `ml_batch_count` e `current_batch_count` separados. PROMOTION não
-tem quantidade de lote. `promotional_price` é o único preço. O card público
-não traz triagem, origem, loja, status interno nem preço de referência.
+ORDER usa `current_batch_count` como quantidade atual quando disponível; não há
+fallback para `ml_batch_count`. PROMOTION não tem quantidade de lote.
+`promotional_price` é o único preço. O card público não traz triagem, origem,
+loja, status interno nem preço de referência.
 A busca por nome ou SKU ignora acentos: `cha gelado` encontra `Chá Gelado`.
 Consulta com `ambiguous` ou `not_found` grava um `response_draft` idêntico ao
 texto já montado, com `origin=exact`, `public_status=clarification_required` e

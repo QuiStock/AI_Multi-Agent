@@ -83,7 +83,6 @@ def _detail(index: int) -> ProductSuggestionDetailRecord:
         suggestion_type=kind,
         origin="ML",
         status="SENT_TO_MANAGER",
-        ml_batch_count=12 if is_order else None,
         current_batch_count=9 if is_order else None,
         reference_sale_price=None if is_order else 15.9,
         promotional_price=None if is_order else 12.67,
