@@ -28,9 +28,8 @@ dependencies = [
 
 [project.scripts]
 quistock-summary-worker = "src.memory.worker.run_summary_worker:main"
-quistock-memory-reconcile = "scripts.reconcile_memory:main"
-quistock-faq-index = "scripts.index_faq:main"
-quistock-faq-validate = "scripts.validate_faq_index:main"
+quistock-memory-provision = "src.ops.memory:main"
+quistock-faq-index = "src.ops.faq:main"
 
 [dependency-groups]
 dev = [
