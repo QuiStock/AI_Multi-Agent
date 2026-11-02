@@ -65,7 +65,7 @@ class LabRunService:
         return model_response
 
     @staticmethod
-    def _text(model_response: Any) -> str:
+    def _text(model_response: Any, *, allow_empty: bool = False) -> str:
         content = getattr(model_response, "content", None)
         if isinstance(content, str):
             return content
@@ -77,8 +77,10 @@ class LabRunService:
                 and block.get("type") == "text"
                 and isinstance(block.get("text"), str)
             ]
-            if text_blocks:
+            if text_blocks or allow_empty:
                 return "".join(text_blocks)
+        if content is None and allow_empty:
+            return ""
         raise LabModelInvocationError("O modelo não retornou conteúdo textual")
 
     def run(self, request: LabRunRequest) -> str:
@@ -116,8 +118,7 @@ class LabRunService:
             calls.append(
                 {"name": call["name"], "arguments": call["args"], "id": call.get("id")}
             )
-        content = getattr(response, "content", None)
-        text = "" if calls and content in (None, []) else self._text(response)
+        text = self._text(response, allow_empty=bool(calls))
         return LabRunResponse(result=text, tool_calls=calls)
 
 

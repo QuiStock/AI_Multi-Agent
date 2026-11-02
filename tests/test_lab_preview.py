@@ -96,3 +96,33 @@ def test_frontend_receives_registered_tool_metadata_and_cannot_inject_tools():
     assert response.tools[0]["id"] == "faq_search"
     with pytest.raises(ValidationError):
         request(tools=[{"name": "unregistered_tool"}])
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        [{"type": "function_call", "name": "faq_search", "arguments": "{}"}],
+        [{"type": "reasoning", "summary": []}],
+        [{"type": "reasoning", "summary": []}, {"type": "text", "text": "Preview"}],
+    ],
+)
+def test_tool_preview_accepts_non_text_blocks_without_requiring_text(content):
+    class ReasoningPreviewModel(PreviewModel):
+        def respond(self, inputs: Any) -> AIMessage:
+            response = super().respond(inputs)
+            return response.model_copy(update={"content": content})
+
+    model = ReasoningPreviewModel()
+    service = LabRunService(model_resolver=lambda _: cast(Any, model))
+    response = service.preview(request())
+    assert response.tool_calls[0]["name"] == "faq_search"
+    assert response.result == ("Preview" if len(content) == 2 else "")
+
+
+def test_reasoning_without_a_tool_decision_still_fails():
+    model = RunnableLambda(
+        lambda _: AIMessage(content=[{"type": "reasoning", "summary": []}])
+    )
+    service = LabRunService(model_resolver=lambda _: model)
+    with pytest.raises(LabModelInvocationError):
+        service.run(request(agent_id=None))
