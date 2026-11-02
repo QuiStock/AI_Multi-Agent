@@ -1,26 +1,63 @@
-# AI_Multi-Agent
+# QuiStock AI API
 
-## Publicação de imagem ARM64
+<img src="src/observability/front-observer/public/assets/quistock-feather.svg" alt="QuiStock" width="64">
 
-Veja [publicação e preparação do Infra](docs/container-release.md) para releases,
-execução manual, referência por digest e permissões do GHCR/Infra.
+![Python](https://img.shields.io/badge/Python-3.14%2B-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.141%2B-009688?logo=fastapi&logoColor=white)
+![LangGraph](https://img.shields.io/badge/LangGraph-1.x-1C3C3C)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-product%20workflow-4169E1?logo=postgresql&logoColor=white)
 
-## AWS deployment operations
+Serviço de conversação e fluxos de IA do QuiStock. A API FastAPI coordena agentes com LangGraph, protege entradas e respostas e integra memória, FAQ e consultas comerciais somente leitura.
 
-`Dockerfile.observer` serves the separate frontend under `/observe/` on port 8080.
-The gateway must preserve `/api/v1/observability`, including the session cookie Path;
-set `OBSERVABILITY_FRONTEND_ORIGIN` to its exact HTTPS origin. API containers use
-`PORT=8000` in Kubernetes. The worker has a separate image and requires no Observe
-session secret or TypeSafe credential.
+## Capacidades
 
-Run `python -m src.ops.memory --check --vector-size 768` before initializing new,
-empty memory with `--apply`. Existing populated memory requires a separate migration.
-Run `python -m src.ops.faq --check` before `--apply`; check validates bundled documents
-and the existing vector dimension without calling an embedding API. Apply uses Gemini,
-persists the FAQ manifest in MongoDB, and refuses populated FAQ without a compatible
-manifest. Execute only one FAQ apply Job at a time. Back up shared external databases
-before migrations; no operation here creates `public.super_admin` or its credentials.
+- **FAQ com RAG:** recupera documentos no Qdrant e responde com base nas evidências encontradas, respeitando o público do documento.
+- **Product Workflow:** consulta sugestões e promoções no PostgreSQL em modo somente leitura; exige perfil de gerente ou funcionário.
+- **Conversas:** expõe rotas para enviar mensagens, listar conversas e consultar histórico. MongoDB guarda mensagens e metadados de jobs.
+- **Memória e resumos:** Redis Streams transporta jobs; Qdrant guarda resumos pesquisáveis. O checkpointer local usa `MemorySaver` em desenvolvimento e testes.
+- **Observabilidade:** publica traces, métricas e logs correlacionados na API.
 
-### Contrato do laboratório
+O fluxo ativo é composto por guardrails, router, agentes especializados e compiler/judge. MCP continua planejado, não é uma capacidade ativa.
 
-O frontend envia `agent_id`, `model_id`, `prompt` e `messages` a `/api/v1/observability/lab/run`. Com `agent_id`, a API obtém somente os schemas do card registrado, vincula-os ao modelo e devolve `tool_calls` com nome e argumentos previstos; as tools não são executadas. Sem `agent_id`, mantém a resposta textual anterior. A sessão própria de observabilidade continua obrigatória. O catálogo de configuração de agente inclui os metadados das tools exibidos no frontend.
+## Tecnologias e serviços
+
+- Python 3.14+, FastAPI e Uvicorn
+- LangGraph e LangChain para orquestração e integrações de modelos
+- OpenAI para chat e resumos; Gemini para embeddings de FAQ e memória
+- MongoDB, Redis e Qdrant para conversas, fila de resumos e busca vetorial
+- PostgreSQL para consultas do Product Workflow, com credencial somente leitura
+
+## Configuração local
+
+Requisitos: Python 3.14, [uv](https://docs.astral.sh/uv/) e os serviços usados pela capacidade que será executada. O arquivo `.env.example` lista as variáveis disponíveis; configure as chaves de provedor e os serviços necessários sem commitar segredos.
+
+```bash
+uv sync
+uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Com a API em execução, a documentação OpenAPI fica disponível em `/docs`. O Product Workflow requer `POSTGRES_DSN`; FAQ e memória dependem dos serviços vetoriais e de persistência correspondentes.
+
+## Testes
+
+```bash
+uv run pytest
+```
+
+Por padrão, pytest exclui os testes marcados como integração. Para executá-los, use `uv run pytest -m integration`; esses testes podem depender do Docker.
+
+## Estrutura
+
+| Diretório | Responsabilidade |
+| --- | --- |
+| `src/api/` | Rotas HTTP, schemas, dependências e serviços da API |
+| `src/graphs/` | Estado e composição do grafo LangGraph |
+| `src/agents/` | Router, FAQ, Product Workflow, compiler e judge |
+| `src/guardrails/` | Validação de entrada e saída |
+| `src/memory/` | Persistência, resumos e retomada de conversas |
+| `src/observability/` | Traces, métricas, logs e frontend de observabilidade |
+| `tests/` | Testes unitários, de contrato e de integração |
+
+## Containers
+
+Os Dockerfiles da API e dos workers estão na raiz. Para releases de imagem ARM64, publicação no GHCR e permissões de infraestrutura, consulte [publicação e preparação do Infra](docs/container-release.md).
