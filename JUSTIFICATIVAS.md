@@ -104,6 +104,12 @@
 - O JEV avalia o suporte factual das respostas. O output guardrail valida formato, PII e as cinco frases operacionais explícitas quando a resposta passa por ele. Assim, as regras de saída ficam determinísticas e não repetimos uma chamada semântica de modelo.
 - Quando uma validação falha, o output guardrail substitui a resposta inteira por uma frase controlada. Isso evita deixar uma violação no texto ou entregar uma resposta parcial confusa. O trade-off é descartar também partes úteis que estavam corretas.
 - A substituição mantém o turno como `success` e o trace como `completed`: o usuário recebeu uma mensagem segura, compreensível e sem detalhes técnicos internos. A taxa de erros representa falhas técnicas; não contabilizar essas correções como erro é uma decisão intencional.
+
+**Semântica dos status**
+- A resposta da API pode ter `success`, `rejected`, `clarification_required`, `out_of_scope` ou `error`. Rejeição, pedido de esclarecimento e fora de escopo têm status próprios; não são `success`.
+- O trace registra apenas `completed` ou `error`. Qualquer status válido da API diferente de `error` conclui o trace como `completed`.
+- Falhas de modelo ou dependência podem gerar `error), assim como exceções no grafo e ausência ou invalidade de `final_response`. A resposta controlada aprovada como `success` permanece `completed` e não conta como erro técnico.
+- Evidências: `src/api/schemas/conversation.py`, `src/api/services/conversation_service.py` e `src/observability/metrics.py`.
 - Mantemos respostas fixas para bloqueios e falhas para não depender de geração durante uma recusa ou indisponibilidade.
 - O output guardrail recebe respostas aprovadas pelo judge. Saudações isoladas e respostas terminais controladas (como entrada bloqueada, fora de escopo e judge bloqueado) seguem diretamente para `persist_turn`. Mantemos esse caminho porque essas mensagens são definidas pelo servidor; evita aplicar checagens de saída a texto fixo. O trade-off é depender de que esses caminhos continuem sem conteúdo dinâmico ou gerado por modelo.
 - `pipeline.py`, as fachadas `input_guardrail.py`/`output_guardrail.py`, `GuardrailResult` e `timeout_ms` sem uso foram removidos. A API e o grafo importam os nós diretamente dos módulos `input.py` e `output.py`.
