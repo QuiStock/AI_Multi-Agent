@@ -204,3 +204,22 @@
 - Respostas ficam limitadas ao acervo indexado e à relevância dos trechos recuperados. Um documento ausente ou não recuperado pode produzir `not_found`, mesmo que a informação exista fora da base.
 - O FAQ não consulta dados comerciais em tempo real nem outras fontes externas. Perguntas que dependem dessas capacidades devem seguir a rota própria.
 - Os testes citados foram inspecionados nesta análise; não foram executados nesta alteração.
+
+## Análise 5 — Product Workflow
+
+**Objetivo:** consultar informações comerciais autorizadas sobre sugestões e promoções para responder às perguntas do usuário.
+
+**Arquivos centrais**
+- `src/agents/product_workflow/card.py`: declara a capacidade e as ferramentas comerciais disponíveis ao agente.
+- `src/agents/product_workflow/executor.py`: valida o contexto da requisição, monta as ferramentas permitidas e executa o agente.
+- `src/agents/product_workflow/repository.py`: concentra as consultas ao PostgreSQL comercial.
+- `src/agents/product_workflow/filters.py` e `tools/`: definem filtros e operações de consulta expostas ao agente.
+- `src/agents/product_workflow/product_workflow_node.py`: integra o resultado e as evidências ao grafo.
+- `tests/test_product_workflow.py` e `tests/test_product_workflow_repository.py`: cobrem o agente e as consultas do repositório.
+
+**Decisão confirmada**
+- O Product Workflow é somente leitura: consulta sugestões e promoções, mas não cria pedidos nem altera dados comerciais.
+- Essa separação deixa as respostas consultivas sem autorização para executar operações comerciais. As alterações de negócio permanecem fora desta capacidade.
+- **Trade-off:** o fluxo pode explicar o que está registrado, mas não conclui a operação pelo usuário.
+
+**Limite da análise:** os testes citados não foram executados nesta alteração.
