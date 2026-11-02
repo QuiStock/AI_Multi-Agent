@@ -181,3 +181,26 @@
 - O limite atual é de três resumos por chamada, inclusive em períodos longos, para manter o contexto enviado ao modelo enxuto. O trade-off é poder deixar de fora uma conversa antiga relevante. A data filtra `updated_at` do resumo, não uma data extraída de cada mensagem original.
 - Contratos e fluxo aparecem em `tests/test_router_graph.py`, `tests/test_router_memory_tool.py`, `tests/test_agent_executors.py`, `tests/test_agent_graph.py` e `tests/integration/test_router_graph_integration.py`.
 - Esta análise documenta o código presente; os testes não foram executados nesta alteração.
+
+## Análise 4 — FAQ/RAG
+
+**Objetivo:** responder dúvidas documentadas com trechos recuperados da base autorizada, sem completar lacunas com conhecimento próprio do modelo.
+
+**Arquivos centrais**
+- `src/agents/faq/card.py` e `faq_prompt.py`: declaram a capacidade do agente, sua única ferramenta e as regras de uso das evidências.
+- `src/agents/faq/executor.py`: cria o agente por turno, injeta a busca com escopo autorizado e valida o resultado da ferramenta.
+- `src/agents/faq/faq_node.py`: deriva as audiências do cargo autenticado, projeta evidências no grafo e trata ausência ou falha.
+- `src/agents/faq/tools/faq_tool.py` e `schemas.py`: executam a consulta e validam o envelope, os resultados e o desfecho `not_found`.
+- `src/agents/faq/retrieval/qdrant_retriever.py`: aplica o filtro de audiência durante a busca vetorial.
+- `tests/test_faq_role_filter.py`, `tests/test_faq_tools.py` e `tests/integration/test_faq_no_evidence_graph_integration.py`: cobrem escopo por cargo, ausência de resultados e caminho pelo grafo.
+
+**Decisões e interpretação**
+- **Decisão confirmada:** o FAQ consulta documentos indexados no Qdrant. A aplicação define o escopo a partir do cargo autenticado: conteúdo compartilhado e conteúdo do cargo correspondente. A pergunta do usuário não pode escolher cargo nem ampliar esse acesso.
+- A ferramenta registra `not_found` com evidência explícita quando a busca não encontra trechos. O fluxo informa que não encontrou informação documentada; não trata ausência como falha técnica nem permite completar a resposta por conhecimento próprio.
+- Quando há resultados, o agente deve responder apenas com os trechos recuperados e indicar a fonte. Consulta sem resultado continua pelo compiler e pelo judge, que recebem a ausência explícita como evidência.
+- Essa organização mantém recuperação, escopo de acesso e composição da resposta em pontos distintos. O runtime constrói a ferramenta autorizada por requisição, sem guardar o cargo em estado global.
+
+**Trade-off e limites**
+- Respostas ficam limitadas ao acervo indexado e à relevância dos trechos recuperados. Um documento ausente ou não recuperado pode produzir `not_found`, mesmo que a informação exista fora da base.
+- O FAQ não consulta dados comerciais em tempo real nem outras fontes externas. Perguntas que dependem dessas capacidades devem seguir a rota própria.
+- Os testes citados foram inspecionados nesta análise; não foram executados nesta alteração.
