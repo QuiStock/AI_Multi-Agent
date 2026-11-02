@@ -93,7 +93,7 @@
 2. Limita a resposta a 6.000 caracteres.
 3. Remove emojis quando a opção está ativa.
 4. Rejeita texto vazio e delimitadores Markdown desbalanceados de crase ou `**`.
-5. Bloqueia frases que afirmam operações comerciais não executadas: pedido enviado, compra concluída, promoção ativada, entrega confirmada ou pedido processado.
+5. Bloqueia as cinco frases configuradas para operações comerciais não executadas: pedido enviado, compra concluída, promoção ativada, entrega confirmada e pedido processado. Essa lista fixa não detecta toda alegação comercial sem suporte. Quando há violação, o guardrail substitui o texto por uma resposta controlada; o turno segue para persistência.
 6. Não exige evidências do FAQ no output guardrail: o judge já avalia evidências e citações das respostas factuais compiladas. Mensagens diretas sem evidência são controladas, não respostas factuais do compiler.
 7. Não repete no output guardrail a aprovação do judge: o grafo só encaminha resposta compilada aprovada para esse nó.
 
@@ -101,7 +101,7 @@
 - O input guardrail usa padrões explícitos e não adiciona uma chamada de LLM; isso evita custo e latência e mantém a decisão previsível. O trade-off é cobertura limitada aos padrões implementados, sem garantir detecção de toda variação semântica.
 - Cumprimentos de até 160 caracteres passam por classificador estruturado. Se a mensagem for só uma saudação, a resposta é fixa e segue para persistência sem percorrer memória, router, compiler ou judge. Isso evita acionar o restante do fluxo para um cumprimento. O trade-off é uma chamada ao modelo para classificar mensagens curtas; se ela falhar, o fluxo normal continua. Evidências: `src/guardrails/greeting.py` e `src/graphs/agent_graph.py`.
 - Cada controle fica junto da fronteira que protege: entrada antes dos agentes, saída depois da compilação/julgamento. O grafo apenas conecta as etapas.
-- O judge é a única revisão semântica de suporte factual da resposta compilada; assim não duplicamos a mesma regra no guardrail.
+- O JEV avalia o suporte factual das respostas. O output guardrail valida formato, PII e as cinco frases operacionais explícitas quando a resposta passa por ele. Assim, as regras de saída ficam determinísticas e não repetimos uma chamada semântica de modelo.
 - Mantemos respostas fixas para bloqueios e falhas para não depender de geração durante uma recusa ou indisponibilidade.
 - O output guardrail atualmente atende saudação e resposta compilada aprovada. Algumas rotas controladas terminam diretamente em `persist_turn`; unificá-las no output guardrail é uma alteração de grafo separada, não incluída nesta análise.
 - `pipeline.py`, as fachadas `input_guardrail.py`/`output_guardrail.py`, `GuardrailResult` e `timeout_ms` sem uso foram removidos. A API e o grafo importam os nós diretamente dos módulos `input.py` e `output.py`.
