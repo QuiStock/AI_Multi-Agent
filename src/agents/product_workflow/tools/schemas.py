@@ -64,7 +64,6 @@ class SuggestionCardData(BaseModel):
     category_name: str | None = Field(default=None, max_length=150)
     sku: str = Field(min_length=1, max_length=100)
     suggestion_type: SuggestionType
-    ml_batch_count: int | None = Field(default=None, gt=0)
     current_batch_count: int | None = Field(default=None, gt=0)
     ml_discount_percentage: float | None = Field(default=None, ge=0, le=100)
     current_discount_percentage: float | None = Field(default=None, ge=0, le=100)
@@ -167,7 +166,6 @@ def suggestion_card(
         "updated_at": record.updated_at,
     }
     if record.suggestion_type == "ORDER":
-        optional["ml_batch_count"] = record.ml_batch_count
         optional["current_batch_count"] = record.current_batch_count
     values.update({key: value for key, value in optional.items() if value is not None})
     return SuggestionCardData.model_validate(values)

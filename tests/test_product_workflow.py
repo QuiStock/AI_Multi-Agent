@@ -77,7 +77,6 @@ def detail_record(
         suggestion_type="ORDER",
         origin="EMPLOYEE",
         status="SENT_TO_MANAGER" if role == "manager" else "IN_EMPLOYEE_TRIAGE",
-        ml_batch_count=20,
         current_batch_count=25,
         ml_discount_percentage=10,
         current_discount_percentage=15,

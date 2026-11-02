@@ -45,9 +45,9 @@ Result must use the repository `ToolResult[DataT]` envelope (`schema_version`, `
 - Dados: `suggestion.product_id` → `product.id`; `product.category_id` → `category.id`; `suggestion_log.suggestion_id` exclui qualquer `event = 'EXPIRED'`.
 - A consulta limita resultados a seis produtos, configura `statement_timeout` e aplica pesquisa parametrizada em `product.name`, `product.sku` e `category.name`.
 - O campo visual “Validade” é vencimento físico: `MIN(batch.expiration_date)` por produto/loja considerando apenas lote ativo com saldo positivo. Não confundir com `suggestion.promotion_valid_until`, que é validade da promoção. Caso não exista lote ativo, a validade fica ausente.
-- A quantidade/desconto SQL usam `current_*` quando preenchidos e, senão, `ml_*`; essa precedência ainda precisa ser comparada visualmente com o card real do frontend antes de produção.
+- Para pedidos, a API de IA usa apenas `current_batch_count`; não consulta nem expõe `ml_batch_count`. A precedência dos campos de desconto ainda precisa ser comparada visualmente com o card real do frontend antes de produção.
 
-Initial script mapping: `suggestion.product_id -> product.id`, `suggestion_log.suggestion_id -> suggestion.id`, `product.category_id -> category.id`, `batch(product_id, store_id, expiration_date)` for physical validity, and store authorization via `user_account` plus active `user_store` links. `product` exposes `name` and `sku`, but no explicit presentation/packaging column. `suggestion` exposes `current_batch_count`/`ml_batch_count` and promotion discount/price/validity fields. The exact mapping to frontend card labels and current-vs-ML value precedence must match the app's existing card contract.
+Initial script mapping: `suggestion.product_id -> product.id`, `suggestion_log.suggestion_id -> suggestion.id`, `product.category_id -> category.id`, `batch(product_id, store_id, expiration_date)` for physical validity, and store authorization via `user_account` plus active `user_store` links. `product` exposes `name` and `sku`, but no explicit presentation/packaging column. `suggestion` exposes `current_batch_count` and promotion discount/price/validity fields. The active AI workflow does not project `ml_batch_count` into its query result or card contract.
 
 ## Ambiguity and user selection
 

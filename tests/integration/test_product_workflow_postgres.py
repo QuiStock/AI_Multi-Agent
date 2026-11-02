@@ -170,7 +170,6 @@ def product_reader_pool() -> Iterator[ConnectionPool]:
                     s.type,
                     s.origin,
                     s.status,
-                    s.ml_batch_count,
                     s.current_batch_count,
                     s.ml_discount_percentage,
                     s.current_discount_percentage,
