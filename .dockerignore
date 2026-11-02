@@ -3,6 +3,9 @@
 !uv.lock
 !src/
 !src/**
+src/**/node_modules/
+src/**/dist/
+src/**/.vite/
 
 # Local planning and ops. Not part of the image.
 /scripts/

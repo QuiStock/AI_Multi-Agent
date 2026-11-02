@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - Dockerfile
+      - Dockerfile.*
       - .dockerignore
       - pyproject.toml
       - uv.lock
@@ -19,6 +20,9 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    strategy:
+      matrix:
+        dockerfile: [Dockerfile, Dockerfile.worker, Dockerfile.observer]
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-qemu-action@v4
@@ -26,6 +30,7 @@ jobs:
       - uses: docker/build-push-action@v7
         with:
           context: .
+          file: ${{ matrix.dockerfile }}
           platforms: linux/arm64
           push: false
           load: true
@@ -36,7 +41,12 @@ jobs:
         run: test "$(docker image inspect --format '{{.Architecture}}' quistock-chatbot:arm64-ci)" = arm64
 
       - name: Verify API imports without credentials
+        if: matrix.dockerfile != 'Dockerfile.observer'
         run: >-
           docker run --rm --platform linux/arm64 --entrypoint python
           quistock-chatbot:arm64-ci
-          -c "from src.main import app; assert '/health' in app.openapi()['paths']"
+          -c "import src.ops.memory, src.ops.faq; from src.main import app; assert '/health' in app.openapi()['paths']"
+
+      - name: Verify Observe Nginx configuration
+        if: matrix.dockerfile == 'Dockerfile.observer'
+        run: docker run --rm --platform linux/arm64 quistock-chatbot:arm64-ci nginx -t
