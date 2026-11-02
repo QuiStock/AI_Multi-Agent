@@ -163,7 +163,7 @@
 - **Decisão confirmada:** o router classifica e escolhe uma rota; não redige a resposta final. As capacidades especializadas fornecem resultados/evidências, e o compiler compõe a resposta. Isso evita geração duplicada e mantém cada etapa com uma responsabilidade clara. Se o router falha ou retorna saída inválida, o fluxo usa resposta controlada em vez de improvisar uma rota. Evidências: `src/agents/router/executor.py`, `router_node.py`, `src/graphs/agent_graph.py` e `decisions.py`.
 - Há um único nó de router ligado ao grafo e um único executor responsável pela chamada estruturada do modelo.
 - A tool é opcional e estreita: o modelo não controla identidade, escopo de usuário nem SQL; o servidor aplica os filtros no Qdrant.
-- A data já resolvida vira filtro temporal direto; não há parsing de datas dentro do service nem geração de embedding para consultas por período.
+- **Decisão da busca:** quando há datas, o service aplica filtro temporal direto no Qdrant, sem gerar embedding; sem datas, usa similaridade semântica. Isso evita embedding desnecessário para consultas por período e usa busca semântica quando a pessoa descreve um assunto. O filtro temporal considera `updated_at` do resumo, como registrado nos limites. Evidências: `src/memory/summaries/service.py` e `src/memory/summaries/get_summary_context.py`.
 - Sem data, a busca semântica existente permanece disponível; o fallback recente é explicitamente identificado, evitando afirmar correspondência que não foi encontrada.
 - Validação e formatação local cobrem falhas e retomada sem criar outro agente de resposta ou rotas paralelas.
 
