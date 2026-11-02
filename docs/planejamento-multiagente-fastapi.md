@@ -2,7 +2,7 @@
 
 **Status:** documento histórico do desenho inicial, atualizado pela última vez em 2026-09-21. As afirmações abaixo descrevem aquele snapshot e não o estado atual do serviço.
 
-> Para o estado vigente, consulte [`AGENTS.md`](../AGENTS.md), as specs ativas em [`specs/`](../specs/) e confirme em `src/` e `tests/`. A API, Product Workflow, memória e observabilidade foram implementados desde este plano. MCP e A2A estão fora do escopo atual e não devem ser implementados com base nas propostas históricas abaixo.
+> Para o estado vigente, consulte [`AGENTS.md`](../AGENTS.md), as specs ativas em [`specs/`](../specs/) e confirme em `src/` e `tests/`. A API, Product Workflow, memória e observabilidade foram implementados desde este plano. MCP e A2A foram discutidos e não há planos para implementá-los. As propostas históricas abaixo não são requisitos nem planos vigentes.
 
 ## Objetivo
 
@@ -935,7 +935,7 @@ Somente após a definição de autorização, confirmação e execução de pedi
 
 ## Atualização de planejamento — snapshot histórico de 2026-09-23
 
-> Decisão vigente em 2026-11-02: MCP e A2A estão fora do escopo. As propostas, aprovações e perguntas desta seção são registros históricos; não representam requisitos atuais nem autorização para implementação.
+> Não há planos para implementar MCP ou A2A. As propostas, aprovações e perguntas desta seção são registros históricos; não representam requisitos atuais nem autorização para implementação.
 
 ### Direções confirmadas
 

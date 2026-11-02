@@ -1,6 +1,6 @@
 # Quais decisões ainda precisam ser tomadas para especificar o projeto acadêmico?
 
-> Questionário de descoberta histórico. Consulte `AGENTS.md` e as specs atuais antes de tratar qualquer item como pendência. A decisão vigente exclui MCP e A2A do escopo.
+> Questionário de descoberta histórico. Consulte `AGENTS.md` e as specs atuais antes de tratar qualquer item como pendência. Não há planos para implementar MCP ou A2A.
 
 ## Rodada 1 — Como o projeto será dividido entre os sistemas?
 
