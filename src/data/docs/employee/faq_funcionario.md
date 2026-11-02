@@ -2,36 +2,36 @@
 
 ## O que o funcionário pode consultar?
 
-O funcionário consulta sugestões disponíveis para triagem e informações da
-própria loja. O acesso é limitado pelo escopo autorizado da identidade
-autenticada.
+O funcionário pode consultar sugestões disponíveis para triagem e informações
+da própria loja, conforme o acesso autorizado para sua conta.
 
-## O funcionário pode encaminhar uma sugestão?
+## O que o funcionário pode fazer durante a triagem?
 
-Sim. O funcionário pode encaminhar ao gerente uma sugestão que considere
-pertinente. O sistema registra o autor, a data e o retrato das informações
-apresentadas no encaminhamento.
+O funcionário pode revisar uma sugestão candidata, editá-la antes do
+encaminhamento, descartá-la ou encaminhá-la ao gerente. Em uma sugestão de
+pedido, pode ajustar a quantidade de lotes; em uma sugestão de promoção, pode
+ajustar o percentual de desconto. O valor original calculado pelo modelo
+continua registrado para consulta e auditoria.
 
-## O funcionário pode alterar uma sugestão do Machine Learning?
+## O que acontece quando uma sugestão é encaminhada?
 
-Sim. Antes do encaminhamento, o funcionário pode editar a quantidade de lotes
-de uma sugestão de pedido ou o percentual de desconto de uma sugestão de
-promoção. O valor original calculado pelo modelo permanece registrado.
+O gerente recebe a sugestão para decisão. O sistema registra quem a
+encaminhou, a data e as informações que foram apresentadas naquele momento.
 
 ## O funcionário pode descartar uma sugestão?
 
 Sim. Uma sugestão candidata do Machine Learning que ainda não foi encaminhada
-pode ser descartada da triagem. O descarte é lógico: a sugestão deixa de
-aparecer na lista ativa, mas o evento permanece no log de auditoria.
+pode ser descartada da triagem. O descarte é lógico: ela deixa de aparecer na
+lista ativa, mas o evento permanece no histórico de auditoria.
 
 ## O funcionário pode criar uma sugestão manual?
 
-Sim. O funcionário pode criar uma sugestão manual de pedido ou promoção para um
-produto da própria loja e encaminhá-la ao gerente. Ela deve ser identificada
-como origem humana, não como resultado do Machine Learning.
+Sim. O funcionário pode criar uma sugestão manual de pedido ou promoção para
+um produto da própria loja e encaminhá-la ao gerente. Ela fica identificada
+como uma sugestão de origem humana, separada das sugestões do Machine Learning.
 
-## O que acontece depois da aprovação?
+## O que acontece depois que o gerente aprova uma sugestão?
 
-O funcionário pode consultar sugestões aprovadas da própria loja. A aprovação
-não significa que um pedido foi enviado ou que uma promoção foi ativada fora
-do aplicativo.
+O funcionário pode consultar as sugestões aprovadas da própria loja, conforme
+seu acesso autorizado. A aprovação é uma decisão registrada no QuiStock; ela
+não envia um pedido nem ativa uma promoção fora do aplicativo.
