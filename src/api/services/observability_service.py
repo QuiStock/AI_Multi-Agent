@@ -120,6 +120,7 @@ class ObservabilityService:
         # Application spend intentionally covers the whole date range across
         # environments and does not inherit user, status, or Explorer filters.
         cost_traces = self._traces.iter_traces(
+            cost_only=True,
             started_from=started_from,
             started_to=started_to,
         )
@@ -183,6 +184,7 @@ class ObservabilityService:
             1,
         )
         projection_traces = self._traces.iter_traces(
+            cost_only=True,
             started_from=projection_window_started_at,
             started_to=projection_ended_at,
         )
