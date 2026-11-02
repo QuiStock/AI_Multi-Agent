@@ -1,3 +1,4 @@
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -14,7 +15,7 @@ def test_apply_refuses_existing_memory_without_writes():
     database = MagicMock()
     database.__getitem__.return_value.count_documents.return_value = 1
     settings = config.Settings()
-    with QdrantClient(":memory:") as client:
+    with closing(QdrantClient(":memory:")) as client:
         with pytest.raises(ValueError, match="empty"):
             provision(database, client, settings, vector_size=768, apply=True)
         database.__getitem__.return_value.create_index.assert_not_called()
@@ -25,7 +26,7 @@ def test_dimension_mismatch_stops_before_mongo_writes():
     database = MagicMock()
     database.__getitem__.return_value.count_documents.return_value = 0
     settings = config.Settings()
-    with QdrantClient(":memory:") as client:
+    with closing(QdrantClient(":memory:")) as client:
         client.create_collection(
             settings.memory_summary_collection,
             vectors_config=models.VectorParams(
@@ -41,7 +42,7 @@ def test_check_does_not_create_missing_collections():
     database = MagicMock()
     database.__getitem__.return_value.count_documents.return_value = 0
     settings = config.Settings()
-    with QdrantClient(":memory:") as client:
+    with closing(QdrantClient(":memory:")) as client:
         report = provision(database, client, settings, vector_size=768, apply=False)
         assert report["qdrant_count"] == 0
         assert not client.collection_exists(settings.memory_summary_collection)
