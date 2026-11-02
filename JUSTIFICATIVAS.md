@@ -98,7 +98,7 @@
 7. Não repete no output guardrail a aprovação do judge: o grafo só encaminha resposta compilada aprovada para esse nó.
 
 **Decisões de simplicidade e limites**
-- A validação usa padrões, limites e listas pequenas mantidas no código; não adicionamos outro LLM para decidir segurança na entrada ou compliance na saída.
+- O input guardrail usa padrões explícitos e não adiciona uma chamada de LLM; isso evita custo e latência e mantém a decisão previsível. O trade-off é cobertura limitada aos padrões implementados, sem garantir detecção de toda variação semântica.
 - Cada controle fica junto da fronteira que protege: entrada antes dos agentes, saída depois da compilação/julgamento. O grafo apenas conecta as etapas.
 - O judge é a única revisão semântica de suporte factual da resposta compilada; assim não duplicamos a mesma regra no guardrail.
 - Mantemos respostas fixas para bloqueios e falhas para não depender de geração durante uma recusa ou indisponibilidade.
