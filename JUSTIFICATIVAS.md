@@ -164,7 +164,7 @@
 - Há um único nó de router ligado ao grafo e um único executor responsável pela chamada estruturada do modelo.
 - A tool é opcional e estreita: o modelo não controla identidade, escopo de usuário nem SQL; o servidor aplica os filtros no Qdrant.
 - **Decisão da busca:** quando há datas, o service aplica filtro temporal direto no Qdrant, sem gerar embedding; sem datas, usa similaridade semântica. Isso evita embedding desnecessário para consultas por período e usa busca semântica quando a pessoa descreve um assunto. O filtro temporal considera `updated_at` do resumo, como registrado nos limites. Evidências: `src/memory/summaries/service.py` e `src/memory/summaries/get_summary_context.py`.
-- Sem data, a busca semântica existente permanece disponível; o fallback recente é explicitamente identificado, evitando afirmar correspondência que não foi encontrada.
+- **Decisão de fallback:** sem resultado semântico, a busca pode mostrar até três resumos recentes como `recent_fallback`, identificados como contexto não confirmado. Isso oferece uma pista para retomada sem afirmar que encontrou o assunto pedido. O trade-off é que o contexto recente pode ser irrelevante; por isso, o router pede esclarecimento quando necessário.
 - Validação e formatação local cobrem falhas e retomada sem criar outro agente de resposta ou rotas paralelas.
 
 **Limites e testes relacionados**
