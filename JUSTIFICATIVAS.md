@@ -144,7 +144,7 @@
 
 **Regras da tool `search_conversation_summaries`**
 - Única tool do router; serve apenas para referências a conversas anteriores encerradas. Não consulta FAQ, produtos nem dados comerciais.
-- A identidade autenticada, `conversation_id` e mensagem sanitizada são vinculadas no servidor. O modelo fornece somente os argumentos visíveis `start_date` e `end_date`.
+- **Decisão de isolamento:** email, `conversation_id` e mensagem sanitizada vêm do contexto autenticado do servidor. O modelo fornece somente `start_date` e `end_date`; assim não pode escolher outra identidade ou conversa, e a ferramenta mantém um contrato estreito. O trade-off é limitar a busca às conversas do usuário autenticado. Evidências: `src/agents/router/tools/search_conversation_summaries.py` e `src/api/dependencies.py`.
 - As duas datas devem ser informadas juntas ou omitidas juntas. Para uma data única, o prompt instrui o modelo a enviar a mesma data nos dois campos. Intervalo invertido é rejeitado.
 - O router converte datas relativas usando a data atual injetada no turno; se o ano faltar, usa o ano atual; se somente o dia do mês for informado, usa o mês e ano atuais. O service não interpreta texto de data.
 - Com intervalo, o service converte o período civil inclusivo de `America/Sao_Paulo` em limites datetime e chama `scroll`, sem embedding. O limite superior é a meia-noite após `end_date`, exclusiva no filtro.
