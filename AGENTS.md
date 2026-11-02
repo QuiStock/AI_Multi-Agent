@@ -24,6 +24,9 @@ Snapshot verificado em 2026-11-02:
 - MongoDB mantém mensagens e metadados de jobs; Redis Streams transporta IDs
   de jobs de resumo; Qdrant mantém o conteúdo dos resumos e atende FAQ. O
   checkpointer local é `MemorySaver` para desenvolvimento/testes.
+- A implementação de memória está ativa, mas testes de concorrência/cross-store
+  e validação do cutover nos serviços-alvo ainda estão pendentes em
+  `specs/003-memoria-resumos-qdrant/tasks.md`; não declare prontidão operacional.
 - Traces, métricas, custos e logs correlacionados estão ativos em
   `src/observability/`; o router `/api/v1/observability` exige uma sessão
   própria por cookie, sem reutilizar o JWT das conversas.
