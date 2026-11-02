@@ -2,7 +2,7 @@
 
 Feature 001-consolidar-planejamento-ia; fotografia histórica da revisão de 2026-09-30. Os campos `current_state`, status de implementação e candidatas abaixo representam apenas o que foi observado naquela data. Não use esse inventário como status atual do runtime.
 
-> Atualização verificada em 2026-11-02: API de conversa com JWT RS256/JWKS, Product Workflow read-only e observabilidade estão implementados no serviço. MCP e A2A estão fora do escopo por decisão posterior e não devem ser iniciados a partir deste inventário. Pendências de implantação e de validação de memória continuam limitadas às indicadas nas specs e testes atuais.
+> Atualização verificada em 2026-11-02: API de conversa com JWT RS256/JWKS, Product Workflow read-only e observabilidade estão implementados no serviço. Não há planos para implementar MCP ou A2A; os registros abaixo não devem ser usados como plano de trabalho. Pendências de implantação e de validação de memória continuam limitadas às indicadas nas specs e testes atuais.
 
 | Tema | Estado atual | Referência vigente |
 |---|---|---|

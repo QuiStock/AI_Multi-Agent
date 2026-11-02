@@ -35,7 +35,7 @@ Snapshot verificado em 2026-11-02:
   snapshot de card como evidência de origem cliente e tem lookup fixo,
   parametrizado e somente leitura, restrito a `MANAGER`/`EMPLOYEE`, lojas ativas e itens
   sem evento `EXPIRED`. Grants efetivos ainda precisam de validação no ambiente.
-- MCP e A2A estão fora do escopo atual por decisão do usuário; não há integração ativa. Specs e planos antigos dessas integrações são históricos e não autorizam implementação.
+- MCP e A2A foram discutidos e não há planos para implementá-los. Não há integração ativa; specs e planos antigos são registros históricos, não planos vigentes nem autorização.
 - `docs/planejamento-multiagente-fastapi.md` e `docs/planejamento-memory.md` são documentos históricos. Não os use como contratos atuais; consulte as specs ativas em `specs/` e valide com `src/` e `tests/`.
 
 ## Mapa do projeto
@@ -93,10 +93,7 @@ Guardrails não são agentes: são controles obrigatórios do fluxo.
 | `product_workflow` | Consultar e explicar sugestões e triagem comercial em modo read-only. | Card, executor, quatro tools comerciais e repositório PostgreSQL direto registrados; sem decisões ou operações de escrita. |
 | `response_compiler` (`compiler`) | Sintetizar os resultados especializados em uma resposta candidata. | Registrado e usado antes do judge. |
 
-O nó `judge` não é um agente com card ou prompt: ele chama o JEV por meio
-de um adapter interno. O registro atual tem quatro agentes com card; portanto,
-a exigência acadêmica de cinco agentes não está comprovada pelo código atual.
-Não conte o nó judge como quinto agente sem validação explícita da rubrica.
+O nó `judge` não tem card próprio: chama o JEV por meio de um adapter interno. O registro possui quatro agentes com card. O professor responsável pela coordenação e avaliação confirmou que o JEV conta como o quinto agente para a rubrica acadêmica; tecnicamente, o judge continua sendo um nó interno.
 
 ### Router
 

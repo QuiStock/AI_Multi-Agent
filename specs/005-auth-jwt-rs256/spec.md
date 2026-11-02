@@ -6,7 +6,7 @@ Status: **implementada**. `AUTH_JWT_ISSUER`, `AUTH_JWT_AUDIENCE` e `AUTH_JWT_JWK
 
 - A branch `main` (`47ee5df`) não continha `src/api/` nem `src/auth/`; `fix(auth)` foi integrada à `refactor` como base da API.
 - A implementação anterior aceitava HS256 sem verificar `exp` e consultava `user_account` por email.
-- A autenticação desta spec cobre as rotas conversacionais. Não há contrato de credenciais MCP/A2A ativo; essas integrações estão fora do escopo atual.
+- A autenticação desta spec cobre as rotas conversacionais. Não há contrato de credenciais MCP/A2A ativo e não há planos para implementar essas integrações.
 
 ## Contrato
 
