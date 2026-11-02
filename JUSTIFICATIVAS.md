@@ -37,6 +37,12 @@
 
 **Sessão da observabilidade**
 - O chatbot mantém autenticação por JWT RS256/JWKS. A observabilidade usa um mecanismo próprio de sessão por cookie; uma identidade não substitui a outra.
+
+**Decisão e interpretação**
+- Os acessos ficam separados: o JWT identifica usuários do chatbot; o login administrativo protege a plataforma de observabilidade.
+- Essa separação mantém os limites de acesso de cada superfície independentes, sem exigir mudança no fluxo JWT do chatbot para autenticar o painel.
+- O trade-off é configurar e manter dois mecanismos de autenticação. Uma mudança em um fluxo não precisa alterar o outro.
+- Evidências: `src/api/routes/observability.py`, `src/auth/observability_session.py` e `tests/test_observability_session.py`.
 - `POST /api/v1/observability/login` valida credenciais de administrador (`super_admin`) e emite o cookie de sessão. `POST /logout` encerra essa sessão.
 - Todas as demais rotas sob `/api/v1/observability`, inclusive laboratório e feed ao vivo, exigem `require_observability_session`.
 - O cookie é HTTPOnly, tem escopo limitado ao prefixo da API de observabilidade e validade de uma hora. Segredo ou dependências de autenticação ausentes fazem o fluxo falhar de forma fechada.
