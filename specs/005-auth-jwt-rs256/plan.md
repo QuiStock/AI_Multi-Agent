@@ -1,5 +1,7 @@
 # Plano de migração para RS256/JWKS
 
+> Plano histórico de migração. A implementação está concluída; os valores do emissor, audience e JWKS continuam sendo configuração externa de implantação. Consulte `spec.md` e `AGENTS.md` para o contrato atual.
+
 Base: branch `refactor` criada da `main` no commit `47ee5df`, com `fix(auth)` integrada. Este plano segue a [especificação](spec.md). A implementação está no repositório; faltam os valores literais da Auth para ativá-la em ambiente real.
 
 ## Ordem de execução

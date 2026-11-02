@@ -1,5 +1,7 @@
 # Tarefas: autenticação HS256 na API de IA
 
+> Tarefas históricas concluídas para a versão HS256; não descrevem o contrato atual. Consulte `specs/005-auth-jwt-rs256/`.
+
 **Spec**: [spec.md](spec.md)
 **Plano**: [plan.md](plan.md)
 

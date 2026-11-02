@@ -1,5 +1,7 @@
 # Plano de implementação A2A — Quistock servidor e cliente
 
+> **Fora do escopo atual (decisão de 2026-11-02):** MCP e A2A não serão implementados nesta entrega. Este arquivo é registro histórico de propostas/decisões anteriores; seus requisitos, aprovações e fluxos não são autorização nem instruções para o runtime.
+
 > **Revisão de 2026-10-09:** o usuário autorizou a implementação com mock
 > interno, sem criar o serviço de caminhões. A exigência de fonte original
 > verificável foi substituída, neste ciclo, por atribuição explícita ao peer

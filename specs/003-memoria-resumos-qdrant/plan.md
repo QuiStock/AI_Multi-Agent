@@ -1,5 +1,7 @@
 # Implementation Plan: Persistência de turnos e resumos no Qdrant
 
+> Plano de desenho original (2026-09-30), não lista de trabalho atual. A implementação está em `src/memory/`; consulte `tasks.md` para validações que ainda faltam.
+
 **Branch**: `003-memoria-resumos-qdrant` | **Date**: 2026-09-30 | **Spec**: [spec.md](spec.md)
 
 **Input**: Feature specification from `specs/003-memoria-resumos-qdrant/spec.md`

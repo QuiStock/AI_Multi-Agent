@@ -1,5 +1,7 @@
 # Imagem ARM64 e implantação no Infra
 
+> Este runbook contém passos vinculados a branches/PRs específicas de 2026. Revalide os nomes e referências no workflow e no repositório Infra antes de reutilizar as instruções de integração.
+
 A imagem `ghcr.io/quistock/ai-multi-agent` usa `linux/arm64` e o lockfile do projeto.
 O workflow Container image (ARM64) valida o build em PR, sem publicar.
 Publish chatbot image publica no GHCR em release estável ou execução manual.
@@ -36,7 +38,7 @@ continuam sujeitas aos contratos das aplicações, independentemente da publica�
 
 `GET /health` retorna HTTP 200 quando todas as dependências estão disponíveis
 e HTTP 503 quando alguma falha. O JSON inclui `status` geral e `checks` por
-componente (`api`, PostgreSQL, MongoDB, Redis, Qdrant, Gemini e OpenAI), com
+componente (`api`, PostgreSQL, MongoDB, Redis, Qdrant, Gemini, OpenAI e TypeSafe/JEV), com
 `ok` ou `unavailable` para cada um. Quando um probe falha ou excede o timeout,
 a API registra `health_probe_failed` nos logs do container, incluindo nome da
 dependência, tipo da exceção e uma mensagem sanitizada. Consulte os logs do

@@ -1,16 +1,16 @@
 # Revisão da observabilidade
 
-Revisão do código em 01/11/2026. Os testes de cálculo usam dados sintéticos; não substituem a conferência do consumo real no console TypeSafe nem testes de carga.
+Revisão do código em 02/11/2026. Os testes de cálculo usam dados sintéticos; não substituem a conferência do consumo real no console TypeSafe nem testes de carga.
 
 ## Definições aplicadas
 
 | Indicador | Cálculo | Observação |
 | --- | --- | --- |
 | Erro de traces | `traces com status error / todos os traces` | Mede falha técnica. Respostas `rejected`, `clarification_required` e `out_of_scope` podem terminar sem erro técnico. |
-| Conclusão técnica | `completed / (completed + error)` no período selecionado | Segue os filtros de período, usuário, conversa e ambiente; ignora status para não enviesar o resultado. Não significa que o pedido foi resolvido. |
+| Conclusão técnica / SLO | `completed / (completed + error)` no período selecionado | Meta de 95% (até 5% de erro), alinhada entre API, cards e banner. Segue período, usuário, conversa e ambiente; ignora filtro de status. Não significa que o pedido foi resolvido. |
 | Latência | Duração do servidor; p95 pelo posto `ceil(0,95 × N)` | Não inclui rede/navegador. Duração ausente conta como falha no SLO. |
 | Chamadas por modelo | Spans LLM; traces antigos também podem usar eventos JEV correlacionados | Cada chamada do JEV agora é registrada como span filho do nó judge e é persistida junto ao trace do turno. |
-| Custo JEV | `input_tokens × US$ 0,042 / 1.000.000`; saída US$ 0 | A tarifa é vinculada à origem `judge_jev`, mesmo quando a API devolve uma versão concreta diferente do alias configurado. Usa os tokens devolvidos pela API; se o uso estiver ausente, a estimativa fica incompleta. [Preço oficial TypeSafe](https://typesafe.ai/) · [Resposta e campo de uso da API](https://api.typesafe.ai/redoc). |
+| Custo JEV | `input_tokens × US$ 0,042 / 1.000.000`; saída US$ 0 | A estimativa aplica US$ 0,042 por milhão de tokens de entrada e US$ 0 para saída, vinculada à origem `judge_jev`, mesmo quando a API devolve uma versão concreta diferente do alias configurado. A API retorna `usage.input_tokens` e `usage.output_tokens`; sem uso, a estimativa fica incompleta. A cobrança é proporcional ao uso, não uma tarifa fixa por chamada. Confira a tarifa e os créditos efetivos na conta TypeSafe: [preço publicado pela TypeSafe](https://typesafe.ai/blog/introducing-system-one-models-and-jev) · [API e campo de uso](https://api.typesafe.ai/redoc). |
 | Turnos sem erro | Todo trace persistido com status `completed` | Inclui fora de escopo, rejeição controlada e esclarecimento, conforme definição operacional acordada. A métrica não afirma resolução do problema do usuário. |
 | Custo por resolução | Custo variável conversacional do período / turnos sem erro | Inclui custos de turnos com erro no numerador, pois também consumiram IA; o denominador considera só traces sem erro. Esse é o único card de custo por turno. |
 | Custo por conversa | Custo variável da janela de referência / conversas observadas na mesma janela | O valor é apresentado e é a base direta das projeções. |

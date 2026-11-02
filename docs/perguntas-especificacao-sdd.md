@@ -1,5 +1,7 @@
 # Quais perguntas orientarão a especificação SDD do projeto?
 
+> Questionário histórico da fase de descoberta. As respostas atuais estão nas specs ativas e no `AGENTS.md`. MCP e A2A estão fora do escopo atual; perguntas antigas sobre demonstrá-los não estão pendentes.
+
 ## Rodada 1 — Qual é o escopo inicial do sistema?
 
 1. O MVP deve permitir que o funcionário crie solicitações e o gerente aprove ou rejeite, ou continuará apenas consultivo?
@@ -159,7 +161,7 @@
 12. Quais alterações deverão produzir eventos de auditoria imutáveis?
 13. Quem poderá consultar a trilha de auditoria?
 
-## Rodada 10 — Quais integrações MCP e A2A serão demonstradas?
+## Rodada 10 — integrações MCP/A2A (perguntas históricas; resolvido: fora do escopo)
 
 1. A rubrica exige MCP e A2A simultaneamente ou aceita apenas um deles?
 2. Qual sistema externo real será integrado ao projeto?

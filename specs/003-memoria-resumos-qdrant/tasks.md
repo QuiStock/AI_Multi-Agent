@@ -6,7 +6,7 @@
 
 **Tests**: Incluídos porque a constituição do serviço exige testes proporcionais, contrato verificável e evidências para alterações de persistência e memória.
 
-**Organization**: As tarefas executáveis são agrupadas por história de usuário e dependências. Decisões de contrato e compatibilidade de versão do Qdrant foram registradas; a existência do índice de payload será validada durante a implementação.
+**Organization**: As tarefas executáveis são agrupadas por história de usuário e dependências. Decisões de contrato e compatibilidade de versão do Qdrant foram registradas; a existência do índice de payload deve ser validada nos serviços-alvo.
 
 ## Phase 1: Setup e decisões de contrato
 
@@ -76,7 +76,7 @@
 
 **Purpose**: Atualizar guias operacionais e verificar os critérios completos sem expor conteúdo sensível.
 
-- [ ] T029 [P] Atualizar o mapa de estado implementado e fluxo de memória em `AGENTS.md` após implementação, distinguindo capacidades existentes das novas.
+- [x] T029 [P] Atualizar o mapa de estado implementado e fluxo de memória em `AGENTS.md`, distinguindo capacidades existentes das novas.
 - [ ] T030 Atualizar e executar o quickstart em `specs/003-memoria-resumos-qdrant/quickstart.md`, registrando comandos, resultados e limitações sem incluir texto de conversas/resumos.
 - [ ] T031 [P] Registrar evidências dos critérios SC-001–SC-012 em `specs/003-memoria-resumos-qdrant/` e confirmar que as novas coleções usam email como identidade e não armazenam resumo no Mongo.
 

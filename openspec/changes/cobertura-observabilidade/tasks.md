@@ -4,7 +4,7 @@
 
 - [x] 1.1 Conferir no Postgres os nomes reais das colunas de e-mail e do segredo em `super_admin` e anotar esses nomes neste change. Verificar que a anotação cita a tabela e as duas colunas. Colunas: `email` e `password`.
 - [x] 1.2 Exigir sessão de observabilidade na página e em `/api/v1/observability`, inclusive no laboratório e feed ao vivo, sem mudar a API de conversas. Verificar com testes: chamada sem sessão é recusada e o CORS não alcança as rotas de conversa.
-- [x] 1.3 Atualizar `src/observability/AGENTS.md` e `src/api/AGENTS.md` com essa sessão. Verificar que os dois textos deixam de dizer que o router de observabilidade não tem controle de acesso.
+- [x] 1.3 Atualizar o `AGENTS.md` da raiz com a sessão própria da observabilidade e retirar a afirmação de que o router não tem controle de acesso. O repositório mantém um único `AGENTS.md`.
 - [x] 1.4 Comparar a senha com bcrypt (`$2a$`, `$2b$`, `$2y$`), fórmula validada pelo tech manager. Verificar com teste de acerto e de recusa.
 
 ## 2. Métricas

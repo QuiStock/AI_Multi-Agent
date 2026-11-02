@@ -3,7 +3,7 @@
 **Status:** documento histórico; decisões atuais e tarefas executáveis estão em `specs/003-memoria-resumos-qdrant/`.
 **Atualizado:** 2026-10-01
 
-> As seções abaixo antecedem decisões aprovadas de manter o conteúdo do resumo somente no Qdrant e usar jobs duráveis/outbox/worker. Em caso de divergência, prevalecem `spec.md`, `plan.md`, `contracts/memory-persistence.md` e `tasks.md` da feature 003.
+> As seções abaixo são um plano histórico e antecedem decisões e implementação posteriores. Em caso de divergência, prevalecem `spec.md`, `contracts/memory-persistence.md` e `tasks.md` em `specs/003-memoria-resumos-qdrant/`, além do código e testes atuais. Para autenticação, prevalece `specs/005-auth-jwt-rs256/`.
 
 ## Fluxo
 
@@ -20,7 +20,7 @@ START -> input_guardrail -> enrich_context -> router
 
 ## Ciclo de vida
 
-1. O app inicia uma conversa ativa e envia `conversation_id` e a mensagem com `Authorization: Bearer <JWT>` HS256; a API deriva o email da claim `email`.
+1. O app inicia uma conversa ativa e envia `conversation_id` e a mensagem com `Authorization: Bearer <JWT>` conforme `specs/005-auth-jwt-rs256/`; este plano não define algoritmo nem claims atuais.
 2. Enquanto ativa, a conversa continua no estado principal. O MongoDB mantém o histórico durável conforme o serviço de mensagens.
 3. Ao encerrar, o endpoint marca a conversa no MongoDB e cria um job em `conversation_summary_jobs`; o job é publicado em Redis Streams e a API responde `202 Accepted`. O worker garante as mensagens no MongoDB e seleciona as posteriores a `summarized_through_message_id`. No primeiro resumo, usa o histórico disponível; nos seguintes, atualiza o resumo anterior da mesma conversa usando apenas essa diferença de mensagens. Resumos recuperados de outras conversas nunca entram nessa atualização. Persiste nova versão e marcador com GPT-6 Luna (`OPENAI_MODEL`). Se ainda não houver título, gera-o a partir do resumo com o mesmo modelo estruturado e salva-o uma única vez no MongoDB; depois gera embedding com Gemini e faz upsert do ponto no Qdrant com o título persistido. Falha na geração do título não impede salvar/indexar o resumo e permite retry do job.
 4. A sessão encerrada aparece na lista do app por título. A API fornece essa lista em `GET /api/v1/conversations/ended`, filtrada pelo email autenticado.
@@ -53,7 +53,7 @@ A gravação e o fechamento devem ser idempotentes. MongoDB é a fonte durável;
 
 **Branch `memory`:** contratos e repositórios MongoDB, restauração de histórico, serviço de busca Qdrant, integração de sumarização/indexação no encerramento e contrato da tool para o router.
 
-**Branch `api`:** endpoint inicial de conversa, health check, `POST /api/v1/conversations/{conversation_id}/end` e `GET /api/v1/conversations/ended`. As rotas protegidas recebem JWT Bearer HS256; o email da claim `email` é validado em `user_account` antes do fluxo e usado como identidade. O encerramento remove o checkpoint, cria o job durável e publica no Redis.
+**Branch `api` — histórico:** esse parágrafo descreve a divisão antiga de trabalho. A API vigente usa JWT RS256/JWKS conforme `specs/005-auth-jwt-rs256/`; não use o fluxo HS256 legado.
 
 ## Organização proposta
 

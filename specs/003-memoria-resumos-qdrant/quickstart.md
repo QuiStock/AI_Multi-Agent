@@ -1,5 +1,7 @@
 # Quickstart: Validate Conversation Memory Persistence
 
+> Roteiro escrito antes da implementação e ainda não executado integralmente. Os itens de validação pendentes estão em `tasks.md`; use somente ambiente isolado para os passos de cutover.
+
 **Feature**: `003-memoria-resumos-qdrant`
 
 This guide is the post-implementation validation path. Commands are documented here but were not run while creating the plan.

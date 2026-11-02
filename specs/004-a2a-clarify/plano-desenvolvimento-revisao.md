@@ -1,5 +1,7 @@
 # Plano de desenvolvimento A2A do Quistock
 
+> **Fora do escopo atual (decisão de 2026-11-02):** MCP e A2A não serão implementados nesta entrega. Este arquivo é registro histórico de propostas/decisões anteriores; seus requisitos, aprovações e fluxos não são autorização nem instruções para o runtime.
+
 **Status:** proposta consolidada para revisão do usuário  
 **Escopo:** fachada A2A de entrada, cliente A2A de saída e adaptação do fluxo multiagente.  
 **Código alterado por este documento:** nenhum. Este arquivo registra o plano; a implementação começa depois da revisão.

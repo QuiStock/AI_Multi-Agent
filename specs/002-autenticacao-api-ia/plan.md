@@ -1,5 +1,7 @@
 # Plano: autenticação HS256 na API de IA
 
+> Plano histórico supersedido por `specs/005-auth-jwt-rs256/`; não use a migração HS256 abaixo para configurar ou alterar o runtime atual.
+
 **Feature**: `002-autenticacao-api-ia`
 **Spec**: [spec.md](spec.md)
 **Atualizado**: 2026-10-05

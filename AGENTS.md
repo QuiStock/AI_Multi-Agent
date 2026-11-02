@@ -1,9 +1,8 @@
 # AGENTS.md
 
-Guia operacional do serviço de IA do Quistock. Este arquivo é deliberadamente
-compacto: descreve o contrato que os agentes devem respeitar e aponta para o
-código que o implementa. Não trate uma capacidade planejada como disponível
-sem conferir o registro e a composição do grafo.
+Guia operacional do serviço de IA do Quistock. Resume o contrato executável
+verificado em 2026-11-02. Confirme schemas, composição e testes antes de tratar
+qualquer capacidade como ativa; atualize este arquivo quando esse contrato mudar.
 
 ## Fontes de verdade e estado atual
 
@@ -11,11 +10,11 @@ Em caso de conflito, use esta ordem:
 
 1. Schemas, tipos e composição executável em `src/`.
 2. Testes em `tests/`.
-3. Specs/ADRs em `docs/sdd/` no workspace Quistock.
+3. Specs e ADRs ativos em `specs/` para o serviço de IA; `docs/sdd/` do Quistock é fonte das regras de domínio compartilhadas.
 4. Este arquivo.
-5. README e comentários antigos.
+5. README e planos históricos.
 
-Snapshot atual:
+Snapshot verificado em 2026-11-02:
 
 - API FastAPI em `src/main.py`.
 - Grafo LangGraph em `src/graphs/`.
@@ -33,11 +32,8 @@ Snapshot atual:
   snapshot de card como evidência de origem cliente e tem lookup fixo,
   parametrizado e somente leitura, restrito a `MANAGER`/`EMPLOYEE`, lojas ativas e itens
   sem evento `EXPIRED`. Grants efetivos ainda precisam de validação no ambiente.
-- MCP continua sendo requisito futuro, não uma capacidade ativa.
-- O roadmap em `docs/planejamento-multiagente-fastapi.md`, na seção
-  `Atualização de planejamento — 2026-09-23`, registra objetivos confirmados;
-  confira o código e os testes para distinguir os itens já implementados dos
-  que continuam planejados.
+- MCP e A2A estão fora do escopo atual por decisão do usuário; não há integração ativa. Specs e planos antigos dessas integrações são históricos e não autorizam implementação.
+- `docs/planejamento-multiagente-fastapi.md` e `docs/planejamento-memory.md` são documentos históricos. Não os use como contratos atuais; consulte as specs ativas em `specs/` e valide com `src/` e `tests/`.
 
 ## Mapa do projeto
 
@@ -95,7 +91,9 @@ Guardrails não são agentes: são controles obrigatórios do fluxo.
 | `response_compiler` (`compiler`) | Sintetizar os resultados especializados em uma resposta candidata. | Registrado e usado antes do judge. |
 
 O nó `judge` não é um agente com card ou prompt: ele chama o JEV por meio
-de um adapter interno.
+de um adapter interno. O registro atual tem quatro agentes com card; portanto,
+a exigência acadêmica de cinco agentes não está comprovada pelo código atual.
+Não conte o nó judge como quinto agente sem validação explícita da rubrica.
 
 ### Router
 
@@ -244,8 +242,7 @@ reformulação, `judge_feedback`. O trace persiste somente os campos seguros
 pela allowlist. O `error_code` continua em `state.errors`. O JEV
 retorna `reason_code` como `choice` e a avaliação de suporte como `noul`; a
 resposta é aprovada apenas com `reason_code=none` e `noul >= 0.70`. Abaixo do
-limiar, o código registra `low_confidence`. Falha do JEV
-retorna ao usuário `Desculpe, estamos com instabilidade com o fefo.`. Quando
+limiar, o código registra `low_confidence`. Falha do JEV segue para a resposta controlada de indisponibilidade definida no node. A literal atual contém um erro de digitação (`fefo`); não a replique como texto correto em novas interfaces. Quando
 a rejeição é corrigível e o draft não tem `origin=exact`, o compiler recebe
 `judge.judge_feedback` para uma única reformulação no turno, que passa
 novamente pelo JEV. Draft `exact` rejeitado vai a `judge_blocked` sem

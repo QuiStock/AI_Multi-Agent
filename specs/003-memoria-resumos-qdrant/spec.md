@@ -2,7 +2,7 @@
 
 **Feature Branch**: `003-memoria-resumos-qdrant`
 **Created**: 2026-09-30
-**Status**: Draft
+**Status**: Implementação de runtime ativa; validação de integração cross-store, concorrência e cutover em ambiente ainda pendentes em `tasks.md`.
 **Input**: User decision: manter um documento por conversa no MongoDB, acrescentar nele as mensagens dentro do array físico `messages` e retirar completamente o resumo do MongoDB, mantendo-o somente no Qdrant. O exemplo do usuário usa `mensagens` como nome ilustrativo em português; o campo persistido confirmado é `messages`.
 
 ## User Scenarios & Testing

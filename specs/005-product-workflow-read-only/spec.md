@@ -4,7 +4,7 @@
 
 **Created**: 2026-10-02
 
-**Status**: Implemented (PostgreSQL read-only direto; integração depende de Docker)
+**Status**: Implementado no serviço (PostgreSQL read-only direto). Testes de integração que provisionam PostgreSQL dependem de Docker; os grants no ambiente-alvo ainda precisam de validação.
 
 **Input**: implementar o Product Workflow como capacidade consultiva do
 serviço de IA, sem executar operações comerciais.
