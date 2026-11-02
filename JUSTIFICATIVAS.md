@@ -140,7 +140,7 @@
 - `RouteResponse` pode carregar `tool_called` e `error_code` na fronteira do executor. `RoutingDecision` no estado não carrega esses campos; evidências vão para `GraphState.evidences` e erros técnicos para `state.errors`.
 - `router_node` mapeia `faq`/`product_workflow` para despacho, `clarification_required` e `out_of_scope` para seus resultados controlados, e `memory_recall` para resposta direta.
 - O executor e o nó não delegam resposta factual ao router. O router classifica; FAQ/Product Workflow respondem por suas capacidades, e o compiler/judge atuam depois quando aplicável.
-- Exceção do modelo, resposta estruturada inválida, rota inválida, erro da tool ou busca sem resultados não são tratados como sucesso factual. O nó registra falha e usa resposta controlada quando necessário.
+- **Falhas do router:** exceção do modelo, saída/rota inválida ou erro da tool não acionam uma rota improvisada. O nó registra a falha e usa resposta controlada. Isso evita adivinhar uma capacidade; o trade-off é não tentar outra rota que talvez pudesse responder.
 
 **Regras da tool `search_conversation_summaries`**
 - Única tool do router; serve apenas para referências a conversas anteriores encerradas. Não consulta FAQ, produtos nem dados comerciais.
