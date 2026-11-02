@@ -116,9 +116,7 @@ class ProductSuggestionDetailRecord(BaseModel):
     suggestion_type: SuggestionType
     origin: Literal["ML", "EMPLOYEE", "MANAGER"]
     status: SuggestionStatus
-    ml_batch_count: int | None = Field(default=None, gt=0)
     current_batch_count: int | None = Field(default=None, gt=0)
-    ml_discount_percentage: float | None = Field(default=None, ge=0, le=100)
     current_discount_percentage: float | None = Field(default=None, ge=0, le=100)
     reference_sale_price: float | None = Field(default=None, ge=0)
     promotional_price: float | None = Field(default=None, ge=0)

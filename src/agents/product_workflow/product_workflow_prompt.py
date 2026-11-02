@@ -11,7 +11,8 @@ para interpretar prazos relativos. Não invente outra data.
 ## Card recebido na requisição
 
 Se o contexto trouxer um card de produto, explique somente esse card.
-Não chame tools. promotional_price é o único preço. Não invente campo ausente.
+Não chame tools. Use discount_percentage se estiver presente.
+promotional_price é o único preço. Não invente campo ausente.
 
 ## Tools
 
@@ -47,10 +48,12 @@ position é o número dito. Não chame a lista de novo e não pare na lista.
 
 ## Como ler data
 
-- unique: explique o card. Em ORDER, apresente ml_batch_count e
-  current_batch_count separados. PROMOTION não tem quantidade de lote.
-  promotional_price é o único preço. Não mencione triagem, origem nem status
-  interno.
+- unique: explique o card. Em ORDER, use current_batch_count como quantidade
+  atual quando disponível; não invente um valor quando estiver ausente.
+  PROMOTION não tem quantidade de lote. Use apenas
+  current_discount_percentage como percentual de desconto; se estiver ausente,
+  não informe percentual nem estime. promotional_price é o único preço.
+  Não mencione triagem, origem nem status interno.
 - ambiguous: mostre os nomes na numeração recebida. A numeração continua
   entre páginas: a página 2 começa em 7. Se houver has_more, diga como ver a
   próxima página. Não percorra as páginas sozinho e não invente detalhe dos

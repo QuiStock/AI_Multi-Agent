@@ -297,9 +297,7 @@ def test_product_detail_projects_triage_without_decision_or_log() -> None:
                 "PROMOTION",
                 "EMPLOYEE",
                 "SENT_TO_MANAGER",
-                20,
                 25,
-                Decimal("10.00"),
                 Decimal("15.00"),
                 Decimal("6.99"),
                 Decimal("5.94"),
@@ -332,9 +330,11 @@ def test_product_detail_projects_triage_without_decision_or_log() -> None:
     )
 
     assert result is not None
+    assert result.current_batch_count == 25
     assert result.employee_name == "Ana Souza"
     assert result.last_action == "FORWARD"
     query_text = "\n".join(query for query, _ in cursor.queries).upper()
+    assert "S.ML_BATCH_COUNT" not in query_text
     assert "SUGGESTION_TRIAGE" in query_text
     assert "SUGGESTION_DECISION" not in query_text
     assert "SUGGESTION_LOG" in query_text
