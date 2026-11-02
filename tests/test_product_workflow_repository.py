@@ -298,7 +298,6 @@ def test_product_detail_projects_triage_without_decision_or_log() -> None:
                 "EMPLOYEE",
                 "SENT_TO_MANAGER",
                 25,
-                Decimal("10.00"),
                 Decimal("15.00"),
                 Decimal("6.99"),
                 Decimal("5.94"),

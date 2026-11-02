@@ -78,7 +78,6 @@ def detail_record(
         origin="EMPLOYEE",
         status="SENT_TO_MANAGER" if role == "manager" else "IN_EMPLOYEE_TRIAGE",
         current_batch_count=25,
-        ml_discount_percentage=10,
         current_discount_percentage=15,
         reference_sale_price=6.99,
         promotional_price=5.94,
