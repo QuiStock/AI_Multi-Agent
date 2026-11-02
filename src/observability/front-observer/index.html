@@ -61,6 +61,21 @@
 
           <section class="page-view active" id="view-overview">
             <div class="page-heading"><div><div class="eyebrow">OBSERVABILIDADE / OVERVIEW</div><h1>Visão geral</h1><p>Métricas e execuções carregadas da API de observabilidade.</p></div><div class="live-indicator"><i></i><span id="poll-label">Feed ao vivo: inicializando</span></div></div>
+            <section id="last-turn-panel" class="last-turn-panel panel" aria-labelledby="last-turn-title">
+              <div class="last-turn-heading">
+                <div><div class="eyebrow">EXECUÇÃO MAIS RECENTE</div><h2 id="last-turn-title">Último turno</h2><p id="last-turn-meta">Carregando o trace mais recente.</p></div>
+                <div class="last-turn-actions"><span id="last-turn-status" class="last-turn-status no-data" role="status">Carregando</span><button id="last-turn-open-trace" class="button button-secondary" type="button" hidden>Abrir trace</button></div>
+              </div>
+              <div class="last-turn-summary">
+                <article><small>Duração</small><strong id="last-turn-duration">—</strong></article>
+                <article><small>Tokens observados</small><strong id="last-turn-tokens">—</strong><span id="last-turn-tokens-note"></span></article>
+                <article><small>Custo estimado de IA</small><strong id="last-turn-cost">—</strong><span id="last-turn-cost-note">Calculado pelas chamadas registradas.</span></article>
+                <article><small>Rota</small><strong id="last-turn-route">—</strong></article>
+                <article><small>Resultado</small><strong id="last-turn-outcome">—</strong></article>
+              </div>
+              <p class="last-turn-footnote">Este painel sempre mostra o trace persistido mais recente, independentemente do período. As métricas e os gráficos abaixo respeitam os filtros selecionados.</p>
+            </section>
+            <div id="period-data-note" class="period-data-note" role="status" hidden></div>
             <div id="slo-banner" class="slo-banner">SLO do período</div>
             <section class="metric-section">
               <h2>Métricas</h2>
@@ -92,8 +107,8 @@
               <p class="cost-note" id="projection-note">Projeções usam o custo médio por conversa na janela móvel de referência, independentemente do período selecionado; excluem laboratório, indexação, hospedagem e infraestrutura.</p>
             </section>
             <div class="overview-grid">
-              <article class="panel"><div class="panel-heading"><div><h2>Latência média diária</h2><p>Duração média dos traces por dia</p></div></div><canvas id="latency-chart" class="line-chart" height="160"></canvas></article>
-              <article class="panel"><div class="panel-heading"><div><h2>Custo de chamadas de modelo acumulado</h2><p>Chatbot e JEV com tokens registrados; laboratório e indexação são exibidos à parte</p></div></div><canvas id="cost-chart" class="line-chart" height="160"></canvas></article>
+              <article class="panel"><div class="panel-heading"><div><h2>Latência média diária</h2><p>Duração média dos traces por dia</p></div></div><canvas id="latency-chart" class="line-chart" height="160" aria-label="Latência média diária"></canvas><p id="latency-chart-empty" class="chart-empty" hidden></p></article>
+              <article class="panel"><div class="panel-heading"><div><h2>Custo de chamadas de modelo acumulado</h2><p>Chatbot e JEV com tokens registrados; laboratório e indexação são exibidos à parte</p></div></div><canvas id="cost-chart" class="line-chart" height="160" aria-label="Custo acumulado de chamadas de modelo"></canvas><p id="cost-chart-empty" class="chart-empty" hidden></p><p id="cost-chart-note" class="chart-note" hidden></p></article>
             </div>
             <article class="panel table-panel"><div class="panel-heading"><div><h2>Latência entre agentes</h2><p>Média da duração dos nós</p></div></div><div class="table-scroll"><table><thead><tr><th>NÓ</th><th>MÉDIA</th></tr></thead><tbody id="agent-latency-rows"></tbody></table></div></article>
             <article class="panel slo-panel">
@@ -128,7 +143,7 @@
               <article class="panel"><div class="panel-heading"><div><h2>Uso por modelo</h2><p>Tokens, chamadas, sucesso e latência</p></div></div><div class="table-scroll"><table><thead><tr><th>MODELO</th><th>CHAMADAS</th><th>TOKENS</th><th>P95</th><th>SUCESSO</th></tr></thead><tbody id="model-rows"></tbody></table></div><div class="cost-note" id="cost-note"></div></article>
             </div>
             <article class="panel table-panel cost-origin-panel"><div class="panel-heading"><div><h2>Custo estimado por origem</h2><p id="application-cost-scope">Período selecionado · sem filtros de usuário/status</p><small id="application-cost-split"></small></div><strong id="application-cost-total" class="cost-total">—</strong></div><div class="table-scroll"><table><thead><tr><th>ORIGEM</th><th>MODELO</th><th>CHAMADAS</th><th>TOKENS DE ENTRADA</th><th>TOKENS DE SAÍDA</th><th>CUSTO ESTIMADO</th></tr></thead><tbody id="cost-origin-rows"></tbody></table></div></article>
-            <article class="panel table-panel"><div class="panel-heading"><div><h2>Execuções recentes</h2><p>Os traces em andamento aparecem antes de serem persistidos.</p></div><button class="text-button" data-view="traces">Ver traces →</button></div><div class="table-scroll"><table><thead><tr><th>TRACE ID</th><th>CONVERSATION ID</th><th>ETAPAS</th><th>DURAÇÃO</th><th>STATUS</th><th>INÍCIO</th></tr></thead><tbody id="recent-traces"></tbody></table></div></article>
+            <article class="panel table-panel"><div class="panel-heading"><div><h2>Execuções recentes</h2><p>Os traces em andamento aparecem antes de serem persistidos.</p></div><button class="text-button" data-view="traces">Ver traces →</button></div><div class="table-scroll"><table><thead><tr><th>TRACE ID</th><th>CONVERSATION ID</th><th>DURAÇÃO</th><th>STATUS</th><th>INÍCIO</th></tr></thead><tbody id="recent-traces"></tbody></table></div></article>
           </section>
 
           <section class="page-view" id="view-traces">

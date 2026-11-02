@@ -14,8 +14,14 @@ let authState = 'anonymous';
 const state = {
   view: 'overview',
   metrics: null,
+  metricsLoadError: '',
   traces: [],
   traceTotal: 0,
+  traceLoadError: '',
+  lastTurn: null,
+  lastTurnLoadError: false,
+  lastTurnLoading: false,
+  lastTurnLoadSeq: 0,
   conversations: [],
   conversationTotal: 0,
   traceOffset: 0,
@@ -145,6 +151,7 @@ async function loadData({ quiet = false } = {}) {
   if (state.filters.status) metricsParams.set('status', state.filters.status);
 
   const traceQuery = queryFromFilters({ includePagination: true });
+  void loadLatestTurn({ quiet });
   const requests = await Promise.allSettled([
     requestJSON(`${OBS}/metrics?${metricsParams}`, { label: 'GET /observability/metrics' }),
     requestJSON(`${OBS}/traces?${traceQuery}`, { label: 'GET /observability/traces' }),
@@ -153,17 +160,57 @@ async function loadData({ quiet = false } = {}) {
   if (seq !== state.loadSeq) return false;
   if (requests[0].status === 'fulfilled') {
     state.metrics = requests[0].value;
-  } else if (!quiet && requests[0].reason.status !== 401) toast(`Métricas: ${requests[0].reason.message}`);
+    state.metricsLoadError = '';
+  } else {
+    state.metricsLoadError = requests[0].reason.message;
+    if (!quiet && requests[0].reason.status !== 401) toast(`Métricas: ${requests[0].reason.message}`);
+  }
   if (requests[1].status === 'fulfilled') {
     state.traces = requests[1].value.traces || [];
     state.traceTotal = requests[1].value.total || 0;
-  } else if (!quiet && requests[1].reason.status !== 401) toast(`Traces: ${requests[1].reason.message}`);
+    state.traceLoadError = '';
+  } else {
+    state.traceLoadError = requests[1].reason.message;
+    if (!quiet && requests[1].reason.status !== 401) toast(`Traces: ${requests[1].reason.message}`);
+  }
   if (requests[2].status === 'fulfilled') {
     state.conversations = requests[2].value.conversations || [];
     state.conversationTotal = requests[2].value.total || 0;
   } else if (!quiet && requests[2].reason.status !== 401) toast(`Conversas: ${requests[2].reason.message}`);
   renderAll();
   return requests[0].status === 'fulfilled';
+}
+
+async function loadLatestTurn({ quiet = false } = {}) {
+  if (state.lastTurnLoading || authState === 'anonymous') return;
+  state.lastTurnLoading = true;
+  renderLastTurn();
+  const seq = ++state.lastTurnLoadSeq;
+  try {
+    const latest = await requestJSON(`${OBS}/traces?limit=1&offset=0`, { label: 'GET /observability/traces/latest' });
+    if (seq !== state.lastTurnLoadSeq) return;
+    const latestTrace = latest.traces?.[0];
+    if (!latestTrace) {
+      state.lastTurn = null;
+      state.lastTurnLoadError = false;
+    } else {
+      state.lastTurnLoadError = false;
+      if (latestTrace.trace_id !== state.lastTurn?.trace_id) {
+        state.lastTurn = await requestJSON(`${OBS}/traces/${encodeURIComponent(latestTrace.trace_id)}`, { label: 'GET /observability/traces/latest/{id}' });
+        if (seq !== state.lastTurnLoadSeq) return;
+      }
+    }
+  } catch (error) {
+    if (seq !== state.lastTurnLoadSeq) return;
+    state.lastTurnLoadError = true;
+    if (!quiet && error.status !== 401) toast(`Último turno: ${error.message}`);
+  } finally {
+    if (seq === state.lastTurnLoadSeq) {
+      state.lastTurnLoading = false;
+      renderLastTurn();
+      renderPeriodDataNote();
+    }
+  }
 }
 
 function initDateFilters() {
@@ -218,18 +265,30 @@ function applyFilters() {
 }
 
 function renderAll() {
+  renderLastTurn();
   renderMetrics();
   renderTraceTables();
   renderConversations();
   renderActiveStatus();
   renderLiveEvents();
+  renderPeriodDataNote();
   if (state.view === 'traces' && state.selectedTrace) renderTraceDetail();
   if (state.view === 'conversations' && state.selectedConversation) renderConversationDetail();
 }
 
 function renderMetrics() {
   const metrics = state.metrics;
-  if (!metrics) return;
+  if (!metrics) {
+    const reason = state.metricsLoadError
+      ? `Não foi possível carregar as métricas: ${state.metricsLoadError}`
+      : 'Aguardando dados das métricas.';
+    drawSeries($('latency-chart'), [], '#7c3aed', reason);
+    drawSeries($('cost-chart'), [], '#0f9f6e', reason);
+    $('cost-chart-note').hidden = true;
+    $('cost-chart-note').textContent = '';
+    renderPeriodDataNote();
+    return;
+  }
   renderSLOMetrics(metrics.slos);
   $('metric-runs').textContent = number(metrics.traces?.count);
   $('metric-latency-mean').textContent = duration(metrics.traces?.latency?.average_ms);
@@ -341,35 +400,227 @@ function renderBoard(board, metrics) {
   $('agent-latency-rows').innerHTML = agents.length
     ? agents.map((row) => `<tr><td>${escapeHTML(row.name)}</td><td>${duration(row.average_ms)}</td></tr>`).join('')
     : '<tr><td colspan="2" class="empty-cell">Sem nós no período.</td></tr>';
-  drawSeries($('latency-chart'), (metrics.latency_series || []).map((point) => point.duration_ms), '#7c3aed');
-  drawSeries($('cost-chart'), (metrics.cumulative_cost_series || []).map((point) => point.cumulative_cost_usd), '#0f9f6e');
+  const latencyPoints = metrics.latency_series || [];
+  const latencySamples = metrics.traces?.latency?.sample_count || 0;
+  const latencyEmptyReason = state.metricsLoadError
+    ? `Não foi possível atualizar as métricas: ${state.metricsLoadError}`
+    : traceCount === 0
+      ? 'Nenhum trace corresponde aos filtros selecionados neste período.'
+      : latencySamples === 0
+        ? `${number(traceCount)} trace(s) encontrados, mas nenhum tem duração registrada.`
+        : 'A API não retornou pontos diários de latência, apesar de haver amostras.';
+  const cost = metrics.cost || {};
+  const costEmptyReason = state.metricsLoadError
+    ? `Não foi possível atualizar as métricas: ${state.metricsLoadError}`
+    : traceCount === 0
+      ? 'Nenhum trace corresponde aos filtros selecionados neste período.'
+      : (cost.priced_calls || 0) === 0 && (cost.unpriced_calls || 0) > 0
+        ? `${number(cost.unpriced_calls)} chamada(s) sem tokens ou preço suficiente para calcular o custo.`
+        : (cost.priced_calls || 0) === 0
+          ? 'Não houve chamadas de modelo com custo calculável neste período.'
+          : 'Há chamadas precificadas, mas a API não retornou a série diária de custo.';
+  drawSeries($('latency-chart'), latencyPoints.map((point) => point.duration_ms), '#7c3aed', latencyEmptyReason);
+  const costSeries = (cost.priced_calls || 0) > 0
+    ? (metrics.cumulative_cost_series || []).map((point) => point.cumulative_cost_usd)
+    : [];
+  drawSeries($('cost-chart'), costSeries, '#0f9f6e', costEmptyReason);
+  const costNote = $('cost-chart-note');
+  const partialCost = (cost.priced_calls || 0) > 0 && (cost.unpriced_calls || 0) > 0;
+  costNote.hidden = !partialCost;
+  costNote.textContent = partialCost
+    ? `Série parcial: mostra o subtotal precificado; ${number(cost.unpriced_calls)} chamada(s) não têm preço/uso suficiente para compor o total.`
+    : '';
 }
 
-function drawSeries(canvas, values, color) {
+function renderLastTurn() {
+  if (!$('last-turn-panel')) return;
+  const trace = state.lastTurn;
+  const statusElement = $('last-turn-status');
+  if (!trace) {
+    $('last-turn-open-trace').hidden = true;
+    statusElement.className = 'last-turn-status no-data';
+    statusElement.textContent = state.lastTurnLoadError ? 'Indisponível' : state.lastTurnLoading ? 'Carregando' : 'Sem dados';
+    $('last-turn-meta').textContent = state.lastTurnLoadError
+      ? 'Não foi possível carregar o trace mais recente.'
+      : state.lastTurnLoading
+        ? 'Buscando o trace mais recente persistido.'
+        : 'Nenhum trace persistido foi encontrado.';
+    $('last-turn-duration').textContent = '—';
+    $('last-turn-tokens').textContent = '—';
+    $('last-turn-tokens-note').textContent = '';
+    $('last-turn-cost').textContent = '—';
+    $('last-turn-cost-note').textContent = 'Sem chamadas registradas.';
+    $('last-turn-route').textContent = '—';
+    $('last-turn-outcome').textContent = '—';
+    return;
+  }
+
+  const spans = Array.isArray(trace.spans) ? trace.spans : [];
+  const modelCalls = spans.filter((span) => span.kind === 'llm');
+  const usageEvents = Array.isArray(trace.usage_events) ? trace.usage_events : [];
+  const calls = [...modelCalls, ...usageEvents];
+  const inputTokens = calls.reduce((sum, call) => sum + (Number.isInteger(call.input_tokens) ? call.input_tokens : 0), 0);
+  const outputTokens = calls.reduce((sum, call) => sum + (Number.isInteger(call.output_tokens) ? call.output_tokens : 0), 0);
+  const callsWithUsage = calls.filter((call) => Number.isInteger(call.input_tokens) || Number.isInteger(call.output_tokens)).length;
+  const completeTokens = calls.length > 0 && calls.every((call) => Number.isInteger(call.input_tokens) && Number.isInteger(call.output_tokens));
+  $('last-turn-duration').textContent = duration(trace.duration_ms);
+  $('last-turn-tokens').textContent = callsWithUsage ? number(inputTokens + outputTokens) : '—';
+  $('last-turn-tokens-note').textContent = calls.length
+    ? `${number(inputTokens)} entrada · ${number(outputTokens)} saída · ${number(callsWithUsage)} de ${number(calls.length)} chamadas com uso${completeTokens ? '' : ' · parcial'}`
+    : 'Nenhuma chamada de modelo registrada.';
+
+  const pricedCalls = calls.filter((call) => call.estimated_cost_usd != null && Number.isFinite(Number(call.estimated_cost_usd)));
+  const costComplete = pricedCalls.length === calls.length;
+  const totalCost = pricedCalls.reduce((sum, call) => sum + Number(call.estimated_cost_usd), 0);
+  $('last-turn-cost').textContent = !calls.length
+    ? '—'
+    : costComplete
+      ? usd(totalCost)
+      : pricedCalls.length
+        ? `${usd(totalCost)} parcial`
+        : 'Incompleto';
+  $('last-turn-cost-note').textContent = !calls.length
+    ? 'Nenhuma chamada de modelo foi registrada; não há dados para estimar o custo.'
+    : costComplete
+      ? 'Estimativa calculada a partir das chamadas e preços configurados.'
+      : `${number(calls.length - pricedCalls.length)} chamada(s) sem preço/uso completo.`;
+
+  const logs = Array.isArray(trace.logs) ? trace.logs : [];
+  const routeLog = logs.find((log) => log.event === 'router_decision_completed');
+  const routeValue = routeLog?.attributes?.route;
+  const routeLabels = {
+    faq: 'FAQ / RAG',
+    product_workflow: 'Product Workflow',
+    memory_recall: 'Memória',
+    clarification_required: 'Esclarecimento',
+    out_of_scope: 'Fora de escopo',
+  };
+  const fallbackRoute = spans.find((span) => ['faq', 'product_workflow'].includes(span.attributes?.langgraph_node))?.attributes?.langgraph_node;
+  $('last-turn-route').textContent = routeLabels[routeValue] || routeLabels[fallbackRoute] || 'Não identificada';
+
+  const completionLog = logs.find((log) => log.event === 'conversation_turn_completed');
+  const outcome = completionLog?.attributes?.status || (trace.status === 'error' ? 'error' : 'success');
+  const outcomeLabels = {
+    success: 'Concluído',
+    rejected: 'Rejeitado',
+    clarification_required: 'Esclarecimento',
+    out_of_scope: 'Fora de escopo',
+    error: 'Erro técnico',
+  };
+  $('last-turn-outcome').textContent = outcomeLabels[outcome] || outcome;
+  statusElement.className = `last-turn-status ${trace.status === 'error' ? 'error' : 'completed'}`;
+  statusElement.textContent = trace.status === 'error' ? 'Falha técnica' : 'Trace concluído';
+  $('last-turn-open-trace').hidden = false;
+  $('last-turn-meta').textContent = `${dateTime(trace.started_at)} · trace ${shortId(trace.trace_id, 22)} · independente do período${state.lastTurnLoadError ? ' · falha ao atualizar; exibindo último dado carregado' : ''}`;
+}
+
+function renderPeriodDataNote() {
+  const note = $('period-data-note');
+  if (!note) return;
+  if (state.metricsLoadError) {
+    note.hidden = false;
+    note.textContent = `Falha ao atualizar as métricas do período: ${state.metricsLoadError}. Os valores visíveis podem ser da consulta anterior.`;
+    return;
+  }
+  const metrics = state.metrics;
+  if (!metrics) {
+    note.hidden = true;
+    note.textContent = '';
+    return;
+  }
+  if (state.traceLoadError) {
+    note.hidden = false;
+    note.textContent = `Falha ao carregar a lista de traces: ${state.traceLoadError}. As métricas podem ter sido carregadas, mas a tabela não foi atualizada.`;
+    return;
+  }
+  const latestStartedAt = state.lastTurn ? new Date(state.lastTurn.started_at).getTime() : NaN;
+  const from = state.filters.from ? new Date(state.filters.from).getTime() : null;
+  const to = state.filters.to ? new Date(state.filters.to).getTime() : null;
+  const latestWithinPeriod = Number.isFinite(latestStartedAt)
+    && (from == null || latestStartedAt >= from)
+    && (to == null || latestStartedAt <= to);
+  const latestOutsidePeriod = Number.isFinite(latestStartedAt) && !latestWithinPeriod;
+  const hasIdentityOrStatusFilter = Boolean(
+    state.filters.consumer || state.filters.conversation || state.filters.status,
+  );
+  const latestListed = state.traces.some((trace) => trace.trace_id === state.lastTurn?.trace_id);
+  if (state.traceOffset === 0 && latestWithinPeriod && !hasIdentityOrStatusFilter && !latestListed) {
+    note.hidden = false;
+    note.textContent = `A API retornou o trace global mais recente (${dateTime(state.lastTurn.started_at)}), dentro da janela selecionada, mas não o incluiu na lista filtrada. Verifique a consulta/persistência de traces; os gráficos usam os dados agregados retornados pela API.`;
+    return;
+  }
+  if ((metrics.traces?.count || 0) > 0) {
+    if (latestOutsidePeriod) {
+      note.hidden = false;
+      note.textContent = `O último trace global é de ${dateTime(state.lastTurn.started_at)}, fora da janela exata (${from == null ? 'sem início' : dateTime(state.filters.from)} a ${to == null ? 'sem fim' : dateTime(state.filters.to)}). As métricas e os gráficos abaixo mostram os traces que estão dentro do período selecionado.`;
+      return;
+    }
+    note.hidden = true;
+    note.textContent = '';
+    return;
+  }
+  note.hidden = false;
+  if (!state.lastTurn) {
+    if (state.lastTurnLoading) {
+      note.hidden = true;
+      note.textContent = '';
+      return;
+    }
+    note.textContent = state.lastTurnLoadError
+      ? 'As métricas não encontraram traces no período; também não foi possível consultar o trace mais recente. Os gráficos não têm amostras para exibir.'
+      : 'Nenhum trace foi encontrado no período e nos filtros selecionados. Os gráficos não têm amostras para exibir.';
+    return;
+  }
+  const outsidePeriod = Number.isFinite(latestStartedAt)
+    && ((from != null && latestStartedAt < from) || (to != null && latestStartedAt > to));
+  note.textContent = outsidePeriod
+    ? `Nenhum trace corresponde aos filtros no período. O trace mais recente é de ${dateTime(state.lastTurn.started_at)} e ficou fora da janela exata (${from == null ? 'sem início' : dateTime(state.filters.from)} a ${to == null ? 'sem fim' : dateTime(state.filters.to)}); os gráficos usam apenas essa janela.`
+    : 'Nenhum trace corresponde a todos os filtros selecionados. Confira usuário, conversa e status; os gráficos usam somente os registros que correspondem a esses filtros.';
+}
+
+function drawSeries(canvas, values, color, emptyMessage) {
   if (!canvas) return;
+  const empty = $(`${canvas.id}-empty`);
   const width = Math.max(280, canvas.parentElement.clientWidth - 32);
   const height = 160;
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, width, height);
-  if (!values.length) {
-    ctx.fillStyle = '#a39baa';
-    ctx.font = '12px sans-serif';
-    ctx.fillText('Sem amostras', 12, 28);
+  const samples = (Array.isArray(values) ? values : [])
+    .filter((value) => value != null && Number.isFinite(Number(value)))
+    .map(Number);
+  if (!samples.length) {
+    canvas.hidden = true;
+    if (empty) {
+      empty.hidden = false;
+      empty.textContent = emptyMessage;
+    }
     return;
   }
-  const max = Math.max(...values, 0.000001);
+  canvas.hidden = false;
+  if (empty) {
+    empty.hidden = true;
+    empty.textContent = '';
+  }
+  const max = Math.max(...samples, 0.000001);
   ctx.strokeStyle = color;
   ctx.lineWidth = 2;
   ctx.beginPath();
-  values.forEach((value, index) => {
-    const x = values.length === 1 ? width / 2 : (index / (values.length - 1)) * (width - 16) + 8;
+  samples.forEach((value, index) => {
+    const x = samples.length === 1 ? width / 2 : (index / (samples.length - 1)) * (width - 16) + 8;
     const y = height - 16 - (value / max) * (height - 32);
     if (index === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   });
   ctx.stroke();
+  if (samples.length === 1) {
+    const y = height - 16 - (samples[0] / max) * (height - 32);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(width / 2, y, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 function showLogin(message) {
@@ -425,8 +676,14 @@ async function logout() {
   sessionStorage.removeItem(TAB_KEY);
   state.loadSeq += 1;
   state.metrics = null;
+  state.metricsLoadError = '';
   state.traces = [];
   state.traceTotal = 0;
+  state.traceLoadError = '';
+  state.lastTurn = null;
+  state.lastTurnLoadError = false;
+  state.lastTurnLoadSeq += 1;
+  state.lastTurnLoading = false;
   state.conversations = [];
   state.conversationTotal = 0;
   state.selectedTraceId = null;
@@ -539,12 +796,16 @@ function renderSLOProgress(elementId, metric) {
 
 function renderComponentChart(components) {
   const entries = Object.entries(components).map(([name, data]) => ({ name, ...data })).sort((a, b) => (b.latency?.average_ms || 0) - (a.latency?.average_ms || 0));
-  if (!entries.length) {
-    $('component-chart').innerHTML = '<p class="chart-empty">Sem spans no intervalo selecionado.</p>';
+  const measuredEntries = entries.filter((entry) => entry.latency?.average_ms != null && Number.isFinite(Number(entry.latency.average_ms)));
+  if (!measuredEntries.length) {
+    const reason = !entries.length
+      ? 'Sem spans registrados no período e filtros selecionados.'
+      : `${number(entries.length)} tipo(s) de componente encontrado(s), mas nenhum span tem duração registrada.`;
+    $('component-chart').innerHTML = `<p class="chart-empty">${escapeHTML(reason)}</p>`;
     return;
   }
-  const max = Math.max(...entries.map((entry) => entry.latency?.average_ms || 0), 1);
-  $('component-chart').innerHTML = entries.slice(0, 9).map((entry) => {
+  const max = Math.max(...measuredEntries.map((entry) => entry.latency.average_ms), 1);
+  $('component-chart').innerHTML = measuredEntries.slice(0, 9).map((entry) => {
     const value = entry.latency?.average_ms;
     const width = value == null ? 0 : Math.max(3, value / max * 100);
     return `<div class="bar-row"><span title="${escapeHTML(entry.name)}">${escapeHTML(entry.name)}</span><div class="bar-track"><i style="width:${width}%"></i></div><strong>${duration(value)}</strong></div>`;
@@ -589,21 +850,6 @@ function traceWindowCount() {
   return state.traceTotal + runningTracesNotListed().length;
 }
 
-function liveStepNames(traceId) {
-  const names = [];
-  const seen = new Set();
-  for (const event of state.liveByTrace.get(traceId) || []) {
-    if (event.event_type !== 'span') continue;
-    const data = event.data || {};
-    if (data.kind && data.kind !== 'node' && data.kind !== 'tool') continue;
-    const name = data.name;
-    if (!name || seen.has(name)) continue;
-    seen.add(name);
-    names.push(name);
-  }
-  return names;
-}
-
 function mergedTraces() {
   const persistedIds = new Set(state.traces.map((trace) => trace.trace_id));
   const running = filteredActiveTraces().filter((trace) => !persistedIds.has(trace.trace_id)).map(activeTraceAsSummary);
@@ -613,11 +859,12 @@ function mergedTraces() {
 function renderTraceTables() {
   const traces = mergedTraces();
   const rowHtml = traces.map((trace) => {
-    const steps = liveStepNames(trace.trace_id);
-    const stepsLabel = steps.length ? steps.join(' → ') : 'Abrir detalhe';
-    return `<tr class="clickable-row" data-trace="${escapeHTML(trace.trace_id)}"><td class="trace-id">${escapeHTML(shortId(trace.trace_id))}</td><td class="trace-id">${escapeHTML(shortId(trace.conversation_id))}</td><td>${escapeHTML(stepsLabel)}</td><td class="duration">${duration(trace.duration_ms)}</td><td><span class="status-pill ${escapeHTML(trace.status)}">${escapeHTML(statusText(trace.status))}</span></td><td>${dateTime(trace.started_at)}</td></tr>`;
+    return `<tr class="clickable-row" data-trace="${escapeHTML(trace.trace_id)}"><td class="trace-id">${escapeHTML(shortId(trace.trace_id))}</td><td class="trace-id">${escapeHTML(shortId(trace.conversation_id))}</td><td class="duration">${duration(trace.duration_ms)}</td><td><span class="status-pill ${escapeHTML(trace.status)}">${escapeHTML(statusText(trace.status))}</span></td><td>${dateTime(trace.started_at)}</td></tr>`;
   });
-  const empty = '<tr><td colspan="6" class="empty-cell">Nenhum trace encontrado para os filtros atuais.</td></tr>';
+  const emptyMessage = state.traceLoadError
+    ? `Falha ao carregar traces: ${escapeHTML(state.traceLoadError)}`
+    : 'Nenhum trace encontrado para os filtros atuais.';
+  const empty = `<tr><td colspan="5" class="empty-cell">${emptyMessage}</td></tr>`;
   $('recent-traces').innerHTML = rowHtml.length ? rowHtml.slice(0, 8).join('') : empty;
   $('all-traces').innerHTML = rowHtml.join('') || empty;
   $('trace-total').textContent = `${number(traceWindowCount())} traces`;
@@ -1069,6 +1316,9 @@ document.querySelectorAll('[data-view]').forEach((button) => button.addEventList
   if (view) activateView(view);
 }));
 $('refresh-button').addEventListener('click', () => loadData());
+$('last-turn-open-trace').addEventListener('click', () => {
+  if (state.lastTurn?.trace_id) void openTrace(state.lastTurn.trace_id);
+});
 $('roi-return').addEventListener('input', () => {
   if (state.metrics) renderBoard(state.metrics.board || {}, state.metrics);
 });
