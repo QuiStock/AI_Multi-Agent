@@ -189,7 +189,10 @@ inclusive. O piso da data é o `sent_at`, não um argumento do modelo.
 
 ORDER usa `current_batch_count` como quantidade atual quando disponível; não há
 fallback para `ml_batch_count`. PROMOTION não tem quantidade de lote.
-`promotional_price` é o único preço. O card público não traz triagem, origem,
+Cards recebidos do cliente usam `discount_percentage`; consultas do Product
+Workflow expõem somente `current_discount_percentage` quando disponível, sem
+consultar `ml_discount_percentage` nem usar fallback. `promotional_price` é o
+único preço. O card público não traz triagem, origem,
 loja, status interno nem preço de referência.
 A busca por nome ou SKU ignora acentos: `cha gelado` encontra `Chá Gelado`.
 Consulta com `ambiguous` ou `not_found` grava um `response_draft` idêntico ao

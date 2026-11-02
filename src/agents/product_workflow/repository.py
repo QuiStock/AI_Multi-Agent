@@ -168,7 +168,6 @@ class PostgresProductWorkflowRepository:
                 s.origin::text,
                 s.status::text,
                 s.current_batch_count,
-                s.ml_discount_percentage,
                 s.current_discount_percentage,
                 s.reference_sale_price,
                 s.promotional_price,
@@ -524,25 +523,24 @@ def _detail_record_from_row(
             str(row[9]),
         ),
         current_batch_count=int(row[10]) if row[10] is not None else None,
-        ml_discount_percentage=_float_or_none(row[11]),
-        current_discount_percentage=_float_or_none(row[12]),
-        reference_sale_price=_float_or_none(row[13]),
-        promotional_price=_float_or_none(row[14]),
-        promotion_valid_from=row[15],
-        promotion_valid_until=row[16],
-        physical_expiration_date=row[17],
-        available_for_triage=bool(row[18]),
-        created_at=row[19],
-        updated_at=row[20],
-        employee_id=int(row[21]) if row[21] is not None else None,
-        employee_name=str(row[22]) if row[22] is not None else None,
+        current_discount_percentage=_float_or_none(row[11]),
+        reference_sale_price=_float_or_none(row[12]),
+        promotional_price=_float_or_none(row[13]),
+        promotion_valid_from=row[14],
+        promotion_valid_until=row[15],
+        physical_expiration_date=row[16],
+        available_for_triage=bool(row[17]),
+        created_at=row[18],
+        updated_at=row[19],
+        employee_id=int(row[20]) if row[20] is not None else None,
+        employee_name=str(row[21]) if row[21] is not None else None,
         last_action=(
-            cast(Literal["EDIT", "FORWARD"], str(row[23]))
-            if row[23] is not None
+            cast(Literal["EDIT", "FORWARD"], str(row[22]))
+            if row[22] is not None
             else None
         ),
-        forwarded_at=row[24],
-        triage_updated_at=row[25],
+        forwarded_at=row[23],
+        triage_updated_at=row[24],
     )
 
 

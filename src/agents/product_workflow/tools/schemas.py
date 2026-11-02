@@ -65,7 +65,6 @@ class SuggestionCardData(BaseModel):
     sku: str = Field(min_length=1, max_length=100)
     suggestion_type: SuggestionType
     current_batch_count: int | None = Field(default=None, gt=0)
-    ml_discount_percentage: float | None = Field(default=None, ge=0, le=100)
     current_discount_percentage: float | None = Field(default=None, ge=0, le=100)
     promotional_price: float | None = Field(default=None, ge=0)
     promotion_valid_from: date | None = None
@@ -157,7 +156,6 @@ def suggestion_card(
     }
     optional = {
         "category_name": record.category_name,
-        "ml_discount_percentage": record.ml_discount_percentage,
         "current_discount_percentage": record.current_discount_percentage,
         "promotional_price": record.promotional_price,
         "promotion_valid_from": record.promotion_valid_from,
