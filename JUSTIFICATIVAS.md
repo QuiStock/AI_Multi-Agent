@@ -47,6 +47,7 @@
 - O acesso fica restrito a contas `super_admin`, pois o painel reúne traces, logs e chamadas de laboratório.
 - Todas as demais rotas sob `/api/v1/observability`, inclusive laboratório e feed ao vivo, exigem `require_observability_session`.
 - O cookie é HTTPOnly, tem escopo limitado ao prefixo da API de observabilidade e validade de uma hora. Segredo ou dependências de autenticação ausentes fazem o fluxo falhar de forma fechada.
+- A validade de uma hora equilibra a redução da janela de acesso com a conveniência de não exigir login a cada chamada.
 - Essa é uma decisão de segurança: sem credencial de sessão ou banco, o acesso é negado para não expor dados operacionais sem autenticação. O trade-off é a observabilidade ficar indisponível enquanto a dependência estiver fora do ar.
 - Os testes em `tests/test_observability_session.py` cobrem validade/configuração da sessão, login/logout, falha sem banco e exigência de sessão nas rotas. Foram inspecionados nesta análise; não foram executados.
 
