@@ -609,3 +609,7 @@ uv run pytest -m integration
 Atualize este arquivo sempre que mudar um agente, card, tool, rota ativa,
 ownership do estado, formato de entrada/saída, regra de segurança ou política
 de fallback.
+
+## Laboratório de observabilidade
+
+`POST /api/v1/observability/lab/run` aceita `agent_id` para prever a decisão de tools do card registrado. O serviço vincula somente schemas, nunca executores; nenhuma tool é executada e conversas de produção não são alteradas. A resposta inclui `tool_calls` quando houver chamada. Requisições sem `agent_id` preservam a execução textual anterior. A configuração de agente expõe metadados das tools para o frontend.
