@@ -219,6 +219,8 @@
 
 **Decisão confirmada**
 - O Product Workflow é somente leitura: consulta sugestões e promoções, mas não cria pedidos nem altera dados comerciais.
+- **Decisão confirmada de autorização:** usuário, cargo e lojas vêm do contexto autenticado e são aplicados pelo servidor. O agente não escolhe outra identidade nem envia SQL livre.
+- O executor valida esse contexto antes de habilitar as ferramentas; o repositório aplica os parâmetros e predicados fixos de cargo e loja nas consultas. Isso mantém a consulta dentro do escopo concedido ao usuário. O trade-off é que somente os cargos e lojas autorizados podem usar a capacidade. Evidências: `src/agents/product_workflow/executor.py`, `repository.py` e `filters.py`.
 - Essa separação deixa as respostas consultivas sem autorização para executar operações comerciais. As alterações de negócio permanecem fora desta capacidade.
 - **Trade-off:** o fluxo pode explicar o que está registrado, mas não conclui a operação pelo usuário.
 
