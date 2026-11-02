@@ -86,7 +86,8 @@ def test_direct_repository_queries_postgres_with_server_scope_and_no_writes() ->
     assert result[0].product_name == "Leite Integral UHT 1L"
 
     query_text = "\n".join(query for query, _ in cursor.queries).upper()
-    assert 'FROM "SUGGESTION"' in query_text
+    assert 'FROM "SUGGESTION_CONTEXT" AS S' in query_text
+    assert 'FROM "SUGGESTION" AS S' not in query_text
     assert 'JOIN "USER_STORE"' in query_text
     assert "LOWER(UA.EMAIL) = LOWER(%S)" in query_text
     assert "UA.ID = %S" in query_text

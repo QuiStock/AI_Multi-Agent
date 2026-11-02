@@ -10,7 +10,7 @@ MAX_PRODUCT_SEARCH_PAGE = 100
 STATEMENT_TIMEOUT_MS = 5_000
 
 AUTHORIZED_SUGGESTION_FROM = """
-FROM "suggestion" AS s
+FROM "suggestion_context" AS s
 JOIN "product" AS p
   ON p.id = s.product_id
  AND p.active IS TRUE
