@@ -120,8 +120,8 @@
 - `src/agents/router/router_node.py`: valida a resposta do executor, projeta evidências e erros no estado, e direciona a decisão do router.
 - `src/agents/router/tools/schemas.py`: limita os argumentos de data da tool e valida o intervalo.
 - `src/agents/router/tools/search_conversation_summaries.py`: vincula identidade e mensagem do contexto autenticado, chama o service e empacota resultados como evidências.
-- `src/memory/service.py`: escolhe busca semântica ou busca temporal no Qdrant.
-- `src/memory/get_summary_context.py`: aplica filtros de usuário, status, conversa atual e intervalo temporal no Qdrant.
+- `src/memory/summaries/service.py`: escolhe busca semântica ou busca temporal no Qdrant.
+- `src/memory/summaries/get_summary_context.py`: aplica filtros de usuário, status, conversa atual e intervalo temporal no Qdrant.
 - `src/api/dependencies.py`: constrói o service e o injeta no `RouterExecutor`.
 - `src/graphs/agent_graph.py`, `src/graphs/decisions.py` e `src/graphs/contracts.py`: registram o nó, contratos de rota e caminhos seguintes.
 
