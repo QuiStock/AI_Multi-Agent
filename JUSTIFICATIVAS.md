@@ -79,6 +79,7 @@
 7. Após entrada aprovada, `greeting_guardrail` usa LLM estruturado apenas para mensagens de até 160 caracteres. Se for apenas saudação, a resposta é fixa; se não, segue ao fluxo normal. Mensagens maiores seguem sem chamada do classificador.
 
 **PII — privacidade e restauração**
+- **Decisão registrada:** a API mascara dados sensíveis antes de executar o grafo e restaura os valores originais somente na resposta HTTP. O mapa de restauração fica local à requisição, fora do estado e do checkpointer.
 - A mensagem original não é enviada aos agentes: eles recebem a versão marcada, inclusive durante a retomada do histórico.
 - Os marcadores deste turno são comparados com os marcadores da resposta. A lista permitida vem apenas da mensagem Human atual, identificada por `request_id`; marcadores antigos do histórico não autorizam reprodução.
 - Se surgir marcador não presente na mensagem atual, o output guardrail troca a resposta inteira pela mensagem controlada. A resposta inteira é substituída para não deixar uma frase quebrada ao remover só o token.
