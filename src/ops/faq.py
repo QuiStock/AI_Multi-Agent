@@ -16,7 +16,6 @@ from typing import Any
 from pymongo import MongoClient
 
 from src import config
-from src.ops.memory import check_vector_collection
 from src.agents.faq.ingestion.indexer import SUPPORTED_EXTENSIONS, Indexer
 from src.agents.faq.ingestion.processing.chunker import RecursiveCharacterChunker
 from src.agents.faq.ingestion.processing.models import ChunkingConfig
@@ -26,6 +25,7 @@ from src.agents.faq.ingestion.state.change_detector import ChangeDetector
 from src.agents.faq.ingestion.state.manifest_store import ManifestStore
 from src.agents.faq.ingestion.state.models import Manifest
 from src.agents.faq.ingestion.vectorstore.qdrant_store import QdrantStore
+from src.ops.memory import check_vector_collection
 
 
 class MongoManifestStore(ManifestStore):
@@ -106,7 +106,7 @@ def main() -> None:
             )
             if points and not store.load().documents:
                 raise RuntimeError(
-                    "Populated FAQ requires an existing manifest or a separate migration"
+                    "Populated FAQ requires a manifest or a separate migration"
                 )
             summary = Indexer(
                 documents_root=root,
